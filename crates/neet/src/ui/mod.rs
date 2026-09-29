@@ -1,4 +1,5 @@
 mod app;
+mod apps;
 mod art;
 mod clean;
 mod disk;

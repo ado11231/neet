@@ -25,7 +25,7 @@
 | M3 | Rules, risk tiers, and dry run plans in Clean | Cleanup, interface | P1 | Complete |
 | M4 | Review, path checks, open app checks, and moving to the Trash | Cleanup, safety | P1 | Complete |
 | M5 | Packages, testing on real Macs, and the P1 release checks | Distribution | P1 | Planned |
-| M6 | Large and old file filters, and the app removal review | Disk analysis, apps | P1.5 | In Progress, ahead of M5 |
+| M6 | Large and old file filters, and the app removal review | Disk analysis, apps | P1.5 | Complete, ahead of M5 |
 | M7 | Check and build the P2 proposals | Startup, SSH, dotfiles, AI tools, settings, preferences, treemap | P2 | Proposed |
 
 ## How The Work Is Organized
@@ -107,7 +107,7 @@
 
 ## In Progress
 
-* M6, pulled ahead of M5. See [M6](#m6-p15) below.
+* Nothing. M5 is next.
 
 ## Planned
 
@@ -125,7 +125,12 @@
 * **Built:**
   1. The scan records when each entry last changed. `large::find` filters the tree by size and age, largest first, in about 4 ms for 1.4 million entries.
   2. The Large Files screen, opened from Home. `s` and `a` change the size and age, `Enter` shows the file in Disk, and `d` plans a cleanup with the same checks as Disk. 8 tests, including the age format.
-* **Needed first:** apps are outside the cleanup roots. Decide what app removal may remove, and its screens, before building it. This milestone does not widen any cleanup root.
+  3. What app removal may remove, settled in [SAFETY.md](SAFETY.md#app-removal).
+  4. `validate_app_removal`, a separate check for apps and their files. A `ValidatedPath` remembers which check made it, and the check before the move runs the same one. 3 tests.
+  5. `removal` lists apps, finds their files by exact name, and plans their removal. 6 tests.
+  6. The Remove App screens, opened from Home. They use the same review, question, and cleanup as Clean. 4 tests.
+* Completed September 29, 2026. Removing an app owned by another user, which makes Finder ask for a password, is not yet tried on a real Mac.
+* Apps are outside the cleanup roots, so app removal has its own check. This milestone does not widen any cleanup root.
 * **Done when:**
   1. The filters use the existing scan.
   2. Every removal follows the updated safety rules.

@@ -193,7 +193,7 @@
 
 | Feature | What It Does | Phase | Status |
 | --- | --- | --- | --- |
-| App removal review | Shows an app and its related files before removal. Leaves anything that may be your data unselected, warns about folders shared with other apps, and refuses while the app is open. What it may remove is settled in [SAFETY.md](SAFETY.md#app-removal). | P1.5 | In Progress |
+| App removal review | Shows an app and its related files before removal. Leaves anything that may be your data unselected, warns about folders shared with other apps, and refuses while the app is open. What it may remove is settled in [SAFETY.md](SAFETY.md#app-removal). | P1.5 | Done |
 
 * This is separate from cleaning app caches.
 * The allowed cleanup folders do not include apps yet. See [Design Questions](#design-questions).

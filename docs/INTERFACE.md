@@ -2,13 +2,13 @@
 
 * The planned screens, keyboard keys, and review steps for neet.
 * For anyone building or reviewing the terminal interface.
-* Home, Skipped, Disk, Clean, and Large Files are built. The rest are plans.
+* Home, Skipped, Disk, Clean, Large Files, and Remove App are built. The rest are plans.
 * For what each feature does and its status, read [FEATURES.md](FEATURES.md). For the rules every change must follow, read [SAFETY.md](SAFETY.md).
 
 | Screens | Phase |
 | --- | --- |
 | Home, Disk, Clean | P1 |
-| Large Files, Remove App | P1.5. Large Files is built. Remove App is being built. |
+| Large Files, Remove App | P1.5. Both are built. |
 | Startup, SSH, Dotfiles, PATH, AI Tools, Settings, Space Breakdown, Projects | P2. Draft designs that still need checking on real Macs. |
 
 ## Contents
