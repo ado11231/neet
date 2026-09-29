@@ -6,6 +6,7 @@ use ratatui::text::Line;
 
 use super::help::Help;
 use super::home::Home;
+use super::scan::{ScanStatus, ScanTask};
 
 /// What a screen asks the app to do after handling a key.
 pub enum Action {
@@ -15,9 +16,14 @@ pub enum Action {
     Quit,
 }
 
+/// Shared state every screen can read while drawing.
+pub struct Context<'a> {
+    pub scan: &'a ScanStatus,
+}
+
 /// One screen on the stack. Home is always at the bottom.
 pub trait Screen {
-    fn draw(&mut self, frame: &mut Frame, area: Rect);
+    fn draw(&mut self, frame: &mut Frame, area: Rect, context: &Context);
 
     fn handle_key(&mut self, key: KeyEvent) -> Action;
 
@@ -40,15 +46,22 @@ pub trait Screen {
 
 pub struct App {
     stack: Vec<Box<dyn Screen>>,
+    scan: ScanTask,
     quit: bool,
 }
 
 impl App {
-    pub fn new() -> Self {
+    pub fn new(scan: ScanTask) -> Self {
         Self {
             stack: vec![Box::new(Home::new())],
+            scan,
             quit: false,
         }
+    }
+
+    /// Picks up progress from the background scan.
+    pub fn poll(&mut self) {
+        self.scan.poll();
     }
 
     pub fn should_quit(&self) -> bool {
@@ -71,8 +84,11 @@ impl App {
             .iter()
             .rposition(|screen| !screen.is_overlay())
             .unwrap_or(0);
+        let context = Context {
+            scan: self.scan.status(),
+        };
         for screen in &mut self.stack[base..] {
-            screen.draw(frame, body);
+            screen.draw(frame, body, &context);
         }
         let screen = self.top();
         let hints = Line::from(format!(" {}", screen.hints())).style(Style::new().dark_gray());
@@ -120,7 +136,7 @@ mod tests {
 
     #[test]
     fn enter_opens_a_screen_and_esc_goes_back() {
-        let mut app = App::new();
+        let mut app = App::new(ScanTask::failed("not scanned in tests"));
         press(&mut app, KeyCode::Enter);
         assert_eq!(app.depth(), 2);
         press(&mut app, KeyCode::Esc);
@@ -129,7 +145,7 @@ mod tests {
 
     #[test]
     fn esc_on_home_stays_on_home() {
-        let mut app = App::new();
+        let mut app = App::new(ScanTask::failed("not scanned in tests"));
         press(&mut app, KeyCode::Esc);
         assert_eq!(app.depth(), 1);
         assert!(!app.should_quit());
@@ -137,14 +153,14 @@ mod tests {
 
     #[test]
     fn q_quits() {
-        let mut app = App::new();
+        let mut app = App::new(ScanTask::failed("not scanned in tests"));
         press(&mut app, KeyCode::Char('q'));
         assert!(app.should_quit());
     }
 
     #[test]
     fn question_mark_opens_help() {
-        let mut app = App::new();
+        let mut app = App::new(ScanTask::failed("not scanned in tests"));
         press(&mut app, KeyCode::Char('?'));
         assert_eq!(app.depth(), 2);
     }

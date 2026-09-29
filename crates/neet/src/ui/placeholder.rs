@@ -3,7 +3,7 @@ use ratatui::crossterm::event::KeyEvent;
 use ratatui::layout::Rect;
 use ratatui::widgets::{Block, Paragraph};
 
-use super::app::{Action, Screen};
+use super::app::{Action, Context, Screen};
 
 /// Stands in for a feature screen until it is built.
 pub struct Placeholder {
@@ -17,7 +17,7 @@ impl Placeholder {
 }
 
 impl Screen for Placeholder {
-    fn draw(&mut self, frame: &mut Frame, area: Rect) {
+    fn draw(&mut self, frame: &mut Frame, area: Rect, _context: &Context) {
         let block = Block::bordered().title(format!(" {} ", self.title));
         let body = Paragraph::new("This screen is not built yet.").block(block);
         frame.render_widget(body, area);

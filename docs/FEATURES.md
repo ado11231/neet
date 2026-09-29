@@ -78,7 +78,7 @@
 | Folder tree and totals | Stores each folder's parent and children, adds up folder totals, and rebuilds paths. | P1 | Built |
 | Disk browser | Browses folders in columns, sorted by size, name, or file count, with a bar for each folder's share. | P1 | Planned |
 | Home status and disk gauge | On the Home screen, shows free and used space, scan progress, whether the scan was complete, and how much Clean can free. | P1 | Planned |
-| Scan progress and warnings | Keeps the screen responsive. Lists folders it could not read and disks it skipped. Marks a scan as incomplete, including when Full Disk Access is missing. | P1 | Planned |
+| Scan progress and warnings | Keeps the screen responsive. Lists folders it could not read and disks it skipped. Marks a scan as incomplete, including when Full Disk Access is missing. The scan runs in the background and Home shows progress and counts. A list of the skipped paths is not built. | P1 | In Progress |
 | Large and old file filters | Finds files above a size you choose, or not changed since a date you choose, and opens them in Disk. Finding a file does not make it a cleanup target. | P1.5 | Planned |
 | Treemap | A view where each folder's area shows its size. How you interact with it is not designed yet. | P2 | Proposed |
 
@@ -232,7 +232,7 @@
 
 | Feature | What It Does | Phase | Status |
 | --- | --- | --- | --- |
-| Home menu | Opens on a Home screen with ASCII art and a menu of features, moved with the arrow keys. `Enter` opens a screen and `Esc` goes back. Works with Vim keys outside text fields. Features not built yet show dimmed. The art is a placeholder, and the status panel does not show the disk or scan yet. | P1 | In Progress |
+| Home menu | Opens on a Home screen with ASCII art and a menu of features, moved with the arrow keys. `Enter` opens a screen and `Esc` goes back. Works with Vim keys outside text fields. Features not built yet show dimmed. The art is a placeholder. The status panel shows the scan, but not the disk gauge yet. | P1 | In Progress |
 | Help | Press `?` for help on the current screen and the selected rule. Screen help works. Rule help waits on Clean. | P1 | In Progress |
 | Command line | Run `neet` to open it. The only options are `--help` and `--version`. Cleanup happens only inside the interface. | P1 | Built |
 | Install with Homebrew or Cargo | Packages for both. Neither is published yet. | P1 | Planned |

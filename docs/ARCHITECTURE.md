@@ -91,14 +91,14 @@ loop:
 | File | Will Hold |
 | --- | --- |
 | `ui/app.rs` | The `App`, the screen stack, the shared scan, and the `Action` type. |
-| `ui/event.rs` | The event type and the loop that waits for keys, scan messages, and ticks. |
+| `ui/scan.rs` | Runs the scan on a background thread, and collects its progress and result for the screens. |
 | `ui/home.rs` | The Home screen: art, menu, and status panel. |
 | `ui/art.rs` | The ASCII art. |
 | `ui/disk.rs`, `ui/clean.rs` | The P1 feature screens. |
 
 ### A Scan
 
-* `scan` does every step except the last. The program does not call it yet.
+* The program runs `scan` on a background thread when it starts, and the Home screen shows its progress.
 
 ```text
 scan request
@@ -221,12 +221,14 @@ selected rules
 | `crates/neet-core/src/rules.rs` | Empty. Will read and check rules. |
 | `crates/neet-core/src/safety.rs` | Empty. Will hold `validate_deletable` and `ValidatedPath`. |
 | `crates/neet-core/src/clean.rs` | Empty. Will plan cleanups and move items to the Trash. |
-| `crates/neet/Cargo.toml` | The program's dependencies: `neet-core` and `ratatui`. |
+| `crates/neet/Cargo.toml` | The program's dependencies: `neet-core` and `ratatui`, and `tempfile` for tests. |
 | `crates/neet/src/main.rs` | The program's entry point. Handles `--help` and `--version`, then opens the terminal interface. |
 | `crates/neet/src/ui/mod.rs` | The interface loop. Draws the screen, waits for a key, and passes it on. |
-| `crates/neet/src/ui/app.rs` | `App`, the `Screen` trait, `Action`, and the screen stack. Handles `Esc`, `q`, and `?` for every screen. Has tests. |
+| `crates/neet/src/ui/app.rs` | `App`, the `Screen` trait, `Action`, `Context`, and the screen stack. Handles `Esc`, `q`, and `?` for every screen. Has tests. |
 | `crates/neet/src/ui/home.rs` | The Home screen: art, menu, and info panel. Has tests. |
 | `crates/neet/src/ui/art.rs` | The ASCII art. A placeholder wordmark for now. |
+| `crates/neet/src/ui/scan.rs` | `ScanTask` runs the home folder scan on its own thread, and `ScanStatus` holds its progress or result. Has tests. |
+| `crates/neet/src/ui/format.rs` | Formats sizes the way Finder does, and counts with commas. Has tests. |
 | `crates/neet/src/ui/help.rs` | The help box opened by `?`, drawn over the current screen. |
 | `crates/neet/src/ui/placeholder.rs` | Stands in for Disk and Clean until they are built. |
 | `.github/workflows/ci.yml` | Checks formatting, runs Clippy and tests, and runs `cargo check` for Apple silicon and Intel targets. |

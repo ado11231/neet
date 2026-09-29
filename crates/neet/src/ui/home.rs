@@ -5,9 +5,11 @@ use ratatui::style::{Style, Stylize};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, List, ListItem, ListState, Padding, Paragraph, Wrap};
 
-use super::app::{Action, Screen};
+use super::app::{Action, Context, Screen};
 use super::art::ART;
+use super::format;
 use super::placeholder::Placeholder;
+use super::scan::ScanStatus;
 
 /// Below this width the art is hidden and the menu fills the screen.
 const MIN_ART_WIDTH: u16 = 90;
@@ -151,18 +153,64 @@ impl Home {
         frame.render_stateful_widget(list, area, &mut self.list);
     }
 
-    fn draw_info(&self, frame: &mut Frame, area: Rect) {
+    fn draw_info(&self, frame: &mut Frame, area: Rect, scan: &ScanStatus) {
         let entry = &ENTRIES[self.selected()];
-        let text = Text::from(vec![
+        let mut lines = vec![
             Line::from(entry.label).bold(),
             Line::from(entry.about),
             Line::default(),
-            Line::from("Scan not started yet.").dark_gray(),
-        ]);
+        ];
+        lines.extend(scan_lines(scan));
+        let text = Text::from(lines);
         let info = Paragraph::new(text)
             .wrap(Wrap { trim: true })
             .block(Block::bordered().padding(Padding::horizontal(1)));
         frame.render_widget(info, area);
+    }
+}
+
+/// Describes the home folder scan for the info panel.
+fn scan_lines(scan: &ScanStatus) -> Vec<Line<'static>> {
+    match scan {
+        ScanStatus::Running(progress) => vec![
+            Line::from("Scanning your home folder…").cyan(),
+            Line::from(format!(
+                "{} items · {}",
+                format::count(progress.entries),
+                format::size(progress.bytes)
+            ))
+            .dark_gray(),
+        ],
+        ScanStatus::Done { scan, elapsed } => {
+            let entries = u64::try_from(scan.tree.node_count() - 1).unwrap_or(u64::MAX);
+            let total = scan.tree.get(scan.tree.root()).total_size;
+            let mut lines = vec![Line::from(format!(
+                "Home folder: {} in {} items, scanned in {}s.",
+                format::size(total),
+                format::count(entries),
+                elapsed.as_secs()
+            ))];
+            if !scan.is_complete() {
+                lines.push(
+                    Line::from(format!(
+                        "Incomplete: {} paths could not be read. Full Disk Access may be off.",
+                        format::count(u64::try_from(scan.errors.len()).unwrap_or(u64::MAX))
+                    ))
+                    .yellow(),
+                );
+            }
+            if !scan.other_disks.is_empty() {
+                lines.push(
+                    Line::from(format!(
+                        "Skipped {} folders on other disks.",
+                        scan.other_disks.len()
+                    ))
+                    .dark_gray(),
+                );
+            }
+            lines
+        }
+        ScanStatus::Failed(reason) => vec![Line::from(format!("Scan failed: {reason}")).red()],
     }
 }
 
@@ -185,7 +233,7 @@ fn draw_art(frame: &mut Frame, area: Rect) {
 }
 
 impl Screen for Home {
-    fn draw(&mut self, frame: &mut Frame, area: Rect) {
+    fn draw(&mut self, frame: &mut Frame, area: Rect, context: &Context) {
         let right = if area.width >= MIN_ART_WIDTH {
             let [left, right] =
                 Layout::horizontal([Constraint::Percentage(45), Constraint::Fill(1)]).areas(area);
@@ -198,7 +246,7 @@ impl Screen for Home {
         let [menu, info] =
             Layout::vertical([Constraint::Length(menu_height), Constraint::Fill(1)]).areas(right);
         self.draw_menu(frame, menu);
-        self.draw_info(frame, info);
+        self.draw_info(frame, info, context.scan);
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> Action {
@@ -245,8 +293,13 @@ mod tests {
 
     fn render(home: &mut Home, width: u16, height: u16) -> String {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        let scan = ScanStatus::Running(neet_core::scan::Progress {
+            entries: 1_234,
+            bytes: 5_000_000,
+        });
+        let context = Context { scan: &scan };
         terminal
-            .draw(|frame| home.draw(frame, frame.area()))
+            .draw(|frame| home.draw(frame, frame.area(), &context))
             .unwrap();
         let buffer = terminal.backend().buffer();
         buffer
@@ -288,6 +341,7 @@ mod tests {
         assert!(screen.contains("███"));
         assert!(screen.contains("Disk"));
         assert!(screen.contains("soon"));
+        assert!(screen.contains("1,234 items · 5.0 MB"));
     }
 
     #[test]

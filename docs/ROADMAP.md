@@ -3,7 +3,7 @@
 * What neet does today, what comes next, and how each step is accepted.
 * For anyone tracking progress or picking the next piece of work.
 * A milestone is only marked complete after its checks pass.
-* Last updated September 28, 2026. The 23 library tests and 9 interface tests pass. The program opens the Home screen.
+* Last updated September 28, 2026. The 23 library tests and 13 interface tests pass. The program opens the Home screen.
 * Features and their status live in [FEATURES.md](FEATURES.md). Screens live in [INTERFACE.md](INTERFACE.md).
 
 ## Contents
@@ -67,10 +67,11 @@
   1. `neet --help` and `neet --version`. Any other option is refused.
   2. The interface loop, the screen stack, and `Esc`, `q`, and `?` on every screen.
   3. The Home screen: art, menu, and info panel. Unbuilt features are dimmed and skipped.
-  4. Tests for the menu, the screen stack, and the Home layout at wide and narrow sizes.
+  4. The home folder scan runs on a background thread from the start. Home shows live progress, then the total, and flags incomplete scans and skipped disks.
+  5. Tests for the menu, the screen stack, the background scan, size formatting, and the Home layout at wide and narrow sizes.
 * **Remaining:**
   1. The final ASCII art.
-  2. Disk and scan status in the Home panel.
+  2. The disk gauge in the Home panel, and a list of the paths the scan skipped.
   3. The column browser, size bars, sorting, navigation, progress, warnings, and disk gauge.
 * **Done when** the screen keeps responding during a scan, and marks incomplete scans.
 

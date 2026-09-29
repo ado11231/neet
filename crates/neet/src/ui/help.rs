@@ -5,7 +5,7 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Clear, Paragraph};
 
-use super::app::{Action, Screen};
+use super::app::{Action, Context, Screen};
 
 /// A box listing the keys for the screen underneath.
 pub struct Help {
@@ -19,7 +19,7 @@ impl Help {
 }
 
 impl Screen for Help {
-    fn draw(&mut self, frame: &mut Frame, area: Rect) {
+    fn draw(&mut self, frame: &mut Frame, area: Rect, _context: &Context) {
         let lines: Vec<Line> = self
             .keys
             .iter()
