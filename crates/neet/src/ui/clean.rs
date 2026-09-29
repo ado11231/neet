@@ -4,6 +4,7 @@ use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::{Instant, SystemTime};
 
+use neet_core::apps;
 use neet_core::clean::{self, Plan, RulePlan, SkipReason};
 use neet_core::rules::{self, RuleError, Tier};
 use neet_core::safety::CleanupRoots;
@@ -96,6 +97,10 @@ pub struct Clean {
     list: ListState,
     /// What you have typed to select an `expert` rule, while the box is open
     typing: Option<String>,
+    /// Whether an app is open. A rule whose app is open cannot be selected.
+    is_running: fn(&str) -> bool,
+    /// A message about the last key, such as an app to close first
+    note: Option<String>,
 }
 
 impl Clean {
@@ -127,22 +132,56 @@ impl Clean {
             state,
             list: ListState::default().with_selected(Some(0)),
             typing: None,
+            is_running: apps::is_running,
+            note: None,
         }
+    }
+
+    /// Shows a finished plan. `safe` rules whose app is open start cleared.
+    fn show(&mut self, mut planned: Planned) {
+        let mut cleared = Vec::new();
+        for rule in planned.plan.rules.iter_mut().filter(|rule| rule.selected) {
+            if let Some(app) = self.open_app(rule) {
+                rule.selected = false;
+                cleared.push(format!("{} ({app} is open)", rule.rule.name));
+            }
+        }
+        if !cleared.is_empty() {
+            self.note = Some(format!("Not selected: {}.", cleared.join(", ")));
+        }
+        self.state = State::Ready(Arc::new(planned));
+    }
+
+    /// The first app this rule needs closed that is open
+    fn open_app(&self, rule: &RulePlan) -> Option<String> {
+        rule.rule
+            .requires_quit
+            .iter()
+            .find(|app| (self.is_running)(app))
+            .cloned()
     }
 
     #[cfg(test)]
     fn ready(planned: Planned) -> Self {
-        Self::from_state(State::Ready(Arc::new(planned)))
+        Self::ready_with(planned, |_| false)
+    }
+
+    #[cfg(test)]
+    fn ready_with(planned: Planned, is_running: fn(&str) -> bool) -> Self {
+        let mut clean = Self::from_state(State::Failed(String::new()));
+        clean.is_running = is_running;
+        clean.show(planned);
+        clean
     }
 
     fn poll(&mut self) {
         if let State::Planning { result, .. } = &self.state
             && let Ok(outcome) = result.try_recv()
         {
-            self.state = match outcome {
-                Ok(planned) => State::Ready(Arc::new(planned)),
-                Err(reason) => State::Failed(reason),
-            };
+            match outcome {
+                Ok(planned) => self.show(planned),
+                Err(reason) => self.state = State::Failed(reason),
+            }
         }
     }
 
@@ -152,6 +191,10 @@ impl Clean {
 
     fn toggle(&mut self) {
         let index = self.selected();
+        let open_app = self
+            .selected_rule()
+            .filter(|rule| !rule.selected)
+            .and_then(|rule| self.open_app(rule));
         let State::Ready(planned) = &mut self.state else {
             return;
         };
@@ -166,7 +209,12 @@ impl Clean {
         if rule.items.is_empty() {
             return;
         }
-        if rule.rule.tier == Tier::Expert && !rule.selected {
+        if let Some(app) = open_app {
+            self.note = Some(format!(
+                "Close {app} first, then select {}.",
+                rule.rule.name
+            ));
+        } else if rule.rule.tier == Tier::Expert && !rule.selected {
             // Selecting an expert rule needs its ID typed out.
             self.typing = Some(String::new());
         } else {
@@ -500,6 +548,10 @@ impl Screen for Clean {
             return;
         };
         let mut lines = problems(&planned.errors);
+        if let Some(note) = &self.note {
+            lines.insert(0, Line::from(note.clone()).yellow());
+            lines.insert(1, Line::default());
+        }
         let room = usize::from(detail_area.height.saturating_sub(2)).saturating_sub(lines.len());
         let width = usize::from(detail_area.width.saturating_sub(4));
         lines.extend(details(rule, &planned.home, room, width));
@@ -517,6 +569,7 @@ impl Screen for Clean {
             self.type_key(key.code);
             return Action::None;
         }
+        self.note = None;
         let last = self.rule_count().saturating_sub(1);
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
@@ -767,6 +820,27 @@ mod tests {
         assert!(matches!(clean.back(), Action::None));
         assert!(!clean.takes_text());
         assert!(matches!(clean.back(), Action::Back));
+    }
+
+    #[test]
+    fn a_rule_cannot_be_selected_while_its_app_is_open() {
+        let dir = fake_home();
+        let mut clean = Clean::ready_with(planned(&dir), |app| app == "com.apple.dt.Xcode");
+
+        assert!(!is_selected(&clean, "xcode-derived-data"));
+        assert!(render(&mut clean).contains("Not selected: Xcode DerivedData"));
+
+        select_rule(&mut clean, "xcode-derived-data");
+        press(&mut clean, KeyCode::Char(' '));
+        assert!(!is_selected(&clean, "xcode-derived-data"));
+        assert!(render(&mut clean).contains("Close com.apple.dt.Xcode first"));
+
+        select_rule(&mut clean, "npm-cache");
+        press(&mut clean, KeyCode::Char(' '));
+        assert!(
+            is_selected(&clean, "npm-cache"),
+            "rules without the app still work"
+        );
     }
 
     #[test]

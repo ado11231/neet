@@ -23,7 +23,7 @@
 | M1 | A full scan of the home folder | Disk analysis | P1 | Complete |
 | M2 | Home screen, disk browser, and keyboard keys | Disk analysis, interface | P1 | Complete |
 | M3 | Rules, risk tiers, and dry run plans in Clean | Cleanup, interface | P1 | Complete |
-| M4 | Review, path checks, open app checks, and moving to the Trash | Cleanup, safety | P1 | In Progress |
+| M4 | Review, path checks, open app checks, and moving to the Trash | Cleanup, safety | P1 | Complete |
 | M5 | Packages, testing on real Macs, and the P1 release checks | Distribution | P1 | Planned |
 | M6 | Large and old file filters, and the app removal review | Disk analysis, apps | P1.5 | Planned. App removal scope is open. |
 | M7 | Check and build the P2 proposals | Startup, SSH, dotfiles, AI tools, settings, preferences, treemap | P2 | Proposed |
@@ -86,10 +86,9 @@
 * **Done when** every bundled rule loads and finds only allowed targets, without changing any file. A test plans every bundled rule in a fake home folder and checks that nothing changed.
 * Moved to M4: the path review opened with `Enter`, selecting `expert` rules with a typed confirmation, and blocking rules whose app is open.
 
-## In Progress
-
 ### M4: Cleanup
 
+* Completed September 29, 2026.
 * **Built:**
   1. `clean::run` moves the selected items, checking each one again right before the move: its app is closed, the path check passes, its real path, device, and inode are unchanged, and it is still older than the minimum age. It reports progress, what moved, and what was skipped and why.
   2. `apps::is_running` checks for open apps with `lsappinfo`, which never opens the app.
@@ -100,9 +99,14 @@
   7. Selecting an `expert` rule by typing its ID. While you type, every key but `Esc` goes to the box, so `q` and `?` can be typed. 3 tests.
   8. Home shows used space beside Disk, and beside Clean the total every rule found. `Estimate` plans it in the background when neet opens and again after each cleanup. 1 test, plus the Home layout test.
   9. `d` in Disk plans a cleanup of the selected item with `clean::plan_path`, through the same path check, review, and question as any rule. Items outside the cleanup folders, and names with a `*`, are refused with a reason. 2 tests.
-* **Remaining:**
-  1. The manual test: move a harmless temporary file to the Trash, then restore it with Put Back.
-* **Done when** the safety tests in [SAFETY.md](SAFETY.md#tests) pass, and Finder restores a test item.
+  10. Clean will not select a rule while its app is open, and a `safe` rule whose app is open starts cleared, with a note. 1 test.
+  11. The manual test on macOS 26.5: a test folder in `~/Library/Caches` went to the Trash through the real planner, checks, and Finder, and Put Back restored it with its file. The first run found two bugs in the Finder script, both fixed.
+* **Done when** the safety tests in [SAFETY.md](SAFETY.md#tests) pass, and Finder restores a test item. The cleanup tests pass, and Put Back restored the test folder.
+* Items moved from Disk stay listed there until neet scans again.
+
+## In Progress
+
+* Nothing. M5 is next.
 
 ## Planned
 

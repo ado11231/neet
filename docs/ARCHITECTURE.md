@@ -2,7 +2,7 @@
 
 * How neet is built: its parts, how data moves between them, and what each file does.
 * For people working on the code. To learn what neet does, read [FEATURES.md](FEATURES.md).
-* Much of this is the planned design. Today the scanner, the Home, Disk, and Clean screens, the rules, and dry run plans exist. Moving files to the Trash does not exist yet.
+* Much of this is the planned design. Today the scanner, the Home, Disk, and Clean screens, the rules, dry run plans, and moving files to the Trash exist.
 * For progress, read [ROADMAP.md](ROADMAP.md). For the planned screens, read [INTERFACE.md](INTERFACE.md).
 
 ## Contents
@@ -243,5 +243,5 @@ selected rules
 | `crates/neet/src/ui/disk.rs` | The Disk screen: a folder column with size bars, a preview column, sorting, and navigation over the scan tree. `d` plans a cleanup of the selected item and opens the review, or a notice that says why it cannot be cleaned. Has tests. |
 | `crates/neet/src/ui/review.rs` | `Review` lists every path of the selected rules. `Notice` shows a short message in a box. `Confirm` asks before anything moves and blocks `q`. `Cleanup` runs `clean::run` on its own thread with a progress bar, refuses `Esc` and `q` until done, then shows what moved and what was skipped, and goes back to Home. Has tests, with a stand in for Finder. |
 | `crates/neet/src/ui/skipped.rs` | The Skipped screen: unreadable paths with reasons, other disks, and a Full Disk Access hint. Has tests. |
-| `crates/neet/src/ui/clean.rs` | The Clean screen. Loads the rules and makes the dry run plan on its own thread, then lists each rule with its tier, items, and size. `Space` selects a rule, the title shows the selection totals, and a panel explains the selected rule and lists every path it found or skipped. An `expert` rule is selected by typing its ID. `Estimate` plans every rule in the background for the Home summary. Has tests. |
+| `crates/neet/src/ui/clean.rs` | The Clean screen. Loads the rules and makes the dry run plan on its own thread, then lists each rule with its tier, items, and size. `Space` selects a rule, the title shows the selection totals, and a panel explains the selected rule and lists every path it found or skipped. An `expert` rule is selected by typing its ID, and a rule whose app is open cannot be selected. `Estimate` plans every rule in the background for the Home summary. Has tests. |
 | `.github/workflows/ci.yml` | Checks formatting, runs Clippy and tests, checks the code builds with the minimum Rust version, and runs `cargo check` for Apple silicon and Intel targets. Caches Cargo files, and cancels a run when a newer push replaces it. |

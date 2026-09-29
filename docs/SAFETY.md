@@ -279,4 +279,4 @@ min_age_days = 0
   19. PATH changes to a file outside the Shell group, or through a symbolic link that leads out, and PATH changes undone from their backups.
   20. Project build folders that Git does not ignore, that have no project file beside them, or that changed within the minimum age, all refused.
 * Automated tests never use a real home folder, and never change real Mac settings.
-* The M4 manual test moves a harmless temporary file to the Trash, then restores it with Finder's Put Back.
+* The M4 manual test moves a harmless temporary file to the Trash, then restores it with Finder's Put Back. It passed on macOS 26.5 on September 29, 2026.
