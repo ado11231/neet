@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
@@ -11,9 +12,9 @@ use neet_core::safety::CleanupRoots;
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
-use ratatui::style::{Style, Stylize};
+use ratatui::style::Stylize;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Padding, Paragraph, Wrap};
+use ratatui::widgets::{Block, Cell, Clear, Padding, Paragraph, Row, Table, TableState, Wrap};
 
 use super::app::{Action, Context, Screen};
 use super::format;
@@ -95,7 +96,7 @@ enum State {
 /// Lists what each cleanup rule found, and lets you choose rules.
 pub struct Clean {
     state: State,
-    list: ListState,
+    list: TableState,
     /// What you have typed to select an `expert` rule, while the box is open
     typing: Option<String>,
     /// Whether an app is open. A rule whose app is open cannot be selected.
@@ -131,7 +132,7 @@ impl Clean {
     fn from_state(state: State) -> Self {
         Self {
             state,
-            list: ListState::default().with_selected(Some(0)),
+            list: TableState::default().with_selected(Some(0)),
             typing: None,
             is_running: apps::is_running,
             note: None,
@@ -140,6 +141,11 @@ impl Clean {
 
     /// Shows a finished plan. `safe` rules whose app is open start cleared.
     fn show(&mut self, mut planned: Planned) {
+        // Largest first, and rules that found nothing last
+        planned
+            .plan
+            .rules
+            .sort_by_key(|rule| (rule.items.is_empty(), Reverse(rule.size())));
         let mut cleared = Vec::new();
         for rule in planned.plan.rules.iter_mut().filter(|rule| rule.selected) {
             if let Some(app) = self.open_app(rule) {
@@ -304,7 +310,7 @@ fn tier_name(tier: Tier) -> &'static str {
 }
 
 fn tier_span(tier: Tier) -> Span<'static> {
-    let span = Span::raw(format!("{:<8}", tier_name(tier)));
+    let span = Span::raw(tier_name(tier));
     match tier {
         Tier::Safe => span.green(),
         Tier::Caution => span.yellow(),
@@ -316,10 +322,7 @@ fn tier_meaning(tier: Tier) -> &'static str {
     match tier {
         Tier::Safe => "The files come back, and the only cost is time. Selected from the start.",
         Tier::Caution => "You may need to download, index, or sign in again. You select it.",
-        Tier::Expert => {
-            "The files may not exist anywhere else. Selecting it needs a typed confirmation, \
-             which is not built yet."
-        }
+        Tier::Expert => "The files may not exist anywhere else. You type its ID to select it.",
     }
 }
 
@@ -335,6 +338,8 @@ pub(super) fn skip_reason(reason: &SkipReason, min_age_days: Option<u32>) -> Str
     match reason {
         SkipReason::Refused(error) => format!("refused: {error}"),
         SkipReason::TooNew => match min_age_days {
+            // Newer than the moment the plan started: written while neet looked
+            Some(0) => "changed while neet was looking".to_string(),
             Some(days) => format!("changed in the last {days} days"),
             None => "changed too recently".to_string(),
         },
@@ -351,86 +356,159 @@ pub(super) fn count(value: usize) -> String {
     format::count(u64::try_from(value).unwrap_or(u64::MAX))
 }
 
-fn rule_row(rule: &RulePlan) -> ListItem<'static> {
-    let mark = if rule.selected { "[x] " } else { "[ ] " };
-    let items = rule.items.len();
-    let found = if items == 0 {
-        "nothing found".to_string()
-    } else {
-        format!(
-            "{} {}",
-            count(items),
-            if items == 1 { "item " } else { "items" }
-        )
-    };
-    let line = Line::from(vec![
-        Span::raw(mark),
-        Span::raw(format!("{:<24}", rule.rule.name)),
-        tier_span(rule.rule.tier),
-        Span::raw(format!("{found:>15}")).dark_gray(),
-        Span::raw(format!("{:>11}", format::size(rule.size()))),
-    ]);
-    if items == 0 {
-        ListItem::new(line).dark_gray()
-    } else {
-        ListItem::new(line)
+/// A count and a noun, such as `1 item` or `27 items`
+pub(super) fn items(value: usize) -> String {
+    format!(
+        "{} {}",
+        count(value),
+        if value == 1 { "item" } else { "items" }
+    )
+}
+
+/// Below this width the details go under the list instead of beside it.
+const MIN_SIDE_WIDTH: u16 = 100;
+
+/// A checkbox: green when selected, and blank when there is nothing to select
+pub(super) fn checkbox(selected: bool, selectable: bool) -> Span<'static> {
+    match (selectable, selected) {
+        (false, _) => Span::raw("   "),
+        (true, true) => Span::raw("[✓]").green().bold(),
+        (true, false) => Span::raw("[ ]").dark_gray(),
     }
 }
 
-/// The selected rule, explained: what it removes, its tier, and every path
-/// the dry run found or skipped.
+/// One rule as a table row. `current` is the row the arrow is on, whose
+/// name turns cyan, so the checkbox and risk keep their own colors.
+fn rule_row(rule: &RulePlan, current: bool) -> Row<'static> {
+    let items = rule.items.len();
+    let name = Span::raw(rule.rule.name.clone());
+    let name = if current { name.cyan().bold() } else { name };
+    if items == 0 {
+        return Row::new([
+            Cell::from(checkbox(false, false)),
+            Cell::from(name),
+            Cell::from(tier_span(rule.rule.tier)),
+            Cell::from(Line::from("none").right_aligned()),
+            Cell::from(Line::from("·").right_aligned()),
+        ])
+        .dark_gray();
+    }
+    let found = self::items(items);
+    Row::new([
+        Cell::from(checkbox(rule.selected, true)),
+        Cell::from(name),
+        Cell::from(tier_span(rule.rule.tier)),
+        Cell::from(Line::from(found).dark_gray().right_aligned()),
+        Cell::from(Line::from(format::size(rule.size())).right_aligned()),
+    ])
+}
+
+/// A label and its value, lined up with the other labels
+fn field(label: &str, value: Span<'static>) -> Line<'static> {
+    Line::from(vec![Span::raw(format!("{label:<8}")).dark_gray(), value])
+}
+
+/// How many screen rows `lines` take when wrapped to `width`
+fn rows_used(lines: &[Line], width: usize) -> usize {
+    lines
+        .iter()
+        .map(|line| line.width().max(1).div_ceil(width.max(1)))
+        .sum()
+}
+
+/// The folder every path found or skipped is in, when they share one
+fn shared_folder(rule: &RulePlan) -> Option<&Path> {
+    let mut parents = rule
+        .items
+        .iter()
+        .map(|item| item.path.path())
+        .chain(rule.skipped.iter().map(|skipped| skipped.path.as_path()))
+        .map(Path::parent);
+    let first = parents.next()??;
+    parents.all(|parent| parent == Some(first)).then_some(first)
+}
+
+/// `path` as shown in the details: only its name when the rule's paths share
+/// a folder, which is shown once above them
+fn detail_path(home: &Path, path: &Path, shared: bool, width: usize) -> String {
+    if shared && let Some(name) = path.file_name() {
+        return format::shorten_middle(&name.to_string_lossy(), width);
+    }
+    format::shorten_path(&display_path(home, path), width)
+}
+
+/// Skipped paths, with a reason shared by more than two of them on one line
+fn skipped_lines(rule: &RulePlan, home: &Path, width: usize) -> Vec<Line<'static>> {
+    let shared = shared_folder(rule).is_some();
+    let mut groups: Vec<(String, Vec<&Path>)> = Vec::new();
+    for skipped in &rule.skipped {
+        let reason = skip_reason(&skipped.reason, Some(rule.rule.min_age_days));
+        match groups.iter_mut().find(|(known, _)| *known == reason) {
+            Some((_, paths)) => paths.push(&skipped.path),
+            None => groups.push((reason, vec![&skipped.path])),
+        }
+    }
+    let mut lines = Vec::new();
+    for (reason, paths) in groups {
+        if paths.len() > 2 {
+            lines.push(
+                Line::from(format!(
+                    "{:>9}  {reason}",
+                    format!("{} paths", count(paths.len()))
+                ))
+                .dark_gray(),
+            );
+            continue;
+        }
+        for path in paths {
+            let room = width.saturating_sub(reason.chars().count() + 13);
+            lines.push(
+                Line::from(format!(
+                    "{:>9}  {}  {reason}",
+                    "",
+                    detail_path(home, path, shared, room)
+                ))
+                .dark_gray(),
+            );
+        }
+    }
+    lines
+}
+
+/// The selected rule, explained: what it removes, its risk, and every path
+/// the dry run found or skipped, cut to fit `room` rows of `width`.
 fn details(rule: &RulePlan, home: &Path, room: usize, width: usize) -> Vec<Line<'static>> {
     let mut lines = vec![
         Line::from(rule.rule.description.clone()),
-        Line::from(vec![
-            Span::raw(tier_name(rule.rule.tier)).bold(),
-            Span::raw(format!(" · {}", tier_meaning(rule.rule.tier))).dark_gray(),
-        ]),
+        Line::default(),
+        field("Risk", tier_span(rule.rule.tier).bold()),
+        Line::from(tier_meaning(rule.rule.tier)).dark_gray(),
+        Line::default(),
     ];
-    // Lines that wrap take more than one row.
-    let extra_rows: usize = lines
-        .iter()
-        .map(|line| line.width().saturating_sub(1) / width.max(1))
-        .sum();
     if !rule.rule.requires_quit.is_empty() {
-        lines.push(
-            Line::from(format!(
-                "Close first: {}",
-                rule.rule.requires_quit.join(", ")
-            ))
-            .dark_gray(),
-        );
+        lines.push(field(
+            "Close",
+            Span::raw(rule.rule.requires_quit.join(", ")),
+        ));
     }
     if rule.rule.min_age_days > 0 {
-        lines.push(
-            Line::from(format!(
-                "Keeps anything changed in the last {} days.",
+        lines.push(field(
+            "Keeps",
+            Span::raw(format!(
+                "anything changed in the last {} days",
                 rule.rule.min_age_days
-            ))
-            .dark_gray(),
-        );
+            )),
+        ));
     }
-    lines.push(Line::default());
+    let shared = shared_folder(rule);
+    if let Some(folder) = shared {
+        lines.push(field("Folder", Span::raw(display_path(home, folder))));
+    }
+    if lines.last().is_some_and(|line| line.width() > 0) {
+        lines.push(Line::default());
+    }
 
-    let mut rows: Vec<Line<'static>> = rule
-        .items
-        .iter()
-        .map(|item| {
-            Line::from(vec![
-                Span::raw(format!("{:>10}  ", format::size(item.size))),
-                Span::raw(display_path(home, item.path.path())),
-            ])
-        })
-        .collect();
-    rows.extend(rule.skipped.iter().map(|skipped| {
-        Line::from(format!(
-            "   skipped  {}  {}",
-            display_path(home, &skipped.path),
-            skip_reason(&skipped.reason, Some(rule.rule.min_age_days))
-        ))
-        .dark_gray()
-    }));
-    if rows.is_empty() {
+    if rule.items.is_empty() && rule.skipped.is_empty() {
         let paths: Vec<String> = rule
             .rule
             .paths
@@ -441,13 +519,60 @@ fn details(rule: &RulePlan, home: &Path, room: usize, width: usize) -> Vec<Line<
         return lines;
     }
 
-    let room = room.saturating_sub(lines.len() + extra_rows).max(1);
-    if rows.len() > room {
-        let more = rows.len() - (room - 1);
-        rows.truncate(room - 1);
-        rows.push(Line::from(format!("   and {} more", count(more))).dark_gray());
+    let mut largest: Vec<_> = rule.items.iter().collect();
+    largest.sort_by_key(|item| Reverse(item.size));
+    let path_room = width.saturating_sub(11);
+    let mut found: Vec<Line<'static>> = largest
+        .iter()
+        .map(|item| {
+            Line::from(vec![
+                Span::raw(format!("{:>9}  ", format::size(item.size))),
+                Span::raw(detail_path(
+                    home,
+                    item.path.path(),
+                    shared.is_some(),
+                    path_room,
+                )),
+            ])
+        })
+        .collect();
+    let mut skipped = skipped_lines(rule, home, width);
+
+    // Fit both lists in what is left, giving skipped paths at most a third.
+    let headings = usize::from(!found.is_empty()) + 2 * usize::from(!skipped.is_empty());
+    let left = room.saturating_sub(rows_used(&lines, width) + headings);
+    let skipped_room = skipped.len().min((left / 3).max(2));
+    let found_room = left.saturating_sub(skipped_room).max(2);
+    for (list, room) in [(&mut found, found_room), (&mut skipped, skipped_room)] {
+        if list.len() > room {
+            let more = list.len() - (room - 1);
+            list.truncate(room - 1);
+            list.push(Line::from(format!("{:>9}  and {} more", "", count(more))).dark_gray());
+        }
     }
-    lines.extend(rows);
+
+    if !found.is_empty() {
+        lines.push(Line::from(vec![
+            Span::raw("Found ").bold(),
+            Span::raw(format!(
+                "{} · {}",
+                items(rule.items.len()),
+                format::size(rule.size())
+            ))
+            .dark_gray(),
+        ]));
+        lines.extend(found);
+    }
+    if !skipped.is_empty() {
+        if !rule.items.is_empty() {
+            lines.push(Line::default());
+        }
+        lines.push(Line::from(vec![
+            Span::raw("Skipped ").bold(),
+            Span::raw(format!("{} left in place", count(rule.skipped.len()))).dark_gray(),
+        ]));
+        lines.extend(skipped);
+    }
     lines
 }
 
@@ -475,25 +600,142 @@ fn problems(errors: &[RuleError]) -> Vec<Line<'static>> {
 
 fn totals(planned: &Planned) -> Line<'static> {
     let plan = &planned.plan;
-    let mut spans = vec![
-        Span::raw(format!(
-            " Selected: {} items, {} ",
-            count(plan.selected_count()),
-            format::size(plan.selected_size())
-        ))
-        .bold(),
-        Span::raw("· they go to the Trash, where Put Back works ").dark_gray(),
-    ];
+    let rules = plan
+        .rules
+        .iter()
+        .filter(|rule| rule.selected && !rule.items.is_empty())
+        .count();
+    let text = Span::raw(format!(
+        " Selected: {} {} · {} · {} ",
+        count(rules),
+        if rules == 1 { "rule" } else { "rules" },
+        items(plan.selected_count()),
+        format::size(plan.selected_size())
+    ));
+    let mut spans = vec![if rules == 0 {
+        text.dark_gray()
+    } else {
+        text.green().bold()
+    }];
     if !planned.errors.is_empty() {
         spans.push(
             Span::raw(format!(
-                "· {} rule problems, listed below ",
+                "· {} rule problems, listed in the details ",
                 count(planned.errors.len())
             ))
             .yellow(),
         );
     }
     Line::from(spans)
+}
+
+/// What every rule found, for the list's bottom edge
+fn found_overall(planned: &Planned) -> Line<'static> {
+    let rules = &planned.plan.rules;
+    let found = rules.iter().filter(|rule| !rule.items.is_empty()).count();
+    let size: u64 = rules.iter().map(RulePlan::size).sum();
+    let mut spans = vec![
+        Span::raw(format!(
+            " {} of {} rules found {} ",
+            count(found),
+            count(rules.len()),
+            format::size(size)
+        ))
+        .dark_gray(),
+    ];
+    if !planned.errors.is_empty() {
+        spans.push(Span::raw(format!("· {} rule problems ", count(planned.errors.len()))).yellow());
+    }
+    Line::from(spans)
+}
+
+/// What is selected so far, rule by rule, with the total
+fn selection(planned: &Planned) -> Paragraph<'static> {
+    let chosen: Vec<&RulePlan> = planned
+        .plan
+        .rules
+        .iter()
+        .filter(|rule| rule.selected && !rule.items.is_empty())
+        .collect();
+    let block = Block::bordered()
+        .title(" Selected ")
+        .padding(Padding::horizontal(1));
+    if chosen.is_empty() {
+        return Paragraph::new(vec![
+            Line::from("Nothing selected yet.").dark_gray(),
+            Line::default(),
+            Line::from("Press Space to select a rule. Safe rules start selected, and caution rules are yours to choose.").dark_gray(),
+        ])
+        .wrap(Wrap { trim: false })
+        .block(block);
+    }
+    let mut lines: Vec<Line<'static>> = chosen
+        .iter()
+        .map(|rule| {
+            Line::from(vec![
+                Span::raw(format!("{:>9}  ", format::size(rule.size()))),
+                Span::raw(rule.rule.name.clone()),
+            ])
+        })
+        .collect();
+    lines.push(Line::default());
+    lines.push(Line::from(vec![
+        Span::raw(format!(
+            "{:>9}  ",
+            format::size(planned.plan.selected_size())
+        ))
+        .green()
+        .bold(),
+        Span::raw(format!(
+            "total, in {}",
+            items(planned.plan.selected_count())
+        ))
+        .bold(),
+    ]));
+    lines.push(Line::default());
+    lines.push(Line::from("Press Enter to see every path before anything moves.").dark_gray());
+    Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .block(block)
+}
+
+/// Every rule as a table, largest first, with `summary` on the bottom edge
+fn rules_table(planned: &Planned, current: usize, summary: Line<'static>) -> Table<'static> {
+    let rows: Vec<Row> = planned
+        .plan
+        .rules
+        .iter()
+        .enumerate()
+        .map(|(index, rule)| rule_row(rule, index == current))
+        .collect();
+    let header = Row::new([
+        Cell::from(""),
+        Cell::from("Rule"),
+        Cell::from("Risk"),
+        Cell::from(Line::from("Found").right_aligned()),
+        Cell::from(Line::from("Size").right_aligned()),
+    ])
+    .bold()
+    .bottom_margin(1);
+    Table::new(
+        rows,
+        [
+            Constraint::Length(3),
+            Constraint::Fill(1),
+            Constraint::Length(7),
+            Constraint::Length(8),
+            Constraint::Length(8),
+        ],
+    )
+    .header(header)
+    .column_spacing(2)
+    .block(
+        Block::bordered()
+            .title(" Clean ")
+            .title_bottom(summary)
+            .padding(Padding::horizontal(1)),
+    )
+    .highlight_symbol("▸ ")
 }
 
 impl Screen for Clean {
@@ -525,26 +767,32 @@ impl Screen for Clean {
             State::Ready(planned) => planned,
         };
 
-        let list_height = u16::try_from(planned.plan.rules.len() + 2).unwrap_or(u16::MAX);
-        let [list_area, detail_area] = Layout::vertical([
-            Constraint::Length(list_height.min(area.height / 2).max(3)),
-            Constraint::Fill(1),
-        ])
-        .areas(area);
+        // Border, header, gap, then one row per rule
+        let list_height = u16::try_from(planned.plan.rules.len() + 4).unwrap_or(u16::MAX);
+        let (list_area, detail_area, summary) = if area.width >= MIN_SIDE_WIDTH {
+            let [left, detail] =
+                Layout::horizontal([Constraint::Percentage(55), Constraint::Fill(1)]).areas(area);
+            let [list, cart] = Layout::vertical([
+                Constraint::Length(list_height.min(left.height * 2 / 3)),
+                Constraint::Fill(1),
+            ])
+            .areas(left);
+            frame.render_widget(selection(planned), cart);
+            (list, detail, found_overall(planned))
+        } else {
+            let [list, detail] = Layout::vertical([
+                Constraint::Length(list_height.min(area.height / 2).max(5)),
+                Constraint::Fill(1),
+            ])
+            .areas(area);
+            (list, detail, totals(planned))
+        };
 
-        let rows: Vec<ListItem> = planned.plan.rules.iter().map(rule_row).collect();
-        let list = List::new(rows)
-            .block(
-                Block::bordered()
-                    .title(" Clean ")
-                    .title_bottom(totals(planned))
-                    .padding(Padding::horizontal(1)),
-            )
-            .highlight_symbol("▸ ")
-            .highlight_style(Style::new().bold().cyan());
-        frame.render_stateful_widget(list, list_area, &mut self.list);
+        let current = self.selected();
+        let table = rules_table(planned, current, summary);
+        frame.render_stateful_widget(table, list_area, &mut self.list);
 
-        let Some(rule) = planned.plan.rules.get(self.selected()) else {
+        let Some(rule) = planned.plan.rules.get(current) else {
             return;
         };
         let mut lines = problems(&planned.errors);
@@ -552,12 +800,16 @@ impl Screen for Clean {
             lines.insert(0, Line::from(note.clone()).yellow());
             lines.insert(1, Line::default());
         }
-        let room = usize::from(detail_area.height.saturating_sub(2)).saturating_sub(lines.len());
         let width = usize::from(detail_area.width.saturating_sub(4));
+        let room = usize::from(detail_area.height.saturating_sub(2))
+            .saturating_sub(rows_used(&lines, width));
         lines.extend(details(rule, &planned.home, room, width));
         let body = Paragraph::new(lines).wrap(Wrap { trim: false }).block(
             Block::bordered()
                 .title(format!(" {} ", rule.rule.name))
+                .title_bottom(
+                    Line::from(" Items go to the Trash, where Put Back works ").dark_gray(),
+                )
                 .padding(Padding::horizontal(1)),
         );
         frame.render_widget(body, detail_area);
@@ -719,15 +971,56 @@ mod tests {
     fn lists_rules_with_tiers_and_selects_only_safe_ones() {
         let dir = fake_home();
         let mut clean = Clean::ready(planned(&dir));
+        select_rule(&mut clean, "xcode-derived-data");
 
         let screen = render(&mut clean);
 
-        assert!(screen.contains("[x] Xcode DerivedData"));
-        assert!(screen.contains("[ ] npm cache"));
+        assert!(screen.contains("[✓]  Xcode DerivedData"));
+        assert!(screen.contains("[ ]  npm cache"));
         assert!(screen.contains("caution"));
-        assert!(screen.contains("nothing found"));
-        assert!(screen.contains("Selected: 1 items"));
-        assert!(screen.contains("~/Library/Developer/Xcode/DerivedData/App-abc"));
+        assert!(screen.contains("none"));
+        assert!(screen.contains("total, in 1 item"));
+        assert!(screen.contains("Folder  ~/Library/Developer/Xcode/DerivedData"));
+        assert!(screen.contains("App-abc"));
+    }
+
+    #[test]
+    fn the_checkbox_on_the_current_row_turns_green() {
+        let dir = fake_home();
+        let mut clean = Clean::ready(planned(&dir));
+        select_rule(&mut clean, "npm-cache");
+        press(&mut clean, KeyCode::Char(' '));
+
+        let mut terminal = Terminal::new(TestBackend::new(110, 40)).unwrap();
+        let scan = super::super::scan::ScanStatus::Failed(String::new());
+        let context = Context {
+            scan: &scan,
+            disk: None,
+            cleanable: None,
+        };
+        terminal
+            .draw(|frame| clean.draw(frame, frame.area(), &context))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let width = usize::from(buffer.area.width);
+        let cells: Vec<&str> = buffer
+            .content()
+            .iter()
+            .map(ratatui::buffer::Cell::symbol)
+            .collect();
+        let row = cells
+            .chunks(width)
+            .position(|line| line.concat().contains("▸ [✓]  npm cache"))
+            .expect("the selected rule should be on the current row");
+        let column = cells[row * width..]
+            .iter()
+            .position(|cell| *cell == "✓")
+            .expect("the check should be drawn");
+
+        assert_eq!(
+            buffer.content()[row * width + column].fg,
+            ratatui::style::Color::Green
+        );
     }
 
     #[test]
@@ -738,7 +1031,7 @@ mod tests {
         select_rule(&mut clean, "npm-cache");
         press(&mut clean, KeyCode::Char(' '));
         assert!(is_selected(&clean, "npm-cache"));
-        assert!(render(&mut clean).contains("Selected: 2 items"));
+        assert!(render(&mut clean).contains("total, in 2 items"));
 
         press(&mut clean, KeyCode::Char(' '));
         assert!(!is_selected(&clean, "npm-cache"));
