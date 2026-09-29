@@ -21,7 +21,7 @@ neet is not published yet. To build it from source, install [Rust](https://rustu
 cargo install --git https://github.com/ado11231/neet neet
 ```
 
-Homebrew and crates.io packages are planned for the first release.
+A ready made program, an install script, and `cargo install neet` are planned for the first release.
 
 ## Use
 
@@ -45,7 +45,10 @@ neet
 * Files go to the Trash, never deleted, so you can put them back.
 * You review and confirm everything before it moves.
 * Your personal folders, iCloud files, keychains, and SSH keys are never touched.
-* For a full scan, give your terminal Full Disk Access in System Settings.
+* For a full scan, give your terminal Full Disk Access:
+  1. Open System Settings, then Privacy & Security, then Full Disk Access.
+  2. Turn on your terminal app, such as Terminal, iTerm, or Ghostty.
+  3. Quit and reopen the terminal, then run `neet` again.
 
 ## Learn More
 

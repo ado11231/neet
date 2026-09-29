@@ -10,7 +10,13 @@ semver_check = true
 pr_labels = ["release"]
 
 [[package]]
+name = "neet"
+# release-plz only tags the program. The tag starts dist, in release.yml,
+# which builds the programs and makes the GitHub release.
+git_release_enable = false
+
+[[package]]
 name = "neet-core"
-# The library is published to crates.io, but only the program gets a
-# GitHub release.
+# The library is only published to crates.io. No tag, so no GitHub release.
+git_tag_enable = false
 git_release_enable = false

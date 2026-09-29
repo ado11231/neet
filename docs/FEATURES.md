@@ -108,7 +108,8 @@
 | Help | `?` lists the keys for the current screen. | Done |
 | Command line | `neet` opens the app. The only options are `--help` and `--version`. | Done |
 | Refuse to run as root | Stops with an explanation if started with `sudo`. | Done |
-| Install | Homebrew and crates.io packages, and ready made programs for Apple silicon and Intel. | Planned |
+| Install | Ready made programs for Apple silicon and Intel, an install script, and `cargo install neet`. | Planned |
+| Homebrew | `brew install neet`. | Proposed |
 
 ## Planned Features
 

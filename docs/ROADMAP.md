@@ -84,12 +84,13 @@
 
 * **Ready:** release-plz keeps an open release pull request, and publishes to crates.io when it is merged. It stays open until this milestone is done.
 * **To do:**
-  1. Ready made programs for Apple silicon and Intel on each GitHub release.
-  2. A Homebrew formula.
-  3. Steps for turning on Full Disk Access.
-  4. Try removing an app owned by another user.
+  1. Try removing an app owned by another user.
+  2. The release checks below.
 * **Done:**
   1. neet refuses to run as root, and explains why.
+  2. dist builds ready made programs for Apple silicon and Intel on each release, with an install script.
+  3. Steps for turning on Full Disk Access, in the README.
+* Homebrew is left for later. It needs its own tap repository until neet is known enough for Homebrew's main list.
 * **Done when** the tests and these checks pass on both kinds of Mac:
   1. A known scan matches the sizes macOS reports.
   2. Missing Full Disk Access gives clear warnings.
