@@ -6,22 +6,22 @@ use std::time::Instant;
 
 use neet_core::apps;
 use neet_core::clean::RulePlan;
-use neet_core::removal::{self, App};
+use neet_core::removal::{self, App, Mark};
 use neet_core::safety::CleanupRoots;
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Style, Stylize};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, List, ListItem, ListState, Padding, Paragraph, Wrap};
+use ratatui::widgets::{Block, Cell, Padding, Paragraph, Row, Table, TableState, Wrap};
 
 use super::app::{Action, Context, Screen};
-use super::clean::{Planned, display_path, skip_reason};
+use super::clean::{Planned, checkbox, display_path, skip_reason};
 use super::format;
 use super::loading::Loading;
 use super::review::Review;
 
-fn step(list: &mut ListState, rows: usize, code: KeyCode) {
+fn step(list: &mut TableState, rows: usize, code: KeyCode) {
     let end = rows.saturating_sub(1);
     let index = list.selected().unwrap_or(0);
     let next = match code {
@@ -39,7 +39,7 @@ fn step(list: &mut ListState, rows: usize, code: KeyCode) {
 pub struct RemoveApp {
     roots: Option<CleanupRoots>,
     apps: Vec<App>,
-    list: ListState,
+    list: TableState,
     is_running: fn(&str) -> bool,
     note: Option<String>,
     failed: Option<String>,
@@ -62,7 +62,7 @@ impl RemoveApp {
             Err(reason) => Self {
                 roots: None,
                 apps: Vec::new(),
-                list: ListState::default(),
+                list: TableState::default(),
                 is_running: apps::is_running,
                 note: None,
                 failed: Some(reason),
@@ -70,11 +70,13 @@ impl RemoveApp {
         }
     }
 
-    fn from_apps(roots: CleanupRoots, apps: Vec<App>, is_running: fn(&str) -> bool) -> Self {
+    fn from_apps(roots: CleanupRoots, mut apps: Vec<App>, is_running: fn(&str) -> bool) -> Self {
+        // Apps neet can remove first, each group still by name
+        apps.sort_by_key(|app| app.refused.is_some());
         Self {
             roots: Some(roots),
             apps,
-            list: ListState::default().with_selected(Some(0)),
+            list: TableState::default().with_selected(Some(0)),
             is_running,
             note: None,
             failed: None,
@@ -102,49 +104,76 @@ impl RemoveApp {
 
 impl Screen for RemoveApp {
     fn draw(&mut self, frame: &mut Frame, area: Rect, _context: &Context) {
-        let block = Block::bordered()
-            .title(" Remove App ")
-            .padding(Padding::horizontal(1));
+        let block = Block::bordered().padding(Padding::horizontal(1));
         if let Some(reason) = &self.failed {
+            let block = block.title(" Remove App ");
             frame.render_widget(Paragraph::new(reason.clone()).red().block(block), area);
             return;
         }
-        let [list_area, note_area] =
-            Layout::vertical([Constraint::Fill(1), Constraint::Length(3)]).areas(area);
-        let rows: Vec<ListItem> = self
+        let home = self.roots.as_ref().map(|roots| roots.home().to_path_buf());
+        let removable = self.apps.iter().filter(|app| app.refused.is_none()).count();
+        let rows: Vec<Row> = self
             .apps
             .iter()
             .map(|app| {
+                let folder = app
+                    .path
+                    .parent()
+                    .map(|folder| match &home {
+                        Some(home) => display_path(home, folder),
+                        None => folder.display().to_string(),
+                    })
+                    .unwrap_or_default();
                 let id = app.bundle_id.clone().unwrap_or_default();
-                let mut spans = vec![
-                    Span::raw(format!("{:<30}", app.name)),
-                    Span::raw(format!("{id:<40}")).dark_gray(),
-                ];
                 match app.refused {
-                    Some(refusal) => {
-                        spans.push(Span::raw(refusal.to_string()).italic());
-                        ListItem::new(Line::from(spans)).dark_gray()
-                    }
-                    None => ListItem::new(Line::from(spans)),
+                    Some(refusal) => Row::new([
+                        Cell::from(app.name.clone()),
+                        Cell::from(id),
+                        Cell::from(folder),
+                        Cell::from(Span::raw(format!("not removable: {refusal}")).italic()),
+                    ])
+                    .dark_gray(),
+                    None => Row::new([
+                        Cell::from(app.name.clone()),
+                        Cell::from(Span::raw(id).dark_gray()),
+                        Cell::from(Span::raw(folder).dark_gray()),
+                        Cell::from(""),
+                    ]),
                 }
             })
             .collect();
-        let list = List::new(rows)
-            .block(block)
-            .highlight_symbol("▸ ")
-            .highlight_style(Style::new().bold().cyan());
-        frame.render_stateful_widget(list, list_area, &mut self.list);
+        let header = Row::new(["Name", "Bundle ID", "Folder", ""])
+            .bold()
+            .bottom_margin(1);
         let note = self.note.clone().map_or_else(
             || {
-                Line::from("Only apps directly in /Applications and ~/Applications are listed.")
+                Line::from(" Only apps directly in /Applications and ~/Applications are listed ")
                     .dark_gray()
             },
-            |note| Line::from(note).yellow(),
+            |note| Line::from(format!(" {note} ")).yellow(),
         );
-        frame.render_widget(
-            Paragraph::new(note).block(Block::bordered().padding(Padding::horizontal(1))),
-            note_area,
-        );
+        let table = Table::new(
+            rows,
+            [
+                Constraint::Fill(2),
+                Constraint::Fill(3),
+                Constraint::Length(16),
+                Constraint::Fill(2),
+            ],
+        )
+        .header(header)
+        .column_spacing(2)
+        .block(
+            block
+                .title(format!(
+                    " Remove App: {} apps you can remove ",
+                    format::count(u64::try_from(removable).unwrap_or(u64::MAX))
+                ))
+                .title_bottom(note),
+        )
+        .highlight_symbol("▸ ")
+        .row_highlight_style(Style::new().bold().cyan());
+        frame.render_stateful_widget(table, area, &mut self.list);
     }
 
     fn handle_key(&mut self, key: KeyEvent, _context: &Context) -> Action {
@@ -182,13 +211,19 @@ enum State {
     Failed(String),
 }
 
+/// Width of the folder column, such as `~/Library/Application Support`
+const FOLDER_WIDTH: u16 = 30;
+
+/// Width of the note column, such as `shared with other apps`
+const NOTE_WIDTH: u16 = 22;
+
 /// One app and the files that belong to it, each selected as SAFETY.md
 /// says. `Enter` opens the same review as Clean.
 pub struct AppFiles {
     name: String,
     bundle_id: String,
     state: State,
-    list: ListState,
+    list: TableState,
 }
 
 impl AppFiles {
@@ -214,7 +249,7 @@ impl AppFiles {
                 started: Instant::now(),
                 result,
             },
-            list: ListState::default().with_selected(Some(0)),
+            list: TableState::default().with_selected(Some(0)),
         }
     }
 
@@ -224,7 +259,7 @@ impl AppFiles {
             name: name.to_string(),
             bundle_id: bundle_id.to_string(),
             state: State::Ready(Arc::new(planned)),
-            list: ListState::default().with_selected(Some(0)),
+            list: TableState::default().with_selected(Some(0)),
         }
     }
 
@@ -251,8 +286,38 @@ impl AppFiles {
     }
 }
 
-fn file_row(rule: &RulePlan, home: &Path) -> ListItem<'static> {
-    let mark = if rule.selected { "[x] " } else { "[ ] " };
+/// Why a file starts selected or not, from its mark, for the line under the
+/// list
+fn explain(rule: &RulePlan) -> &'static str {
+    let marks = [
+        Mark::MayBeYourData,
+        Mark::Settings,
+        Mark::SharedWithOtherApps,
+        Mark::StartsOnItsOwn,
+        Mark::MatchedByName,
+    ];
+    let mark = marks
+        .into_iter()
+        .find(|mark| mark.label() == rule.rule.description)
+        .unwrap_or(Mark::None);
+    match mark {
+        Mark::None if rule.rule.name == "The app" => "The app itself.",
+        Mark::None => "Files the app makes again when it needs them. Selected from the start.",
+        Mark::MayBeYourData => {
+            "May hold things you made or saved in the app. Look inside before selecting it."
+        }
+        Mark::Settings => "The app's settings. Keep them if you may install the app again.",
+        Mark::SharedWithOtherApps => "Other apps from the same maker may use it too.",
+        Mark::StartsOnItsOwn => "Starts a helper program on its own, such as when you log in.",
+        Mark::MatchedByName => {
+            "Found by the app's name, not its bundle ID, so it may belong to something else."
+        }
+    }
+}
+
+/// One file as a table row. `current` is the row the arrow is on, whose name
+/// turns cyan, so the checkbox and note keep their own colors.
+fn file_row(rule: &RulePlan, home: &Path, current: bool, name_width: usize) -> Row<'static> {
     let (path, size, note) = match (rule.items.first(), rule.skipped.first()) {
         (Some(item), _) => (
             display_path(home, item.path.path()),
@@ -266,21 +331,20 @@ fn file_row(rule: &RulePlan, home: &Path) -> ListItem<'static> {
         ),
         (None, None) => (String::new(), String::new(), String::new()),
     };
-    let line = Line::from(vec![
-        Span::raw(mark),
-        Span::raw(format!("{size:>10}  ")),
-        Span::raw(path),
-        Span::raw(if note.is_empty() {
-            String::new()
-        } else {
-            format!("  {note}")
-        })
-        .yellow(),
+    let (folder, name) = path.rsplit_once('/').unwrap_or(("", path.as_str()));
+    let name = Span::raw(format::shorten_middle(name, name_width));
+    let name = if current { name.cyan().bold() } else { name };
+    let row = Row::new([
+        Cell::from(checkbox(rule.selected, !rule.items.is_empty())),
+        Cell::from(Line::from(size).right_aligned()),
+        Cell::from(name),
+        Cell::from(Span::raw(format::shorten_path(folder, FOLDER_WIDTH.into())).dark_gray()),
+        Cell::from(Span::raw(note).yellow()),
     ]);
     if rule.items.is_empty() {
-        ListItem::new(line).dark_gray()
+        row.dark_gray()
     } else {
-        ListItem::new(line)
+        row
     }
 }
 
@@ -315,24 +379,74 @@ impl Screen for AppFiles {
             State::Ready(planned) => Arc::clone(planned),
         };
         let plan = &planned.plan;
-        let block = block.title_bottom(
-            Line::from(format!(
-                " Selected: {} items, {} · they go to the Trash, where Put Back works ",
-                format::count(u64::try_from(plan.selected_count()).unwrap_or(u64::MAX)),
-                format::size(plan.selected_size())
-            ))
-            .bold(),
-        );
-        let rows: Vec<ListItem> = plan
+        let selected = Span::raw(format!(
+            " Selected: {} · {} ",
+            super::clean::items(plan.selected_count()),
+            format::size(plan.selected_size())
+        ));
+        let block = block
+            .title_bottom(if plan.selected_count() == 0 {
+                selected.dark_gray()
+            } else {
+                selected.green().bold()
+            })
+            .title_bottom(
+                Line::from(" Items go to the Trash, where Put Back works ")
+                    .dark_gray()
+                    .right_aligned(),
+            );
+        let [list_area, why_area] =
+            Layout::vertical([Constraint::Fill(1), Constraint::Length(3)]).areas(area);
+
+        // Checkbox, size, folder, and note are fixed; the name takes the rest.
+        let fixed = 2 + 2 + 2 + 3 + 9 + FOLDER_WIDTH + NOTE_WIDTH + 2 * 4;
+        let name_width = list_area.width.saturating_sub(fixed);
+        let current = self.list.selected().unwrap_or(0);
+        let rows: Vec<Row> = plan
             .rules
             .iter()
-            .map(|rule| file_row(rule, &planned.home))
+            .enumerate()
+            .map(|(index, rule)| {
+                file_row(
+                    rule,
+                    &planned.home,
+                    index == current,
+                    usize::from(name_width),
+                )
+            })
             .collect();
-        let list = List::new(rows)
-            .block(block)
-            .highlight_symbol("▸ ")
-            .highlight_style(Style::new().bold().cyan());
-        frame.render_stateful_widget(list, area, &mut self.list);
+        let header = Row::new([
+            Cell::from(""),
+            Cell::from(Line::from("Size").right_aligned()),
+            Cell::from("Name"),
+            Cell::from("Folder"),
+            Cell::from("Note"),
+        ])
+        .bold()
+        .bottom_margin(1);
+        let table = Table::new(
+            rows,
+            [
+                Constraint::Length(3),
+                Constraint::Length(9),
+                Constraint::Length(name_width),
+                Constraint::Length(FOLDER_WIDTH),
+                Constraint::Length(NOTE_WIDTH),
+            ],
+        )
+        .header(header)
+        .column_spacing(2)
+        .block(block)
+        .highlight_symbol("▸ ");
+        frame.render_stateful_widget(table, list_area, &mut self.list);
+
+        if let Some(rule) = plan.rules.get(current) {
+            frame.render_widget(
+                Paragraph::new(Line::from(explain(rule)).dark_gray())
+                    .block(Block::bordered().padding(Padding::horizontal(1))),
+                why_area,
+            );
+        }
     }
 
     fn handle_key(&mut self, key: KeyEvent, _context: &Context) -> Action {
@@ -481,8 +595,9 @@ mod tests {
         let mut files = AppFiles::ready("Example", "com.example.app", planned);
 
         let text = render(&mut files);
-        assert!(text.contains("[x]"));
-        assert!(text.contains("~/Library/Caches/com.example.app"));
+        assert!(text.contains("[✓]"));
+        assert!(text.contains("com.example.app"));
+        assert!(text.contains("~/Library/Caches"));
         assert!(text.contains("[ ]"));
         assert!(text.contains("may be your data"));
         assert!(text.contains("Selected: 2 items"));
