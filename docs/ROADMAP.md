@@ -87,8 +87,9 @@
   1. Ready made programs for Apple silicon and Intel on each GitHub release.
   2. A Homebrew formula.
   3. Steps for turning on Full Disk Access.
-  4. Refuse to run as root.
-  5. Try removing an app owned by another user.
+  4. Try removing an app owned by another user.
+* **Done:**
+  1. neet refuses to run as root, and explains why.
 * **Done when** the tests and these checks pass on both kinds of Mac:
   1. A known scan matches the sizes macOS reports.
   2. Missing Full Disk Access gives clear warnings.

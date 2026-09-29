@@ -12,6 +12,11 @@ Options:
   --version  Print the version
 ";
 
+const ROOT: &str = "\
+neet: do not run neet with sudo or as root.
+It would look at root's home folder instead of yours, and cleanup never needs
+admin rights. Run `neet` on its own.";
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.as_slice() {
@@ -28,6 +33,11 @@ fn main() -> ExitCode {
             eprintln!("neet: unknown option. Run `neet --help` for usage.");
             return ExitCode::from(2);
         }
+    }
+
+    if neet_core::safety::running_as_root() {
+        eprintln!("{ROOT}");
+        return ExitCode::FAILURE;
     }
 
     match ratatui::run(ui::run) {
