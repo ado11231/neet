@@ -1,9 +1,9 @@
-//! Dry run plans: what each rule would move to the Trash, without changing
-//! any file. See how a cleanup runs in `docs/SAFETY.md`.
+//! Dry run plans, and running them. See how a cleanup runs in
+//! `docs/SAFETY.md`.
 //!
 //! Every item in a plan passed
 //! [`CleanupRoots::validate_deletable`](crate::safety::CleanupRoots::validate_deletable).
-//! It is checked again right before the move.
+//! [`run`] checks it again right before the move.
 
 use std::fs;
 use std::io;
@@ -39,6 +39,14 @@ pub enum SkipReason {
     Unreadable(io::Error),
     /// It is, holds, or sits inside an item another rule already plans
     Overlaps,
+    /// A symbolic link. Links are left in place.
+    Link,
+    /// This app is open, and the rule needs it closed
+    AppOpen(String),
+    /// The path now leads to a different file than the one you reviewed
+    Replaced,
+    /// Finder could not move it
+    MoveFailed(io::Error),
 }
 
 /// A path a rule found but the plan leaves out
@@ -205,6 +213,10 @@ pub fn plan(rules: &[Rule], roots: &CleanupRoots, now: SystemTime) -> Plan {
                     continue;
                 }
             };
+            if fs::symlink_metadata(validated.path()).is_ok_and(|m| m.file_type().is_symlink()) {
+                skip(path, SkipReason::Link);
+                continue;
+            }
             if planned.iter().any(|done| overlaps(done, validated.path())) {
                 skip(path, SkipReason::Overlaps);
                 continue;
@@ -233,12 +245,101 @@ pub fn plan(rules: &[Rule], roots: &CleanupRoots, now: SystemTime) -> Plan {
     plan
 }
 
+/// One item moved to the Trash
+#[derive(Debug)]
+pub struct Moved {
+    pub path: PathBuf,
+    pub size: u64,
+}
+
+/// What a cleanup did
+#[derive(Debug, Default)]
+pub struct Outcome {
+    pub moved: Vec<Moved>,
+    pub skipped: Vec<Skipped>,
+}
+
+impl Outcome {
+    /// The space the moved items take up in the Trash
+    #[must_use]
+    pub fn moved_size(&self) -> u64 {
+        self.moved.iter().map(|item| item.size).sum()
+    }
+}
+
+/// Checks one planned item again right before it moves. Returns why it must
+/// be skipped, if it must.
+fn recheck(
+    item: &PlanItem,
+    rule: &Rule,
+    roots: &CleanupRoots,
+    now: SystemTime,
+    is_running: &impl Fn(&str) -> bool,
+) -> Option<SkipReason> {
+    if let Some(app) = rule.requires_quit.iter().find(|app| is_running(app)) {
+        return Some(SkipReason::AppOpen(app.clone()));
+    }
+    let again = match roots.validate_deletable(item.path.path()) {
+        Ok(again) => again,
+        Err(error) => return Some(SkipReason::Refused(error)),
+    };
+    if again != item.path {
+        return Some(SkipReason::Replaced);
+    }
+    if fs::symlink_metadata(again.path()).is_ok_and(|m| m.file_type().is_symlink()) {
+        return Some(SkipReason::Link);
+    }
+    let oldest_allowed = now
+        .checked_sub(DAY * rule.min_age_days)
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+    match measure(again.path(), &mut HardLinkTracker::new()) {
+        Err(error) => Some(SkipReason::Unreadable(error)),
+        Ok((_, changed)) if changed > oldest_allowed => Some(SkipReason::TooNew),
+        Ok(_) => None,
+    }
+}
+
+/// Moves the items of the selected rules with `move_item`, checking each one
+/// again right before. `is_running` says whether an app is open, and
+/// `progress` hears how many items are done out of how many.
+pub fn run(
+    plan: &Plan,
+    roots: &CleanupRoots,
+    now: SystemTime,
+    is_running: impl Fn(&str) -> bool,
+    mut move_item: impl FnMut(&Path) -> io::Result<()>,
+    mut progress: impl FnMut(usize, usize),
+) -> Outcome {
+    let total = plan.selected_count();
+    let mut outcome = Outcome::default();
+    let mut done = 0;
+    for rule_plan in plan.selected() {
+        for item in &rule_plan.items {
+            let path = item.path.path().to_path_buf();
+            let reason = recheck(item, &rule_plan.rule, roots, now, &is_running)
+                .or_else(|| move_item(&path).err().map(SkipReason::MoveFailed));
+            match reason {
+                Some(reason) => outcome.skipped.push(Skipped { path, reason }),
+                None => outcome.moved.push(Moved {
+                    path,
+                    size: item.size,
+                }),
+            }
+            done += 1;
+            progress(done, total);
+        }
+    }
+    outcome
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{SkipReason, expand, matches, plan};
+    use super::{SkipReason, expand, matches, plan, run};
     use crate::rules::{Category, Rule, Source, Tier, load};
     use crate::safety::CleanupRoots;
+    use std::cell::RefCell;
     use std::fs::{self, File, FileTimes};
+    use std::io;
     use std::os::unix::fs::symlink;
     use std::path::{Path, PathBuf};
     use std::time::{Duration, SystemTime};
@@ -469,5 +570,168 @@ mod tests {
             assert!(!item.path.path().starts_with(roots.home().join("Documents")));
             assert!(roots.validate_deletable(item.path.path()).is_ok());
         }
+    }
+
+    /// A home folder with one planned item in a `safe` rule, and one in a
+    /// `caution` rule nobody selected.
+    fn planned_home() -> (TempDir, CleanupRoots, super::Plan) {
+        let (dir, roots) = home();
+        write(&dir.path().join("Library/Caches/app/file"), 100);
+        write(&dir.path().join("Library/Logs/app.log"), 100);
+        age(&dir.path().join("Library/Logs/app.log"), 30);
+        let mut app = rule("app", Tier::Safe, &["Library/Caches/app/*"], &roots);
+        app.requires_quit = vec!["com.example.app".to_string()];
+        let mut logs = rule("logs", Tier::Caution, &["Library/Logs/*"], &roots);
+        logs.min_age_days = 7;
+        let plan = plan(&[app, logs], &roots, SystemTime::now());
+        (dir, roots, plan)
+    }
+
+    #[test]
+    fn moves_only_the_selected_rules() {
+        let (_dir, roots, plan) = planned_home();
+        let moved = RefCell::new(Vec::new());
+        let mut steps = Vec::new();
+
+        let outcome = run(
+            &plan,
+            &roots,
+            SystemTime::now(),
+            |_| false,
+            |path| {
+                moved.borrow_mut().push(path.to_path_buf());
+                Ok(())
+            },
+            |done, total| steps.push((done, total)),
+        );
+
+        assert_eq!(
+            *moved.borrow(),
+            [roots.home().join("Library/Caches/app/file")]
+        );
+        assert_eq!(outcome.moved.len(), 1);
+        assert_eq!(outcome.moved_size(), plan.selected_size());
+        assert!(outcome.skipped.is_empty());
+        assert_eq!(steps, [(1, 1)]);
+    }
+
+    #[test]
+    fn skips_a_rule_whose_app_is_open() {
+        let (_dir, roots, plan) = planned_home();
+
+        let outcome = run(
+            &plan,
+            &roots,
+            SystemTime::now(),
+            |app| app == "com.example.app",
+            |_| panic!("nothing should move"),
+            |_, _| {},
+        );
+
+        assert!(outcome.moved.is_empty());
+        assert!(matches!(
+            &outcome.skipped[0].reason,
+            SkipReason::AppOpen(app) if app == "com.example.app"
+        ));
+    }
+
+    #[test]
+    fn skips_a_file_replaced_after_the_review() {
+        let (dir, roots, plan) = planned_home();
+        let file = dir.path().join("Library/Caches/app/file");
+        // Make the new file first, so the old number cannot be reused.
+        write(&dir.path().join("Library/Caches/app/new"), 100);
+        fs::rename(dir.path().join("Library/Caches/app/new"), &file)
+            .expect("file should be replaced");
+
+        let outcome = run(
+            &plan,
+            &roots,
+            SystemTime::now(),
+            |_| false,
+            |_| panic!("nothing should move"),
+            |_, _| {},
+        );
+
+        assert!(matches!(outcome.skipped[0].reason, SkipReason::Replaced));
+    }
+
+    #[test]
+    fn skips_a_link_swapped_in_after_the_review() {
+        let (dir, roots, plan) = planned_home();
+        let file = dir.path().join("Library/Caches/app/file");
+        write(&dir.path().join("Documents/secret"), 10);
+        fs::remove_file(&file).expect("file should be removed");
+        symlink(dir.path().join("Documents/secret"), &file).expect("link should be created");
+
+        let outcome = run(
+            &plan,
+            &roots,
+            SystemTime::now(),
+            |_| false,
+            |_| panic!("nothing should move"),
+            |_, _| {},
+        );
+
+        assert!(matches!(outcome.skipped[0].reason, SkipReason::Refused(_)));
+    }
+
+    #[test]
+    fn skips_an_item_changed_after_the_review() {
+        let (dir, roots, mut plan) = planned_home();
+        plan.rules[0].selected = false;
+        plan.rules[1].selected = true;
+        write(&dir.path().join("Library/Logs/app.log"), 200);
+
+        let outcome = run(
+            &plan,
+            &roots,
+            SystemTime::now(),
+            |_| false,
+            |_| panic!("nothing should move"),
+            |_, _| {},
+        );
+
+        assert!(matches!(outcome.skipped[0].reason, SkipReason::TooNew));
+    }
+
+    #[test]
+    fn reports_a_move_that_failed() {
+        let (_dir, roots, plan) = planned_home();
+
+        let outcome = run(
+            &plan,
+            &roots,
+            SystemTime::now(),
+            |_| false,
+            |_| Err(io::Error::other("Finder said no")),
+            |_, _| {},
+        );
+
+        assert!(outcome.moved.is_empty());
+        assert!(matches!(
+            outcome.skipped[0].reason,
+            SkipReason::MoveFailed(_)
+        ));
+    }
+
+    #[test]
+    fn leaves_links_inside_the_root_out_of_the_plan() {
+        let (dir, roots) = home();
+        write(&dir.path().join("Library/Caches/real/file"), 10);
+        symlink(
+            dir.path().join("Library/Caches/real"),
+            dir.path().join("Library/Caches/link"),
+        )
+        .expect("link should be created");
+
+        let plan = plan(
+            &[rule("all", Tier::Safe, &["Library/Caches/*"], &roots)],
+            &roots,
+            SystemTime::now(),
+        );
+
+        assert_eq!(plan.rules[0].items.len(), 1);
+        assert!(matches!(plan.rules[0].skipped[0].reason, SkipReason::Link));
     }
 }

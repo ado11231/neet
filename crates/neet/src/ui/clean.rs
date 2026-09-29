@@ -170,6 +170,10 @@ fn skip_reason(reason: &SkipReason, min_age_days: u32) -> String {
         SkipReason::TooNew => format!("changed in the last {min_age_days} days"),
         SkipReason::Unreadable(error) => format!("could not be read: {error}"),
         SkipReason::Overlaps => "already found by another rule".to_string(),
+        SkipReason::Link => "a link, left in place".to_string(),
+        SkipReason::AppOpen(app) => format!("{app} is open"),
+        SkipReason::Replaced => "changed into a different file after the review".to_string(),
+        SkipReason::MoveFailed(error) => format!("could not be moved: {error}"),
     }
 }
 

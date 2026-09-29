@@ -40,7 +40,9 @@ neet/
 │   │       ├── tree.rs
 │   │       ├── rules.rs
 │   │       ├── safety.rs
-│   │       └── clean.rs
+│   │       ├── clean.rs
+│   │       ├── apps.rs
+│   │       └── trash.rs
 │   └── neet/              The program
 │       └── src/
 │           └── main.rs
@@ -198,9 +200,9 @@ selected rules
 | Terminal screens | `ratatui` with Crossterm | In use |
 | Reading TOML | `serde` and `toml` | In use |
 | Reading `SKILL.md` front matter | A small YAML reader, or a hand written parser | Candidate |
-| Building rules into the program | `include_str!`, no crate needed | Planned |
-| Checking for running apps | `sysinfo` or a macOS API | Candidate |
-| Moving to the Trash | A crate that moves items through Finder, so Put Back works | Candidate |
+| Building rules into the program | `include_str!`, no crate needed | In use |
+| Checking for running apps | `lsappinfo`, which ships with macOS and never opens the app | In use |
+| Moving to the Trash | `osascript` asking Finder, so Put Back works. The path is passed as an argument, never written into the script. No crate needed. | In use |
 | Writing archives | `tar` and `flate2` | Candidate |
 | Changing display modes | `core-graphics` | Candidate |
 | Errors | `thiserror`, and `anyhow` in the `neet` crate if needed | Candidate |
@@ -218,14 +220,16 @@ selected rules
 | --- | --- |
 | `Cargo.toml` | Lists the two crates, their shared version, license, and minimum Rust version (1.88), and the lint rules. The rules turn on Clippy's strict checks and forbid `unsafe` code. |
 | `crates/neet-core/Cargo.toml` | The library's dependencies: `jwalk`, `rustix`, `serde`, and `toml`, and `tempfile` for tests. |
-| `crates/neet-core/src/lib.rs` | The library's entry point. Makes the `disk`, `safety`, `scan`, `size`, and `tree` modules public. |
+| `crates/neet-core/src/lib.rs` | The library's entry point. Makes the `apps`, `clean`, `disk`, `rules`, `safety`, `scan`, `size`, `trash`, and `tree` modules public. |
 | `crates/neet-core/src/disk.rs` | `disk_space` reads the size and free space of the disk holding a path, with `statvfs`. Has tests. |
 | `crates/neet-core/src/scan.rs` | `scan` walks a folder on several threads without following links or leaving the disk, builds the full `Tree`, counts hard links once, records unreadable paths, noting when macOS denied access, lists other disks, retries interrupted lookups, and reports `Progress`. Has tests, including one that mounts a disk image. |
 | `crates/neet-core/src/size.rs` | `allocated_size` measures the space a file uses on disk. `HardLinkTracker` remembers each file's device and inode, so a hard link is counted once. Has tests for hard links and files with empty parts. |
 | `crates/neet-core/src/tree.rs` | `Tree`, `Node`, and `NodeId` store folders and files, add up folder sizes and item counts, and rebuild paths. Filled by `scan`. Has tests. |
 | `crates/neet-core/src/rules.rs` | Reads rule files into `Rule`s, checks every field and path against the rule format and `covers_pattern`, treats a `safe` tier in your own rule as `caution`, and lets your rule replace a bundled one with the same `id`. A rule with a problem is left out and reported in `RuleSet::errors`. Has tests. |
 | `crates/neet-core/src/safety.rs` | `CleanupRoots` holds the cleanup roots and protected paths for a home folder. `validate_deletable` is the only way to make a `ValidatedPath`. `covers_pattern` checks that a rule pattern stays inside a root. Has tests. |
-| `crates/neet-core/src/clean.rs` | Makes dry run plans. Expands each rule path, runs the path check on every item, measures its size and newest change without following links, skips items newer than the minimum age, and gives an item found by two rules to the first. Changes nothing on disk. Moving to the Trash comes in M4. Has tests. |
+| `crates/neet-core/src/clean.rs` | Makes dry run plans. Expands each rule path, runs the path check on every item, measures its size and newest change without following links, skips items newer than the minimum age, leaves symbolic links in place, and gives an item found by two rules to the first. `run` moves the selected items, checking each one again right before: its app is closed, the path check passes, its real path, device, and inode are unchanged, and it is still older than the minimum age. Has tests. |
+| `crates/neet-core/src/apps.rs` | `is_running` asks `lsappinfo` whether an app is open. If it cannot tell, it answers yes. Has tests. |
+| `crates/neet-core/src/trash.rs` | `move_to_trash` asks Finder, through `osascript`, to move one item to the Trash, so Put Back works. Explains how to allow it when macOS has not let neet control Finder. |
 | `crates/neet/Cargo.toml` | The program's dependencies: `neet-core` and `ratatui`, and `tempfile` for tests. |
 | `crates/neet/src/main.rs` | The program's entry point. Handles `--help` and `--version`, then opens the terminal interface. |
 | `crates/neet/src/ui/mod.rs` | The interface loop. Draws the screen, waits for a key, and passes it on. |

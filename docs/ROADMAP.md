@@ -23,7 +23,7 @@
 | M1 | A full scan of the home folder | Disk analysis | P1 | Complete |
 | M2 | Home screen, disk browser, and keyboard keys | Disk analysis, interface | P1 | Complete |
 | M3 | Rules, risk tiers, and dry run plans in Clean | Cleanup, interface | P1 | Complete |
-| M4 | Review, path checks, open app checks, and moving to the Trash | Cleanup, safety | P1 | Planned |
+| M4 | Review, path checks, open app checks, and moving to the Trash | Cleanup, safety | P1 | In Progress |
 | M5 | Packages, testing on real Macs, and the P1 release checks | Distribution | P1 | Planned |
 | M6 | Large and old file filters, and the app removal review | Disk analysis, apps | P1.5 | Planned. App removal scope is open. |
 | M7 | Check and build the P2 proposals | Startup, SSH, dotfiles, AI tools, settings, preferences, treemap | P2 | Proposed |
@@ -88,17 +88,24 @@
 
 ## In Progress
 
-* Nothing. M4 is next.
-
-## Planned
-
 ### M4: Cleanup
 
-* Checks for open apps, the path review, the question, checking each path again right before the move, and moving to the Trash. The path check itself was built in M3.
-* Selecting `expert` rules with a typed confirmation.
-* Showing on Home how much Clean can free.
-* Planning a cleanup of the item selected in Disk, with `d`.
+* **Built:**
+  1. `clean::run` moves the selected items, checking each one again right before the move: its app is closed, the path check passes, its real path, device, and inode are unchanged, and it is still older than the minimum age. It reports progress, what moved, and what was skipped and why.
+  2. `apps::is_running` checks for open apps with `lsappinfo`, which never opens the app.
+  3. `trash::move_to_trash` asks Finder to move an item, so Put Back works.
+  4. Plans leave symbolic links in place.
+  5. 8 tests, with a stand in for Finder, cover moving only selected rules, open apps, a file replaced after the review, a link swapped in after the review, an item changed after the review, a failed move, and links left out of the plan.
+* **Remaining:**
+  1. The path review, opened with `Enter` in Clean.
+  2. The question, then the move on a background thread with progress, and the result.
+  3. Selecting `expert` rules with a typed confirmation.
+  4. Showing on Home how much Clean can free.
+  5. Planning a cleanup of the item selected in Disk, with `d`.
+  6. The manual test: move a harmless temporary file to the Trash, then restore it with Put Back.
 * **Done when** the safety tests in [SAFETY.md](SAFETY.md#tests) pass, and Finder restores a test item.
+
+## Planned
 
 ### M5: P1 Release
 
