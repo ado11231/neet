@@ -3,7 +3,7 @@
 * The rules neet follows whenever it changes a file or a setting, or reads a private one.
 * For anyone writing code or rules that change things on the Mac.
 * They cover every screen: Disk, Clean, SSH, Dotfiles, Startup, AI Tools, and Settings. They also cover bundled rules, your own rules, and custom cleaners.
-* These are requirements. None of these safeguards are built yet. For progress, read [ROADMAP.md](ROADMAP.md). For open questions, read [FEATURES.md](FEATURES.md#design-questions).
+* These are requirements. The path check, cleanup roots, and protected paths are built in `neet-core`. The other safeguards are not built yet. For progress, read [ROADMAP.md](ROADMAP.md). For open questions, read [FEATURES.md](FEATURES.md#design-questions).
 
 ## Contents
 
@@ -52,8 +52,12 @@
 * Every path must pass one function before it can be moved:
 
   ```rust
-  fn validate_deletable(path: &Path) -> Result<ValidatedPath, SafetyError>
+  impl CleanupRoots {
+      fn validate_deletable(&self, path: &Path) -> Result<ValidatedPath, SafetyError>
+  }
   ```
+
+* `CleanupRoots` is made for one home folder, so tests can use a temporary folder instead of your real one.
 
 * Only this function can make a `ValidatedPath`, so no other code can skip the check.
 * A path must be inside a cleanup root, and never the root itself.
@@ -102,12 +106,14 @@
 
 ## What The Path Check Does
 
-1. Refuses empty paths, relative paths, paths it does not support, and the top folder of any disk.
-2. Finds your home folder.
-3. Follows each part of the path on disk. It does not just remove `..` from the text.
-4. Refuses symbolic links that lead out of a cleanup root or into a protected path.
-5. Confirms the path is inside its cleanup root.
-6. Saves the real path, device, inode, and other details it needs.
+1. Refuses empty paths, relative paths, and the top folder of any disk.
+2. Refuses any path with a `..` part, or a name that is not valid `UTF-8`. APFS only allows `UTF-8` names, so real files are not affected.
+3. Uses your real home folder, after following any links to it.
+4. Follows every link in the folders above the item, on disk. The item itself is judged as it is, so a link is judged as a link.
+5. Refuses protected paths, and anything with a `.git` part.
+6. Confirms the path is inside a cleanup root, and is not the root itself.
+7. If the item is a symbolic link, refuses it unless it leads somewhere inside the same root that is not protected. A broken link is refused.
+8. Saves the real path, its root, and its device and inode.
 
 * Right before moving an item, neet checks its real path, device, and inode again. If anything changed, it skips that item.
 * If neet cannot be sure a file is the same one you reviewed, it skips it.
@@ -242,7 +248,7 @@ min_age_days = 0
 ## Tests
 
 * Use temporary folders to test:
-  1. `..` tricks, doubled slashes, and paths outside cleanup roots.
+  1. `..` parts, doubled slashes, and paths outside cleanup roots.
   2. A path that is a cleanup root, the home folder, or the top folder of a disk.
   3. Protected paths written in other ways.
   4. Symbolic links that lead out, and links swapped in after the review.

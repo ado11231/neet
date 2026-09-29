@@ -3,7 +3,7 @@
 * What neet does today, what comes next, and how each step is accepted.
 * For anyone tracking progress or picking the next piece of work.
 * A milestone is only marked complete after its checks pass.
-* Last updated September 28, 2026. The 25 library tests and 27 interface tests pass. The program opens the Home screen, and Disk browses the scan.
+* Last updated September 28, 2026. The 37 library tests and 27 interface tests pass. The program opens the Home screen, and Disk browses the scan.
 * Features and their status live in [FEATURES.md](FEATURES.md). Screens live in [INTERFACE.md](INTERFACE.md).
 
 ## Contents
@@ -22,7 +22,7 @@
 | M0 | Workspace, licenses, formatting, linting, and CI | Foundation | P1 | Complete |
 | M1 | A full scan of the home folder | Disk analysis | P1 | Complete |
 | M2 | Home screen, disk browser, and keyboard keys | Disk analysis, interface | P1 | Complete |
-| M3 | Rules, risk tiers, and dry run plans in Clean | Cleanup, interface | P1 | Planned |
+| M3 | Rules, risk tiers, and dry run plans in Clean | Cleanup, interface | P1 | In Progress |
 | M4 | Review, path checks, open app checks, and moving to the Trash | Cleanup, safety | P1 | Planned |
 | M5 | Packages, testing on real Macs, and the P1 release checks | Distribution | P1 | Planned |
 | M6 | Large and old file filters, and the app removal review | Disk analysis, apps | P1.5 | Planned. App removal scope is open. |
@@ -76,19 +76,22 @@
 
 ## In Progress
 
-* Nothing yet. M3 is next.
+### M3: Rules
+
+* **Built:**
+  1. The path check, pulled forward from M4 so rules can be checked against it. `CleanupRoots` holds the cleanup roots and protected paths from SAFETY.md, and `validate_deletable` makes a `ValidatedPath`. 12 tests cover `..` parts, doubled slashes, links above and at the item, protected paths, container folders, roots themselves, names that are not `UTF-8`, and rule patterns.
+* **Remaining:**
+  1. The TOML rule format, bundled and user rules, and their checks.
+  2. The first bundled rules.
+  3. Dry run plans, with sizes, age filters, and selection totals.
+  4. The Clean screen.
+* **Done when** every bundled rule loads and finds only allowed targets, without changing any file.
 
 ## Planned
 
-### M3: Rules
-
-* The TOML rule format, bundled and user rules, risk tiers, age filters, selection totals, and dry run plans shown in Clean.
-* Docker, simulator, and system log cleaners wait on the [design questions](FEATURES.md#design-questions). Listing a target group does not approve it.
-* **Done when** every bundled rule loads and finds only allowed targets, without changing any file.
-
 ### M4: Cleanup
 
-* The path check, checks for open apps, the path review, the question, and moving to the Trash.
+* Checks for open apps, the path review, the question, checking each path again right before the move, and moving to the Trash. The path check itself was built in M3.
 * Planning a cleanup of the item selected in Disk, with `d`.
 * **Done when** the safety tests in [SAFETY.md](SAFETY.md#tests) pass, and Finder restores a test item.
 

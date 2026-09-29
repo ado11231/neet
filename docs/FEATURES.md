@@ -243,11 +243,11 @@
 ## Safety And Recovery
 
 * These rules apply to every feature above.
-* None of them are built yet, because no feature screen that changes anything exists yet.
+* The path check is built in the library. The others are not built yet, because no feature that changes anything exists yet.
 
 | Safeguard | What It Does | Phase | Status |
 | --- | --- | --- | --- |
-| Allowed folders and protected paths | Limits cleanup in Rust code. Refuses personal folders, credentials, Git history, system files, and very broad folders. Rules cannot override it. | P1 | Planned |
+| Allowed folders and protected paths | Limits cleanup in Rust code. Refuses personal folders, credentials, Git history, system files, and very broad folders. Rules cannot override it. Built in the library as `CleanupRoots`, not yet used by a cleanup. | P1 | Built |
 | Identity check | Checks each reviewed path again, and that it is still the same file, right before moving it. Anything changed or unclear is skipped. | P1 | Planned |
 | No admin cleanup | Refuses to run as root, and never uses `sudo` for cleanup. | P1 | Planned |
 | Backups and undo | Saves the old content, permissions, or setting before any SSH, dotfile, startup, or settings change, so it can be undone. | P2 | Proposed |

@@ -218,13 +218,13 @@ selected rules
 | --- | --- |
 | `Cargo.toml` | Lists the two crates, their shared version, license, and minimum Rust version (1.88), and the lint rules. The rules turn on Clippy's strict checks and forbid `unsafe` code. |
 | `crates/neet-core/Cargo.toml` | The library's dependencies: `jwalk` and `rustix`, and `tempfile` for tests. |
-| `crates/neet-core/src/lib.rs` | The library's entry point. Makes the `disk`, `scan`, `size`, and `tree` modules public. |
+| `crates/neet-core/src/lib.rs` | The library's entry point. Makes the `disk`, `safety`, `scan`, `size`, and `tree` modules public. |
 | `crates/neet-core/src/disk.rs` | `disk_space` reads the size and free space of the disk holding a path, with `statvfs`. Has tests. |
 | `crates/neet-core/src/scan.rs` | `scan` walks a folder on several threads without following links or leaving the disk, builds the full `Tree`, counts hard links once, records unreadable paths, noting when macOS denied access, lists other disks, retries interrupted lookups, and reports `Progress`. Has tests, including one that mounts a disk image. |
 | `crates/neet-core/src/size.rs` | `allocated_size` measures the space a file uses on disk. `HardLinkTracker` remembers each file's device and inode, so a hard link is counted once. Has tests for hard links and files with empty parts. |
 | `crates/neet-core/src/tree.rs` | `Tree`, `Node`, and `NodeId` store folders and files, add up folder sizes and item counts, and rebuild paths. Filled by `scan`. Has tests. |
 | `crates/neet-core/src/rules.rs` | Empty. Will read and check rules. |
-| `crates/neet-core/src/safety.rs` | Empty. Will hold `validate_deletable` and `ValidatedPath`. |
+| `crates/neet-core/src/safety.rs` | `CleanupRoots` holds the cleanup roots and protected paths for a home folder. `validate_deletable` is the only way to make a `ValidatedPath`. `covers_pattern` checks that a rule pattern stays inside a root. Has tests. |
 | `crates/neet-core/src/clean.rs` | Empty. Will plan cleanups and move items to the Trash. |
 | `crates/neet/Cargo.toml` | The program's dependencies: `neet-core` and `ratatui`, and `tempfile` for tests. |
 | `crates/neet/src/main.rs` | The program's entry point. Handles `--help` and `--version`, then opens the terminal interface. |
