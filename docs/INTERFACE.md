@@ -113,25 +113,37 @@
 ## Clean
 
 ```text
-+ Clean -------------------------------------------------------------+
-|   [x] Xcode DerivedData        safe       nothing found        0 B |
-| > [ ] npm cache                caution          3 items     4.6 GB |
-|   [ ] User logs                caution         27 items    83.0 MB |
-+ Selected: 0 items, 0 B . they go to the Trash, where Put Back works +
-+ npm cache ---------------------------------------------------------+
-| Packages npm downloaded before. Later installs download them again.|
-| caution . You may need to download, index, or sign in again.       |
-|                                                                    |
-|     4.3 GB  ~/.npm/_cacache/content-v2                             |
-|    skipped  ~/Library/Logs/App  changed in the last 7 days         |
-+--------------------------------------------------------------------+
++ Clean -----------------------------------------------+  + Homebrew downloads --------------------+
+|        Rule                Risk     Found    Size    |  | Installers and bottles Homebrew        |
+|                                                      |  | downloaded. Installed programs stay.   |
+|   [✓]  npm cache           caution  3 items  4.7 GB  |  |                                        |
+| > [✓]  Homebrew downloads  caution 14 items  1.2 GB  |  | Risk    caution                        |
+|   [ ]  User logs           caution 27 items 83.0 MB  |  | You may need to download again.        |
+|        Yarn cache          caution     none       .  |  |                                        |
++ 10 of 14 rules found 8.8 GB -------------------------+  | Folder  ~/Library/Caches/Homebrew      |
++ Selected --------------------------------------------+  |                                        |
+|    4.7 GB  npm cache                                 |  | Found 14 items . 1.2 GB                |
+|    1.2 GB  Homebrew downloads                        |  |    1.1 GB  downloads                   |
+|                                                      |  |   50.8 MB  bootsnap                    |
+|    6.0 GB  total, in 17 items                        |  |                                        |
+|                                                      |  | Skipped 179 left in place              |
+| Press Enter to see every path first.                 |  | 179 paths  a link, left in place       |
++------------------------------------------------------+  + Put Back works ------------------------+
 ```
 
 * When Clean opens, it looks for everything the rules cover. This takes a few seconds, and the loading box shows a timer. Nothing changes while it looks.
-* **Top:** one row per rule, with a checkbox, its name, its risk level, how many items it found, and their size. At most half the screen tall. Rules that found nothing are dimmed.
-* The bottom edge of the list shows the total of the selected rules.
-* **Bottom:** the selected rule. What it removes, its risk level, apps to close first, how recent files it keeps, then every path it found or skipped, with the reason. If the list is too long, the last line says how many more there are.
-* A note at the top of this box explains when a rule was not selected, or could not be. Rules that failed to load are listed there too.
+* **Left, top, 55% of the width:** a table of rules, largest first, with a checkbox, the rule's name, its risk level, how many items it found, and their size. Rules that found nothing are listed last, dimmed, with no checkbox. The bottom edge shows what every rule found together.
+* **Left, bottom:** the Selected box. Each selected rule with its size, then the total. Before anything is selected, it says how selecting works.
+* **Right:** the rule the arrow is on:
+  1. What it removes.
+  2. Its risk level and what that means.
+  3. Apps to close first, how recent files it keeps, and the folder it looks in, when every path is in one folder.
+  4. Every path it found, largest first. When they share a folder, only their names are shown.
+  5. Every path it skipped, with the reason. A reason shared by more than two paths is shown once, with how many.
+  6. If a list is too long, its last line says how many more there are.
+* When the terminal is narrower than 100 columns, the details go under the list, and the list's bottom edge shows the selected total instead.
+* A selected checkbox is a green `[✓]`. The arrow's row shows its name in cyan, so the checkbox and risk keep their colors.
+* A note at the top of the details explains when a rule was not selected, or could not be. Rules that failed to load are listed there too.
 * `safe` rules start selected, unless their app is open.
 
 | Key | Action |
@@ -187,16 +199,32 @@
 ## Remove App
 
 ```text
-+ Discord (com.hnc.Discord) --------------------------------------------+
-| > [x]   500.4 MB  /Applications/Discord.app                           |
-|   [x]     1.1 MB  ~/Library/Caches/com.hnc.Discord                    |
-|   [ ]     4.1 KB  ~/Library/Preferences/com.hnc.Discord.plist  settings |
-|   [ ]     1.1 GB  ~/Library/Application Support/discord  matched by name |
-+ Selected: 2 items, 501.5 MB . they go to the Trash, where Put Back works +
++ Remove App: 15 apps you can remove --------------------------------------------------------+
+|   Name        Bundle ID               Folder                                               |
+|                                                                                            |
+| > Discord     com.hnc.Discord         /Applications                                        |
+|   Slingshot   dev.slingshot.menubar   ~/Applications                                       |
+|   Xcode       com.apple.dt.Xcode      /Applications    not removable: Apple app            |
++ Only apps directly in /Applications and ~/Applications are listed -------------------------+
+
++ Discord (com.hnc.Discord) -----------------------------------------------------------------+
+|             Size  Name                   Folder                          Note              |
+|                                                                                            |
+| > [✓]   500.4 MB  Discord.app            /Applications                                     |
+|   [✓]     1.1 MB  com.hnc.Discord        ~/Library/Caches                                  |
+|   [ ]     4.1 KB  com.hnc.Discord.plist  ~/Library/Preferences           settings          |
+|   [ ]     1.1 GB  discord                ~/Library/Application Support   matched by name   |
++ Selected: 2 items . 501.5 MB ----------------- Items go to the Trash, where Put Back works +
++--------------------------------------------------------------------------------------------+
+| The app itself.                                                                            |
++--------------------------------------------------------------------------------------------+
 ```
 
-* **App list:** each app in `/Applications` and `~/Applications`, with its name and bundle ID, the name macOS uses to identify it. Apps neet will not remove are dimmed, with the reason, such as `Apple app` or `link`. A box at the bottom explains when an app cannot be opened.
-* **App files:** opening an app finds and measures its files, with the loading box and a timer. Then it lists the app and each file, with a checkbox, size, path, and a note on anything left unselected, such as `may be your data`. The bottom edge shows the selection total.
+* **App list:** a table of each app in `/Applications` and `~/Applications`, with its name, its bundle ID (the name macOS uses to identify it), and its folder. Apps neet can remove come first. Apps it will not remove are listed after them, dimmed, with the reason, such as `Apple app` or `link`.
+* The title shows how many apps can be removed. The bottom edge shows a note, such as why an app cannot be opened.
+* **App files:** opening an app finds and measures its files, with the loading box and a timer. Then a table lists the app and each file, with a checkbox, size, name, folder, and a note on anything left unselected, such as `may be your data`.
+* The box under the table explains the file the arrow is on: why it starts selected or not, and what to check first.
+* The bottom edge shows the selected total, in green once something is selected.
 * What is found, and what starts selected, is in [SAFETY.md](SAFETY.md#app-removal).
 
 | Key | Action |
@@ -205,7 +233,7 @@
 | `Enter` | On the app list, open the app. On the file list, go to [Review](#review-confirm-and-move). |
 | `Space` | On the file list, select or clear a file. |
 
-* An app that is open cannot be opened here. The box says to quit it first.
+* An app that is open cannot be opened here. The note says to quit it first.
 
 ## Planned Screens
 
