@@ -4,6 +4,11 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "The scanner, cleanup rules, safety checks, and Trash moves behind the neet disk cleaner for macOS."
+keywords = ["macos", "disk", "cleanup", "cache"]
+categories = ["filesystem"]
 
 [dependencies]
 jwalk = "0.9.0"

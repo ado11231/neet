@@ -1,0 +1,66 @@
+name: Release-plz
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  # Publishes to crates.io, tags, and makes the GitHub release, when a
+  # release pull request was just merged.
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'ado11231'
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run release-plz
+        uses: release-plz/action@v0.5
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  # Opens or updates the release pull request with the next versions and
+  # changelogs.
+  release-pr:
+    name: Release pull request
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'ado11231'
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      # A pull request opened with the default token does not start CI, and
+      # master needs CI to pass. RELEASE_PLZ_TOKEN, a personal access token,
+      # fixes that. Without it, the default token is used.
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          token: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run release-plz
+        uses: release-plz/action@v0.5
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

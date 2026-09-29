@@ -4,9 +4,15 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "See what fills your Mac's disk, and safely move files apps can make again to the Trash."
+readme = "../../README.md"
+keywords = ["macos", "disk", "cleanup", "tui", "cache"]
+categories = ["command-line-utilities", "filesystem"]
 
 [dependencies]
-neet-core = { path = "../neet-core" }
+neet-core = { path = "../neet-core", version = "0.1.0" }
 ratatui.workspace = true
 
 [lints]

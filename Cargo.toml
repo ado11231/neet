@@ -7,6 +7,8 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/ado11231/neet"
+homepage = "https://github.com/ado11231/neet"
 
 [workspace.dependencies]
 ratatui = "0.30.2"
