@@ -23,6 +23,7 @@
 * Screens stack: each one opens on top of the last, and `Esc` goes back one step.
 * Boxes, such as help and questions, open in the middle of the screen, on top of it.
 * The screen redraws about four times a second, so progress stays current.
+* While a screen waits for slow work, such as the scan, it shows a small box in the middle: what neet is doing, a spinner, how far it has got, and what shows when it is done.
 
 | Key | Action |
 | --- | --- |
@@ -96,7 +97,8 @@
 * **Left, 55% of the width:** the current folder, largest first. Each row shows a 12 character bar and a percent for its share of the folder, its size, and its name. Folders end in `/`, links in `@`.
 * The title shows the folder's path on the left, and its size, item count, and sort order on the right.
 * **Right:** a preview of the selected row. A folder shows its contents. A file shows its size, kind, and full path. The preview is hidden when the terminal is narrower than 100 columns.
-* Until the scan finishes, the screen shows its progress.
+* Until the scan finishes, the screen shows the loading box, with how many items and how much space the scan has counted.
+* The selected row is bold cyan, with an arrow in front.
 * The screen shows the scan as it was. An item moved to the Trash stays listed until the next scan.
 
 | Key | Action |
@@ -125,7 +127,7 @@
 +--------------------------------------------------------------------+
 ```
 
-* When Clean opens, it looks for everything the rules cover. This takes a few seconds, and shows a timer. Nothing changes while it looks.
+* When Clean opens, it looks for everything the rules cover. This takes a few seconds, and the loading box shows a timer. Nothing changes while it looks.
 * **Top:** one row per rule, with a checkbox, its name, its risk level, how many items it found, and their size. At most half the screen tall. Rules that found nothing are dimmed.
 * The bottom edge of the list shows the total of the selected rules.
 * **Bottom:** the selected rule. What it removes, its risk level, apps to close first, how recent files it keeps, then every path it found or skipped, with the reason. If the list is too long, the last line says how many more there are.
@@ -155,17 +157,23 @@
 ## Large Files
 
 ```text
-+ Large Files: 107 files of 100.0 MB or more, 31.2 GB in all -----------+
-| >    11.0 GB  3 days ago      ~/Library/Containers/.../Docker.raw     |
-|       4.3 GB  1 month ago     ~/Library/Application Support/...       |
-|     179.0 MB  1 year ago      ~/Library/Caches/Homebrew/...dmg        |
-+-----------------------------------------------------------------------+
++ Large Files: 109 files of 100.0 MB or more, 39.5 GB in all -------------------+
+|        Size  Last Changed   Name              Folder                          |
+|                                                                               |
+| >   11.0 GB  28 days ago    Docker.raw        ~/Library/.../Data/vms/0/data   |
+|      4.3 GB  2 months ago   weights.bin       ~/Library/.../2025.8.8.1141     |
+|    457.4 MB  1 year ago     fca1ae...tar.gz   ~/Library/Caches/Homebrew       |
++-------------------------------------------------------------------------------+
 ```
 
-* One full screen list of files from the scan, largest first, with size, when each last changed, and path. Folders are not listed.
+* One full screen table of files from the scan, largest first. Folders are not listed.
+* **Columns:** size, when the file last changed, its name, and the folder it is in.
+  1. Sizes of 5 GB or more are red, and 1 GB or more yellow.
+  2. Files changed in the last 30 days have a dimmed date. Files unchanged for a year or more have a magenta date.
+  3. A long name is shortened in the middle, so its extension shows. A long folder keeps its start, such as `~/Library`, and its last folders.
 * The title shows the filters, how many files match, and their total size.
-* Starts at 100 MB and any age. Lists up to 1,000 files, then says how many more match.
-* Until the scan finishes, the screen shows its progress.
+* Starts at 100 MB and any age. Lists up to 1,000 files, and the bottom edge says how many more match.
+* Until the scan finishes, the screen shows the loading box.
 
 | Key | Action |
 | --- | --- |
@@ -188,7 +196,7 @@
 ```
 
 * **App list:** each app in `/Applications` and `~/Applications`, with its name and bundle ID, the name macOS uses to identify it. Apps neet will not remove are dimmed, with the reason, such as `Apple app` or `link`. A box at the bottom explains when an app cannot be opened.
-* **App files:** opening an app finds and measures its files, with a timer. Then it lists the app and each file, with a checkbox, size, path, and a note on anything left unselected, such as `may be your data`. The bottom edge shows the selection total.
+* **App files:** opening an app finds and measures its files, with the loading box and a timer. Then it lists the app and each file, with a checkbox, size, path, and a note on anything left unselected, such as `may be your data`. The bottom edge shows the selection total.
 * What is found, and what starts selected, is in [SAFETY.md](SAFETY.md#app-removal).
 
 | Key | Action |
