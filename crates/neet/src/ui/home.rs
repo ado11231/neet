@@ -224,6 +224,15 @@ fn disk_line(disk: Option<DiskSpace>) -> Line<'static> {
     ])
 }
 
+/// A count of paths, such as `1 path` or `147 paths`
+fn paths(count: usize) -> String {
+    let noun = if count == 1 { "path" } else { "paths" };
+    format!(
+        "{} {noun}",
+        format::count(u64::try_from(count).unwrap_or(u64::MAX))
+    )
+}
+
 /// Describes the home folder scan for the info panel.
 fn scan_lines(scan: &ScanStatus) -> Vec<Line<'static>> {
     match scan {
@@ -239,17 +248,34 @@ fn scan_lines(scan: &ScanStatus) -> Vec<Line<'static>> {
         ScanStatus::Done { scan, elapsed } => {
             let entries = u64::try_from(scan.tree.node_count() - 1).unwrap_or(u64::MAX);
             let total = scan.tree.get(scan.tree.root()).total_size;
+            // An incomplete scan missed whatever it could not read.
+            let at_least = if scan.is_complete() { "" } else { "at least " };
             let mut lines = vec![Line::from(format!(
-                "Home folder: {} in {} items, scanned in {}s.",
+                "Home folder: {at_least}{} in {} items, scanned in {}s.",
                 format::size(total),
                 format::count(entries),
                 elapsed.as_secs()
             ))];
-            if !scan.is_complete() {
+            let blocked = scan
+                .errors
+                .iter()
+                .filter(|error| error.permission_denied)
+                .count();
+            let unreadable = scan.errors.len() - blocked;
+            if blocked > 0 {
                 lines.push(
                     Line::from(format!(
-                        "Incomplete: {} paths could not be read. Press s to see them.",
-                        format::count(u64::try_from(scan.errors.len()).unwrap_or(u64::MAX))
+                        "Incomplete: macOS blocked {}. Press s to see how to allow them.",
+                        paths(blocked)
+                    ))
+                    .yellow(),
+                );
+            }
+            if unreadable > 0 {
+                lines.push(
+                    Line::from(format!(
+                        "Incomplete: {} could not be read. Press s to see them.",
+                        paths(unreadable)
                     ))
                     .yellow(),
                 );
@@ -421,5 +447,28 @@ mod tests {
         assert!(!screen.contains("⣿"));
         assert!(!screen.contains("╚═╝"));
         assert!(screen.contains("Clean"));
+    }
+
+    #[test]
+    fn an_incomplete_scan_says_why_and_that_the_size_is_a_minimum() {
+        let error = |permission_denied| neet_core::scan::ScanError {
+            path: Some(std::path::PathBuf::from("/Users/test/Library/Mail")),
+            message: String::new(),
+            permission_denied,
+        };
+        let scan = ScanStatus::Done {
+            scan: neet_core::scan::Scan {
+                tree: neet_core::tree::Tree::new("/Users/test"),
+                errors: vec![error(true), error(true), error(false)],
+                other_disks: Vec::new(),
+            },
+            elapsed: std::time::Duration::ZERO,
+        };
+
+        let text: Vec<String> = scan_lines(&scan).iter().map(ToString::to_string).collect();
+
+        assert!(text[0].starts_with("Home folder: at least "));
+        assert!(text[1].contains("macOS blocked 2 paths"));
+        assert!(text[2].contains("1 path could not be read"));
     }
 }

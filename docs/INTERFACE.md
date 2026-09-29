@@ -61,7 +61,7 @@
 * **Right, bottom:** details for the selected row:
   1. What the feature does.
   2. A 16 character gauge of how full the disk is, with free and total space. It turns yellow at 75% and red at 90%.
-  3. Scan progress, then the home folder's total size. If some folders could not be read, it says how many, and to press `s`.
+  3. Scan progress, then the home folder's total size. If some folders could not be read, the size is marked `at least`, and a yellow line says how many were blocked by macOS or could not be read, and to press `s`.
 
 | Key | Action |
 | --- | --- |
@@ -73,7 +73,7 @@
 ## Skipped
 
 * A single scrolling list:
-  1. If macOS blocked some folders, how to turn on Full Disk Access for your terminal.
+  1. If macOS blocked some folders, numbered steps to turn on Full Disk Access for the terminal app neet runs in. The app is named when neet can tell which it is, such as Terminal, iTerm, kitty, Ghostty, or Visual Studio Code.
   2. Each folder the scan could not read, with the reason.
   3. Folders on other disks, which the scan does not enter.
 * Says so when nothing was skipped.
