@@ -39,6 +39,31 @@ const PROTECTED_IN_HOME: &[&str] = &[
 /// System folders that are never touched, with everything inside.
 const PROTECTED_SYSTEM: &[&str] = &["/System", "/usr", "/Library"];
 
+/// Folders in `~/Library` whose direct children app removal may take. Keep
+/// in step with the table in SAFETY.md.
+pub const APP_LIBRARY_FOLDERS: &[&str] = &[
+    "Caches",
+    "Logs",
+    "Saved Application State",
+    "HTTPStorages",
+    "WebKit",
+    "Application Support",
+    "Containers",
+    "Preferences",
+    "Group Containers",
+    "LaunchAgents",
+];
+
+/// Which check made a [`ValidatedPath`], so the check right before the move
+/// is the same one
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Check {
+    /// Inside a cleanup root
+    Cleanup,
+    /// An app, or one of its related files
+    AppRemoval,
+}
+
 /// Why a path cannot be cleaned
 #[derive(Debug)]
 pub enum SafetyError {
@@ -55,6 +80,11 @@ pub enum SafetyError {
     Protected,
     /// A symbolic link that leads outside its cleanup root, or nowhere
     LinkLeadsOut,
+    /// A symbolic link, which app removal never moves
+    Link,
+    /// Not a `.app` folder in an Applications folder, nor a related file app
+    /// removal may take
+    NotAppItem,
 }
 
 impl fmt::Display for SafetyError {
@@ -69,6 +99,8 @@ impl fmt::Display for SafetyError {
             Self::IsRoot => write!(f, "the path is a cleanup folder itself"),
             Self::Protected => write!(f, "the path is protected"),
             Self::LinkLeadsOut => write!(f, "the path is a link that leads out of its folder"),
+            Self::Link => write!(f, "the path is a link"),
+            Self::NotAppItem => write!(f, "the path is not an app or a file app removal may take"),
         }
     }
 }
@@ -82,6 +114,7 @@ pub struct ValidatedPath {
     root: PathBuf,
     device: u64,
     inode: u64,
+    check: Check,
 }
 
 impl ValidatedPath {
@@ -106,12 +139,20 @@ impl ValidatedPath {
     pub fn inode(&self) -> u64 {
         self.inode
     }
+
+    /// Which check made it
+    #[must_use]
+    pub fn check(&self) -> Check {
+        self.check
+    }
 }
 
 /// The cleanup roots and protected paths for one home folder
 #[derive(Debug, Clone)]
 pub struct CleanupRoots {
     home: PathBuf,
+    /// The shared Applications folder, `/Applications` outside tests
+    applications: PathBuf,
 }
 
 /// The names in a path, or `None` if any part is not a plain UTF-8 name.
@@ -141,9 +182,27 @@ impl CleanupRoots {
     ///
     /// Returns an error if the home folder cannot be read.
     pub fn new(home: &Path) -> io::Result<Self> {
+        Self::with_applications(home, Path::new("/Applications"))
+    }
+
+    /// The roots for `home`, with `applications` in place of `/Applications`.
+    /// Both folders must exist.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either folder cannot be read.
+    pub fn with_applications(home: &Path, applications: &Path) -> io::Result<Self> {
         Ok(Self {
             home: fs::canonicalize(home)?,
+            applications: fs::canonicalize(applications)?,
         })
+    }
+
+    /// The folders apps may be removed from: the shared Applications folder,
+    /// and your own
+    #[must_use]
+    pub fn application_folders(&self) -> [PathBuf; 2] {
+        [self.applications.clone(), self.home.join("Applications")]
     }
 
     /// The real home folder
@@ -197,6 +256,31 @@ impl CleanupRoots {
     ///
     /// Returns why the path is refused.
     pub fn validate_deletable(&self, path: &Path) -> Result<ValidatedPath, SafetyError> {
+        let (real, metadata) = self.resolve(path)?;
+        let real_names = names(&real).ok_or(SafetyError::Unsupported)?;
+        let (root, is_root) = self.root_of(&real_names).ok_or(SafetyError::OutsideRoots)?;
+        if is_root {
+            return Err(SafetyError::IsRoot);
+        }
+
+        if metadata.file_type().is_symlink() {
+            self.check_link_target(&real, &root)?;
+        }
+
+        Ok(ValidatedPath {
+            root: Path::new("/").join(root.join("/")),
+            path: real,
+            device: metadata.dev(),
+            inode: metadata.ino(),
+            check: Check::Cleanup,
+        })
+    }
+
+    /// The first steps every check shares: refuses empty, relative, and top
+    /// of disk paths, follows every link above the item but not the item
+    /// itself, and refuses protected paths. Returns the real path and its
+    /// details.
+    fn resolve(&self, path: &Path) -> Result<(PathBuf, fs::Metadata), SafetyError> {
         if path.as_os_str().is_empty() {
             return Err(SafetyError::Empty);
         }
@@ -224,21 +308,57 @@ impl CleanupRoots {
         if self.is_protected(&real_names) {
             return Err(SafetyError::Protected);
         }
-        let (root, is_root) = self.root_of(&real_names).ok_or(SafetyError::OutsideRoots)?;
-        if is_root {
-            return Err(SafetyError::IsRoot);
-        }
+        Ok((real, metadata))
+    }
 
+    /// Checks that an app, or one of its related files, may be moved to the
+    /// Trash. See App Removal in SAFETY.md. Which related files belong to an
+    /// app is up to the caller; this only allows the folders they may be in.
+    ///
+    /// # Errors
+    ///
+    /// Returns why the path is refused.
+    pub fn validate_app_removal(&self, path: &Path) -> Result<ValidatedPath, SafetyError> {
+        let (real, metadata) = self.resolve(path)?;
         if metadata.file_type().is_symlink() {
-            self.check_link_target(&real, &root)?;
+            return Err(SafetyError::Link);
         }
-
+        let parent = real.parent().ok_or(SafetyError::Unsupported)?;
+        let is_app = real.extension().is_some_and(|ext| ext == "app") && metadata.is_dir();
+        let allowed = if self
+            .application_folders()
+            .iter()
+            .any(|folder| parent == folder)
+        {
+            is_app
+        } else {
+            let library = self.home.join("Library");
+            APP_LIBRARY_FOLDERS
+                .iter()
+                .any(|folder| parent == library.join(folder))
+        };
+        if !allowed {
+            return Err(SafetyError::NotAppItem);
+        }
         Ok(ValidatedPath {
-            root: Path::new("/").join(root.join("/")),
-            path: real,
+            root: parent.to_path_buf(),
             device: metadata.dev(),
             inode: metadata.ino(),
+            path: real,
+            check: Check::AppRemoval,
         })
+    }
+
+    /// Runs the same check that made `validated` again, on its path.
+    ///
+    /// # Errors
+    ///
+    /// Returns why the path is now refused.
+    pub fn validate_again(&self, validated: &ValidatedPath) -> Result<ValidatedPath, SafetyError> {
+        match validated.check {
+            Check::Cleanup => self.validate_deletable(validated.path()),
+            Check::AppRemoval => self.validate_app_removal(validated.path()),
+        }
     }
 
     /// A link may only lead somewhere inside its own root, and not to a
@@ -284,7 +404,7 @@ fn is_top_of_disk(path: &[&str]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{CleanupRoots, SafetyError};
+    use super::{Check, CleanupRoots, SafetyError};
     use std::ffi::OsStr;
     use std::fs;
     use std::os::unix::ffi::OsStrExt;
@@ -500,5 +620,104 @@ mod tests {
         assert!(!covers("Library/Developer/Xcode/Archives/*"));
         assert!(!covers("Documents/*"));
         assert!(!roots.covers_pattern(Path::new("/tmp/Library/Caches/x")));
+    }
+
+    /// A home folder and a shared Applications folder, each with an app, a
+    /// link to an app, an app in a subfolder, and some Library files.
+    fn apps() -> (TempDir, TempDir, CleanupRoots) {
+        let home = tempdir().expect("home should be created");
+        let shared = tempdir().expect("applications should be created");
+        for folder in ["Example.app/Contents", "Utilities/Tool.app/Contents"] {
+            fs::create_dir_all(shared.path().join(folder)).expect("folder should be created");
+        }
+        fs::write(shared.path().join("notes.txt"), "x").expect("file should be written");
+        symlink(
+            shared.path().join("Example.app"),
+            shared.path().join("Linked.app"),
+        )
+        .expect("link should be created");
+        for folder in [
+            "Applications/Mine.app/Contents",
+            "Library/Caches/com.example.app",
+            "Library/Application Support/Example/deep",
+            "Library/Preferences",
+            "Library/Keychains/login",
+            "Documents",
+        ] {
+            fs::create_dir_all(home.path().join(folder)).expect("folder should be created");
+        }
+        fs::write(
+            home.path()
+                .join("Library/Preferences/com.example.app.plist"),
+            "x",
+        )
+        .expect("file should be written");
+        let roots = CleanupRoots::with_applications(home.path(), shared.path())
+            .expect("roots should be made");
+        (home, shared, roots)
+    }
+
+    #[test]
+    fn app_removal_allows_apps_and_library_items_only() {
+        let (home, shared, roots) = apps();
+
+        for allowed in [
+            shared.path().join("Example.app"),
+            home.path().join("Applications/Mine.app"),
+            home.path().join("Library/Caches/com.example.app"),
+            home.path()
+                .join("Library/Preferences/com.example.app.plist"),
+            home.path().join("Library/Application Support/Example"),
+        ] {
+            let validated = roots
+                .validate_app_removal(&allowed)
+                .unwrap_or_else(|error| panic!("{} should pass: {error}", allowed.display()));
+            assert_eq!(validated.check(), Check::AppRemoval);
+            assert!(roots.validate_again(&validated).is_ok());
+        }
+    }
+
+    #[test]
+    fn app_removal_refuses_everything_else() {
+        let (home, shared, roots) = apps();
+
+        for (path, want) in [
+            (shared.path().join("Linked.app"), "link"),
+            (shared.path().join("Utilities/Tool.app"), "not an app"),
+            (shared.path().join("Utilities"), "not an app"),
+            (shared.path().join("notes.txt"), "not an app"),
+            (shared.path().join("Example.app/Contents"), "not an app"),
+            (
+                home.path().join("Library/Application Support/Example/deep"),
+                "not an app",
+            ),
+            (home.path().join("Library/Caches"), "not an app"),
+            (home.path().join("Library/Keychains/login"), "protected"),
+            (home.path().join("Documents"), "protected"),
+            (home.path().to_path_buf(), "protected"),
+        ] {
+            let error = roots
+                .validate_app_removal(&path)
+                .expect_err(&format!("{} should be refused", path.display()));
+            assert!(
+                error.to_string().contains(want),
+                "{}: {error}",
+                path.display()
+            );
+        }
+    }
+
+    #[test]
+    fn a_cleanup_path_is_checked_again_by_the_cleanup_check() {
+        let (_dir, roots, home) = home();
+        let validated = roots
+            .validate_deletable(&home.join("Library/Caches/com.example.app"))
+            .expect("cache should pass");
+
+        assert_eq!(validated.check(), Check::Cleanup);
+        assert_eq!(
+            roots.validate_again(&validated).expect("still passes"),
+            validated
+        );
     }
 }
