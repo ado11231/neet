@@ -1,5 +1,6 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct NodeId(usize);
@@ -22,6 +23,8 @@ pub struct Node {
     pub total_size: u64,
     /// How many files and folders are anywhere below this node
     pub total_items: u64,
+    /// When its contents last changed, if the scan could read it
+    pub modified: Option<SystemTime>,
 }
 #[derive(Debug)]
 pub struct Tree {
@@ -40,6 +43,7 @@ impl Tree {
                 own_size: 0,
                 total_size: 0,
                 total_items: 0,
+                modified: None,
             }],
         }
     }
@@ -81,6 +85,7 @@ impl Tree {
             own_size: size,
             total_size: size,
             total_items: 0,
+            modified: None,
         });
 
         self.nodes[parent.0].children.push(id);
@@ -94,6 +99,11 @@ impl Tree {
         }
 
         id
+    }
+
+    /// Records when a node's contents last changed
+    pub fn set_modified(&mut self, id: NodeId, modified: SystemTime) {
+        self.nodes[id.0].modified = Some(modified);
     }
 
     /// Returns the full path of a node, from root down
