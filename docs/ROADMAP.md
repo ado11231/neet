@@ -3,7 +3,7 @@
 * What neet does today, what comes next, and how each step is accepted.
 * For anyone tracking progress or picking the next piece of work.
 * A milestone is only marked complete after its checks pass.
-* Last updated September 28, 2026. The 37 library tests and 27 interface tests pass. The program opens the Home screen, and Disk browses the scan.
+* Last updated September 28, 2026. The 46 library tests and 27 interface tests pass. The program opens the Home screen, and Disk browses the scan.
 * Features and their status live in [FEATURES.md](FEATURES.md). Screens live in [INTERFACE.md](INTERFACE.md).
 
 ## Contents
@@ -80,11 +80,11 @@
 
 * **Built:**
   1. The path check, pulled forward from M4 so rules can be checked against it. `CleanupRoots` holds the cleanup roots and protected paths from SAFETY.md, and `validate_deletable` makes a `ValidatedPath`. 12 tests cover `..` parts, doubled slashes, links above and at the item, protected paths, container folders, roots themselves, names that are not `UTF-8`, and rule patterns.
+  2. The TOML rule format. `rules::load` reads bundled rules and your own from `~/.config/neet/rules/`, checks every field and path, treats a `safe` tier in your own rule as `caution`, and lets your rule replace a bundled one. A rule with a problem is left out and reported. 9 tests.
 * **Remaining:**
-  1. The TOML rule format, bundled and user rules, and their checks.
-  2. The first bundled rules.
-  3. Dry run plans, with sizes, age filters, and selection totals.
-  4. The Clean screen.
+  1. The first bundled rules.
+  2. Dry run plans, with sizes, age filters, and selection totals.
+  3. The Clean screen.
 * **Done when** every bundled rule loads and finds only allowed targets, without changing any file.
 
 ## Planned

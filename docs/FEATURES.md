@@ -99,7 +99,7 @@
 | Open app checks | Blocks a rule while its app is open, and checks again right before moving anything. | P1 | Planned |
 | Recent file protection | Lets a rule skip items changed within its minimum age. A folder counts as changed when anything inside it changed. | P1 | Planned |
 | Selection totals | Shows how many items and how much estimated space your selected rules cover. | P1 | Planned |
-| Bundled and user rules | Loads the reviewed TOML rules, plus your own from `~/.config/neet/rules/`. Your rule can replace a bundled rule with the same ID, but can never widen what cleanup may touch, and is never selected from the start. | P1 | Planned |
+| Bundled and user rules | Loads the reviewed TOML rules, plus your own from `~/.config/neet/rules/`. Your rule can replace a bundled rule with the same ID, but can never widen what cleanup may touch, and is never selected from the start.  Loading and checking rules is built. No bundled rules are written yet. | P1 | In Progress |
 | Cleanup from Disk | Plans a cleanup for the item selected in Disk, with the same checks, review, and question as Clean. Items outside the allowed folders are refused. | P1 | Planned |
 
 ### Cleanup Target Groups

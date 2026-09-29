@@ -122,7 +122,9 @@
 
 ## Cleanup Rules
 
-* Bundled rules live in `rules/`. Your own rules live in `~/.config/neet/rules/`.
+* Bundled rules live in `crates/neet-core/rules/` and are built into the program. They sit inside the crate so `cargo install` includes them.
+* Your own rules live in `~/.config/neet/rules/`, one or more `.toml` files. A missing folder is fine.
+* A rule with a problem is left out and reported. It never stops the other rules from loading.
 * Your rule can replace a bundled rule by using the same `id`. It still goes through the same Rust checks.
 
 ```toml
