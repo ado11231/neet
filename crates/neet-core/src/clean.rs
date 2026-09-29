@@ -11,7 +11,7 @@ use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use crate::rules::{Rule, Tier};
+use crate::rules::{Category, Rule, Source, Tier};
 use crate::safety::{CleanupRoots, SafetyError, ValidatedPath};
 use crate::size::{HardLinkTracker, allocated_size};
 
@@ -243,6 +243,44 @@ pub fn plan(rules: &[Rule], roots: &CleanupRoots, now: SystemTime) -> Plan {
         });
     }
     plan
+}
+
+/// Plans a cleanup of one item you picked in the Disk screen. It goes
+/// through the same path check as any rule, and comes back selected.
+///
+/// # Errors
+///
+/// Returns why the item cannot be cleaned.
+pub fn plan_path(path: &Path, roots: &CleanupRoots, now: SystemTime) -> Result<Plan, SkipReason> {
+    // Rule paths treat `*` as a pattern, so a name holding one could match
+    // other items.
+    if path.to_string_lossy().contains('*') {
+        return Err(SkipReason::Refused(SafetyError::Unsupported));
+    }
+    let rule = Rule {
+        id: "picked-in-disk".to_string(),
+        name: "Picked in Disk".to_string(),
+        category: Category::Application,
+        tier: Tier::Caution,
+        paths: vec![path.to_path_buf()],
+        description: "An item you picked in the Disk screen.".to_string(),
+        regenerates: false,
+        requires_quit: Vec::new(),
+        min_age_days: 0,
+        source: Source::Disk,
+    };
+    let mut plan = plan(&[rule], roots, now);
+    let rule_plan = &mut plan.rules[0];
+    if let Some(skipped) = rule_plan.skipped.pop() {
+        return Err(skipped.reason);
+    }
+    if rule_plan.items.is_empty() {
+        return Err(SkipReason::Unreadable(io::Error::from(
+            io::ErrorKind::NotFound,
+        )));
+    }
+    rule_plan.selected = true;
+    Ok(plan)
 }
 
 /// One item moved to the Trash
@@ -733,5 +771,38 @@ mod tests {
 
         assert_eq!(plan.rules[0].items.len(), 1);
         assert!(matches!(plan.rules[0].skipped[0].reason, SkipReason::Link));
+    }
+
+    #[test]
+    fn plans_one_picked_item_or_says_why_not() {
+        let (dir, roots) = home();
+        write(&dir.path().join("Library/Caches/app/file"), 100);
+        write(&dir.path().join("Documents/keep.txt"), 100);
+        let now = SystemTime::now();
+
+        let plan = super::plan_path(&dir.path().join("Library/Caches/app"), &roots, now)
+            .expect("a cache folder should be planned");
+        assert!(plan.rules[0].selected);
+        assert_eq!(plan.selected_count(), 1);
+
+        for refused in [
+            dir.path().join("Documents/keep.txt"),
+            dir.path().join("Library/Caches"),
+            dir.path().to_path_buf(),
+        ] {
+            assert!(matches!(
+                super::plan_path(&refused, &roots, now),
+                Err(SkipReason::Refused(_))
+            ));
+        }
+        assert!(super::plan_path(&dir.path().join("Library/Caches/missing"), &roots, now).is_err());
+
+        // A name with a `*` must not match its neighbours.
+        write(&dir.path().join("Library/Caches/a*"), 10);
+        write(&dir.path().join("Library/Caches/abc"), 10);
+        assert!(matches!(
+            super::plan_path(&dir.path().join("Library/Caches/a*"), &roots, now),
+            Err(SkipReason::Refused(_))
+        ));
     }
 }

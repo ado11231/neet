@@ -150,10 +150,11 @@
 | `Left` or `h` | Go up to the parent folder, with the folder you left still selected. |
 | `Up` / `Down` | Move the selection. |
 | `s` | Sort by size, then name, then items. The selection stays on the same row. |
-| `d` | Plan a cleanup of the selected item. Not built yet. |
+| `d` | Plan a cleanup of the selected item, then open the path review. An item outside the cleanup folders opens a box that says why it cannot be cleaned. |
 | `g` / `G` | Jump to the first or last row. |
 
 * A cleanup started here goes through the same checks, review, and question as any other.
+* The Disk screen shows the scan as it was. An item moved to the Trash stays listed until neet scans again.
 
 ## The Clean Screen
 

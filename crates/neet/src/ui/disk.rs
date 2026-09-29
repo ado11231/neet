@@ -1,5 +1,10 @@
 use std::cmp::Reverse;
 
+use std::sync::Arc;
+use std::time::SystemTime;
+
+use neet_core::clean;
+use neet_core::safety::CleanupRoots;
 use neet_core::tree::{NodeId, NodeKind, Tree};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
@@ -9,7 +14,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState, Padding, Paragraph};
 
 use super::app::{Action, Context, Screen};
+use super::clean::{Planned, skip_reason};
 use super::format;
+use super::review::{Notice, Review};
 use super::scan::ScanStatus;
 
 /// How many characters wide each size bar is.
@@ -301,13 +308,18 @@ impl Screen for Disk {
             KeyCode::Char('s') => browser.cycle_sort(tree),
             KeyCode::Char('g') | KeyCode::Home => browser.move_to(0),
             KeyCode::Char('G') | KeyCode::End => browser.move_to(usize::MAX),
+            KeyCode::Char('d') => {
+                if let Some(id) = browser.selected() {
+                    return plan_cleanup(tree, id);
+                }
+            }
             _ => {}
         }
         Action::None
     }
 
     fn hints(&self) -> &'static str {
-        "↑↓ move · → open · ← up · s sort · esc home · ? help"
+        "↑↓ move · → open · ← up · s sort · d clean · esc home · ? help"
     }
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
@@ -317,9 +329,44 @@ impl Screen for Disk {
             ("←  h", "Go up to the parent folder"),
             ("s", "Sort by size, name, or items"),
             ("g  G", "Jump to the first or last row"),
+            ("d", "Review moving the selected item to the Trash"),
             ("Esc", "Go back to Home"),
             ("q", "Quit"),
         ]
+    }
+}
+
+/// Plans a cleanup of one item, with the same checks as any rule, and opens
+/// the review. If the item cannot be cleaned, says why.
+fn plan_cleanup(tree: &Tree, id: NodeId) -> Action {
+    let home = tree.path(tree.root());
+    let path = tree.path(id);
+    let result = CleanupRoots::new(&home)
+        .map_err(|error| format!("the home folder could not be read: {error}"))
+        .and_then(|roots| {
+            clean::plan_path(&path, &roots, SystemTime::now())
+                .map(|plan| (plan, roots.home().to_path_buf()))
+                .map_err(|reason| skip_reason(&reason, None))
+        });
+    match result {
+        Ok((plan, home)) => Action::Open(Box::new(Review::new(Arc::new(Planned {
+            plan,
+            errors: Vec::new(),
+            home,
+        })))),
+        Err(reason) => Action::Open(Box::new(Notice::new(
+            "Cannot clean this",
+            vec![
+                Line::from(display_path(tree, id)).bold(),
+                Line::from(reason),
+                Line::default(),
+                Line::from(
+                    "Cleanup only moves items inside the cache, log, and build folders \
+                     listed in SAFETY.md.",
+                )
+                .dark_gray(),
+            ],
+        ))),
     }
 }
 
@@ -480,5 +527,35 @@ mod tests {
         let screen = render(&mut Disk::new(), &scan, 80);
 
         assert!(screen.contains("42 items so far"));
+    }
+
+    #[test]
+    fn d_reviews_an_item_in_a_cleanup_folder_and_explains_any_other() {
+        let dir = tempfile::tempdir().expect("temporary directory should be created");
+        for file in ["Library/Caches/app/file", "Documents/keep.txt"] {
+            let path = dir.path().join(file);
+            std::fs::create_dir_all(path.parent().expect("path should have a parent"))
+                .expect("folder should be created");
+            std::fs::write(path, "x").expect("file should be written");
+        }
+        let mut tree = Tree::new(dir.path());
+        let root = tree.root();
+        let library = tree.add(root, "Library", NodeKind::Directory, 0);
+        let caches = tree.add(library, "Caches", NodeKind::Directory, 0);
+        let app = tree.add(caches, "app", NodeKind::Directory, 0);
+        let documents = tree.add(root, "Documents", NodeKind::Directory, 0);
+
+        let Action::Open(screen) = plan_cleanup(&tree, app) else {
+            panic!("a cache folder should open the review");
+        };
+        assert!(screen.hints().contains("enter continue"));
+
+        for refused in [documents, caches, library] {
+            let Action::Open(screen) = plan_cleanup(&tree, refused) else {
+                panic!("a refused item should open a notice");
+            };
+            assert!(screen.hints().contains("any key close"));
+        }
+        assert!(dir.path().join("Library/Caches/app/file").exists());
     }
 }
