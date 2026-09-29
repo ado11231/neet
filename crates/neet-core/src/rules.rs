@@ -52,6 +52,8 @@ pub enum Source {
     User(PathBuf),
     /// An item you picked in the Disk screen
     Disk,
+    /// An app, or one of its related files, in the Remove App screen
+    App,
 }
 
 #[derive(Clone, Debug)]
