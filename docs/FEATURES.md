@@ -193,7 +193,7 @@
 
 | Feature | What It Does | Phase | Status |
 | --- | --- | --- | --- |
-| App removal review | Shows an app and its related files before removal. Leaves anything that may be your data unselected, warns about folders shared with other apps, and refuses while the app is open. | P1.5 | Planned |
+| App removal review | Shows an app and its related files before removal. Leaves anything that may be your data unselected, warns about folders shared with other apps, and refuses while the app is open. What it may remove is settled in [SAFETY.md](SAFETY.md#app-removal). | P1.5 | In Progress |
 
 * This is separate from cleaning app caches.
 * The allowed cleanup folders do not include apps yet. See [Design Questions](#design-questions).
@@ -339,7 +339,7 @@
 
 | Area | What Needs Deciding |
 | --- | --- |
-| App removal | P1.5 removes apps, but the allowed folders do not include apps. Decide what may be removed, and update the safety rules before building it. |
+| App removal | Settled September 29, 2026. Apps directly in `/Applications` or `~/Applications`, except Apple's apps and links, and exact matches in a fixed list of `~/Library` folders. See [SAFETY.md](SAFETY.md#app-removal). |
 | Docker and simulators | Their tools may not be undoable the way the Trash is. Decide the targets, the preview, and a way to undo. Postpone anything that cannot meet the Trash policy. |
 | Mail downloads | Mail keeps downloaded attachments in `~/Library/Containers/com.apple.mail/Data/Library/Mail Downloads`, outside the Containers cleanup root. Decide whether to add that one folder as a root, after checking it never holds your only copy of an attachment. |
 | System logs | No targets are chosen, and cleanup cannot use `sudo` or touch protected paths. Find targets that fit both limits. |
