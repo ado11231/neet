@@ -1,0 +1,16 @@
+# Settings for release-plz. See the release steps in docs/ARCHITECTURE.md.
+
+[workspace]
+# Release only when a release pull request is merged, not on every push.
+release_always = false
+# Keep a CHANGELOG.md in each crate, written from conventional commits.
+changelog_update = true
+# Check public library changes against the last published version.
+semver_check = true
+pr_labels = ["release"]
+
+[[package]]
+name = "neet-core"
+# The library is published to crates.io, but only the program gets a
+# GitHub release.
+git_release_enable = false

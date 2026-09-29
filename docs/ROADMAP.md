@@ -44,6 +44,7 @@
 * CI checks formatting, Clippy, and tests, and runs `cargo check` for Apple silicon and Intel.
 * CI also checks the minimum Rust version, 1.88, caches Cargo files, and cancels runs replaced by a newer push. Added September 28, 2026.
 * These checks do not replace the release builds and real Mac testing in M5.
+* Branches and pull requests, a ruleset on `master`, Dependabot, and release-plz. Added September 29, 2026. See [Branches And Releases](ARCHITECTURE.md#branches-and-releases).
 
 ### M1: Scanner
 
@@ -113,6 +114,8 @@
 ### M5: P1 Release
 
 * Programs for Apple silicon and Intel, Homebrew and Cargo packages, and steps for turning on Full Disk Access.
+* **Ready:** release-plz makes release pull requests, changelogs, tags, and GitHub releases, and publishes both crates to crates.io once `CARGO_REGISTRY_TOKEN` is set.
+* **Remaining:** prebuilt programs attached to each GitHub release, likely with `cargo-dist`, a Homebrew formula, and the Full Disk Access steps.
 * **Done when** automated tests and the release checks below pass on both kinds of Mac.
 
 ### M6: P1.5

@@ -17,7 +17,8 @@
 8. [Settings And Startup](#settings-and-startup)
 9. [Dependencies](#dependencies)
 10. [Platform Support](#platform-support)
-11. [File Reference](#file-reference)
+11. [Branches And Releases](#branches-and-releases)
+12. [File Reference](#file-reference)
 
 ## Overview
 
@@ -47,7 +48,12 @@ neet/
 │       └── src/
 │           └── main.rs
 ├── docs/                  Guide, features, interface, safety, architecture, roadmap
-└── .github/workflows/ci.yml
+├── release-plz.toml       Release settings
+└── .github/
+    ├── dependabot.yml
+    └── workflows/
+        ├── ci.yml
+        └── release-plz.yml
 ```
 
 * These are planned, but do not exist yet:
@@ -215,12 +221,31 @@ selected rules
 * Not every disk uses APFS. If a disk does something neet does not support, it must stop with a clear message.
 * The workspace does not allow `unsafe` code. macOS calls must go through a crate that handles that.
 
+## Branches And Releases
+
+* Every change starts on its own branch, such as `feat/...`, `fix/...`, `docs/...`, or `ci/...`, and reaches `master` through a pull request.
+* A ruleset on `master` blocks direct pushes, and requires a pull request with every CI check passing. Admins can bypass it in an emergency.
+* Commit messages follow conventional commits, such as `feat(core): ...` or `fix(tui): ...`. release-plz writes the changelogs from them.
+* Dependabot opens grouped pull requests once a week, one for Cargo updates and one for GitHub Actions updates.
+
+| Step | What Happens |
+| --- | --- |
+| 1. Merge to `master` | release-plz opens or updates a release pull request with the next versions and each crate's `CHANGELOG.md`. |
+| 2. Review | Check the versions and changelogs, and edit them in the pull request if needed. |
+| 3. Merge the release pull request | release-plz publishes `neet-core`, then `neet`, to crates.io, tags them, and makes a GitHub release for `neet`. |
+| 4. Binaries | Planned for M5: prebuilt Apple silicon and Intel programs attached to the same GitHub release, and a Homebrew formula. |
+
+| Secret | Needed For |
+| --- | --- |
+| `CARGO_REGISTRY_TOKEN` | Publishing to crates.io. A crates.io API token with the publish scope. |
+| `RELEASE_PLZ_TOKEN` | Letting CI run on the release pull request. A fine grained personal access token for this repository, with read and write access to contents and pull requests. Without it, the release pull request cannot pass the `master` ruleset. |
+
 ## File Reference
 
 | File | Purpose |
 | --- | --- |
 | `Cargo.toml` | Lists the two crates, their shared version, license, and minimum Rust version (1.88), and the lint rules. The rules turn on Clippy's strict checks and forbid `unsafe` code. |
-| `crates/neet-core/Cargo.toml` | The library's dependencies: `jwalk`, `rustix`, `serde`, and `toml`, and `tempfile` for tests. |
+| `crates/neet-core/Cargo.toml` | The library's crates.io details and dependencies: `jwalk`, `rustix`, `serde`, and `toml`, and `tempfile` for tests. |
 | `crates/neet-core/src/lib.rs` | The library's entry point. Makes the `apps`, `clean`, `disk`, `rules`, `safety`, `scan`, `size`, `trash`, and `tree` modules public. |
 | `crates/neet-core/src/disk.rs` | `disk_space` reads the size and free space of the disk holding a path, with `statvfs`. Has tests. |
 | `crates/neet-core/src/scan.rs` | `scan` walks a folder on several threads without following links or leaving the disk, builds the full `Tree`, counts hard links once, records unreadable paths, noting when macOS denied access, lists other disks, retries interrupted lookups, and reports `Progress`. Has tests, including one that mounts a disk image. |
@@ -244,4 +269,7 @@ selected rules
 | `crates/neet/src/ui/review.rs` | `Review` lists every path of the selected rules. `Notice` shows a short message in a box. `Confirm` asks before anything moves and blocks `q`. `Cleanup` runs `clean::run` on its own thread with a progress bar, refuses `Esc` and `q` until done, then shows what moved and what was skipped, and goes back to Home. Has tests, with a stand in for Finder. |
 | `crates/neet/src/ui/skipped.rs` | The Skipped screen: unreadable paths with reasons, other disks, and a Full Disk Access hint. Has tests. |
 | `crates/neet/src/ui/clean.rs` | The Clean screen. Loads the rules and makes the dry run plan on its own thread, then lists each rule with its tier, items, and size. `Space` selects a rule, the title shows the selection totals, and a panel explains the selected rule and lists every path it found or skipped. An `expert` rule is selected by typing its ID, and a rule whose app is open cannot be selected. `Estimate` plans every rule in the background for the Home summary. Has tests. |
-| `.github/workflows/ci.yml` | Checks formatting, runs Clippy and tests, checks the code builds with the minimum Rust version, and runs `cargo check` for Apple silicon and Intel targets. Caches Cargo files, and cancels a run when a newer push replaces it. |
+| `.github/workflows/ci.yml` | Checks formatting, runs Clippy and tests, checks the code builds with the minimum Rust version, and runs `cargo check` for Apple silicon and Intel targets. Runs on pull requests, and on `master` after each merge. Caches Cargo files, and cancels a run when a newer push replaces it. |
+| `.github/workflows/release-plz.yml` | On each push to `master`, opens or updates the release pull request, and releases when a release pull request was merged. |
+| `.github/dependabot.yml` | Weekly grouped update pull requests for Cargo and GitHub Actions. |
+| `release-plz.toml` | Releases only from a merged release pull request, keeps a changelog per crate, checks semver, and gives only `neet` a GitHub release. |

@@ -1,7 +1,9 @@
 name: CI
 
+# Pull requests run CI once, and master runs it again after each merge.
 on:
   push:
+    branches: [master]
   pull_request:
 
 # A newer push to the same branch cancels the run still going for the old one.
