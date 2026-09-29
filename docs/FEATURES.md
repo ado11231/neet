@@ -28,8 +28,8 @@
 
 ## Where Things Stand
 
-* Parts of the scanner exist in the `neet-core` library.
-* The `neet` program opens a Home menu. It has no working feature screens, no cleanup, and no Mac settings changes yet.
+* The scanner, the cleanup rules, and dry run plans exist in the `neet-core` library.
+* The `neet` program opens a Home menu, with working Disk and Clean screens. Clean shows a dry run only. Nothing is moved to the Trash yet, and no Mac settings are changed.
 * Nothing below is available to use until it is connected to the program.
 
 ## Status And Phases
@@ -97,13 +97,13 @@
 
 | Feature | What It Does | Phase | Status |
 | --- | --- | --- | --- |
-| Dry run plan | Lists matching paths and changes nothing. Every cleanup starts here. | P1 | Planned |
+| Dry run plan | Lists matching paths and changes nothing. Every cleanup starts here. Built and shown in Clean. | P1 | In Progress |
 | Path review and confirmation | Shows every target, the item count, and the estimated size, then asks before going on. You cannot skip it. | P1 | Planned |
 | Move to the Trash | Moves confirmed items to the Trash through Finder, so Put Back restores them. Space is freed only when you empty the Trash yourself, and neet shows how much that will be. | P1 | Planned |
-| Risk tiers | Labels each rule `safe`, `caution`, or `expert`. The tier explains the cost and decides how the rule is selected. | P1 | Planned |
+| Risk tiers | Labels each rule `safe`, `caution`, or `expert`. The tier explains the cost and decides how the rule is selected. Labels and selection are built. Selecting an `expert` rule, which needs a typed confirmation, is not. | P1 | In Progress |
 | Open app checks | Blocks a rule while its app is open, and checks again right before moving anything. | P1 | Planned |
-| Recent file protection | Lets a rule skip items changed within its minimum age. A folder counts as changed when anything inside it changed. | P1 | Planned |
-| Selection totals | Shows how many items and how much estimated space your selected rules cover. | P1 | Planned |
+| Recent file protection | Lets a rule skip items changed within its minimum age. A folder counts as changed when anything inside it changed. Built in dry run plans. It must be checked again before the move, in M4. | P1 | In Progress |
+| Selection totals | Shows how many items and how much estimated space your selected rules cover. Built in Clean. | P1 | In Progress |
 | Bundled and user rules | Loads the reviewed TOML rules, plus your own from `~/.config/neet/rules/`. Your rule can replace a bundled rule with the same ID, but can never widen what cleanup may touch, and is never selected from the start. Loading and checking rules is built, with 14 bundled rules. See [Bundled Rules](#bundled-rules). | P1 | In Progress |
 | Cleanup from Disk | Plans a cleanup for the item selected in Disk, with the same checks, review, and question as Clean. Items outside the allowed folders are refused. | P1 | Planned |
 | Project build folders | Finds build output inside your code projects, such as `target/` and `node_modules/`, grouped by project and sorted by size or by how long since you last worked on the project. Uses the home folder scan, so it does not walk the disk again. Offers a folder only when Git ignores it. Waits on its [design question](#design-questions), because project folders are outside the cleanup roots. | P2 | Proposed |
@@ -309,7 +309,7 @@
 | Feature | What It Does | Phase | Status |
 | --- | --- | --- | --- |
 | Home menu | Opens on a Home screen with ASCII art and a menu of features, moved with the arrow keys. `Enter` opens a screen and `Esc` goes back. Works with Vim keys outside text fields. Features not built yet show dimmed. The status panel shows the disk gauge and the scan. | P1 | In Progress |
-| Help | Press `?` for help on the current screen and the selected rule. Screen help works. Rule help waits on Clean. | P1 | In Progress |
+| Help | Press `?` for help on the current screen and the selected rule. Screen help works. In Clean, the selected rule is explained in a panel below the list. | P1 | In Progress |
 | Command line | Run `neet` to open it. The only options are `--help` and `--version`. Cleanup happens only inside the interface. | P1 | Built |
 | Install with Homebrew or Cargo | Packages for both. Neither is published yet. | P1 | Planned |
 | macOS support | macOS 13 or later, on Apple silicon and Intel. CI checks that the code builds for both, but release builds still need testing on real Macs. | P1 | Planned |

@@ -157,13 +157,33 @@
 
 ## The Clean Screen
 
-* Each row shows a rule's name, risk tier, number of items, and estimated size.
+```text
++ Clean -----------------------------------------------------+
+|   [x] Xcode DerivedData   safe       nothing found     0 B |
+| > [ ] npm cache           caution          3 items  4.6 GB |
+|   [ ] User logs           caution         27 items 83.0 MB |
++ Selected: 0 items, 0 B . they go to the Trash -------------+
++ npm cache -------------------------------------------------+
+| Packages npm downloaded before. ...                        |
+| caution . You may need to download, index, or sign in ... |
+|                                                            |
+|    4.3 GB  ~/.npm/_cacache/content-v2                      |
+|    skipped ~/Library/Logs/App  changed in the last 7 days  |
++------------------------------------------------------------+
+```
+
+* When it opens, neet loads the rules and makes a dry run plan in the background. Nothing is changed while it looks. On a real home folder this took about 7 seconds.
+* Each row shows a rule's name, risk tier, number of items, and estimated size. Rules that found nothing are dimmed.
+* The list's bottom edge shows how many items and how much space the selected rules cover.
+* The panel below explains the selected rule: what it removes, its tier, apps to close, its minimum age, and every path it found or skipped, with the reason.
+* Rules that could not be loaded are listed at the top of the panel.
 
 | Key | Action |
 | --- | --- |
-| `Space` | Select or clear a rule. |
-| `Enter` | Review the paths the selected rules found. |
-| `?` | Explain the selected rule and its tier. |
+| `Up` / `Down` | Move between rules. |
+| `g` / `G` | Jump to the first or last rule. |
+| `Space` | Select or clear a rule. A rule that found nothing cannot be selected. |
+| `Enter` | Review the paths the selected rules found. Not built yet. |
 
 | Tier | How It Is Selected |
 | --- | --- |

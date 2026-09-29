@@ -7,9 +7,9 @@ use ratatui::widgets::{Block, List, ListItem, ListState, Padding, Paragraph, Wra
 
 use super::app::{Action, Context, Screen};
 use super::art;
+use super::clean::Clean;
 use super::disk::Disk;
 use super::format;
-use super::placeholder::Placeholder;
 use super::scan::ScanStatus;
 use super::skipped::Skipped;
 use neet_core::disk::DiskSpace;
@@ -47,7 +47,7 @@ const ENTRIES: &[Entry] = &[
     Entry {
         label: "Clean",
         about: "Move files your apps can make again to the Trash, after you review every path.",
-        target: Target::Screen(|| Box::new(Placeholder::new("Clean"))),
+        target: Target::Screen(|| Box::new(Clean::new())),
     },
     Entry {
         label: "Large Files",

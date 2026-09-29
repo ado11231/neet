@@ -22,7 +22,7 @@
 | M0 | Workspace, licenses, formatting, linting, and CI | Foundation | P1 | Complete |
 | M1 | A full scan of the home folder | Disk analysis | P1 | Complete |
 | M2 | Home screen, disk browser, and keyboard keys | Disk analysis, interface | P1 | Complete |
-| M3 | Rules, risk tiers, and dry run plans in Clean | Cleanup, interface | P1 | In Progress |
+| M3 | Rules, risk tiers, and dry run plans in Clean | Cleanup, interface | P1 | Complete |
 | M4 | Review, path checks, open app checks, and moving to the Trash | Cleanup, safety | P1 | Planned |
 | M5 | Packages, testing on real Macs, and the P1 release checks | Distribution | P1 | Planned |
 | M6 | Large and old file filters, and the app removal review | Disk analysis, apps | P1.5 | Planned. App removal scope is open. |
@@ -74,24 +74,29 @@
 * **Done when** the screen keeps responding during a scan, and marks incomplete scans. Both are checked.
 * Planning a cleanup from Disk with `d` moves to M4, since it needs the path checks.
 
-## In Progress
-
 ### M3: Rules
 
+* Completed September 29, 2026.
 * **Built:**
   1. The path check, pulled forward from M4 so rules can be checked against it. `CleanupRoots` holds the cleanup roots and protected paths from SAFETY.md, and `validate_deletable` makes a `ValidatedPath`. 12 tests cover `..` parts, doubled slashes, links above and at the item, protected paths, container folders, roots themselves, names that are not `UTF-8`, and rule patterns.
   2. The TOML rule format. `rules::load` reads bundled rules and your own from `~/.config/neet/rules/`, checks every field and path, treats a `safe` tier in your own rule as `caution`, and lets your rule replace a bundled one. A rule with a problem is left out and reported. 9 tests.
   3. The first 14 bundled rules in `crates/neet-core/rules/`, with strict tiers. Only Xcode DerivedData and simulator caches are `safe`. 3 tests check that every bundled rule loads and that no download cache is `safe`.
   4. Dry run plans in `clean::plan`, with sizes, minimum age checks, and selection totals. Every item passes the path check, a file with several names is counted once, and an item found by two rules goes to the first. 8 tests, including one that plans the bundled rules and checks no file changed.
-* **Remaining:**
-  1. The Clean screen. A plan of the real home folder took about 7 seconds, mostly in the npm cache, so it must run in the background.
-* **Done when** every bundled rule loads and finds only allowed targets, without changing any file.
+  5. The Clean screen. It makes the plan on a background thread, since a real home folder took about 7 seconds, mostly in the npm cache. It lists each rule with its tier, items, and size, selects `safe` rules from the start, and lets `Space` select or clear the others. The selection totals sit under the list, and a panel explains the selected rule and every path it found or skipped. Rules that could not be loaded are listed. 5 tests.
+* **Done when** every bundled rule loads and finds only allowed targets, without changing any file. A test plans every bundled rule in a fake home folder and checks that nothing changed.
+* Moved to M4: the path review opened with `Enter`, selecting `expert` rules with a typed confirmation, and blocking rules whose app is open.
+
+## In Progress
+
+* Nothing. M4 is next.
 
 ## Planned
 
 ### M4: Cleanup
 
 * Checks for open apps, the path review, the question, checking each path again right before the move, and moving to the Trash. The path check itself was built in M3.
+* Selecting `expert` rules with a typed confirmation.
+* Showing on Home how much Clean can free.
 * Planning a cleanup of the item selected in Disk, with `d`.
 * **Done when** the safety tests in [SAFETY.md](SAFETY.md#tests) pass, and Finder restores a test item.
 

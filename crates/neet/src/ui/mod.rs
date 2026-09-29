@@ -1,10 +1,10 @@
 mod app;
 mod art;
+mod clean;
 mod disk;
 mod format;
 mod help;
 mod home;
-mod placeholder;
 mod scan;
 mod skipped;
 
