@@ -149,7 +149,7 @@ fn display_name(tree: &Tree, id: NodeId) -> String {
 }
 
 /// The folder's path, with the scan root shown as `~`.
-fn display_path(tree: &Tree, id: NodeId) -> String {
+pub(super) fn display_path(tree: &Tree, id: NodeId) -> String {
     let root = tree.path(tree.root());
     let path = tree.path(id);
     match path.strip_prefix(&root) {
@@ -256,6 +256,17 @@ impl Disk {
     pub fn new() -> Self {
         Self { browser: None }
     }
+
+    /// Opens on the folder holding `id`, with `id` selected.
+    pub fn showing(tree: &Tree, id: NodeId) -> Self {
+        let mut browser = Browser::new(tree);
+        if let Some(parent) = tree.get(id).parent {
+            browser.show(tree, parent, Some(id));
+        }
+        Self {
+            browser: Some(browser),
+        }
+    }
 }
 
 impl Screen for Disk {
@@ -338,7 +349,7 @@ impl Screen for Disk {
 
 /// Plans a cleanup of one item, with the same checks as any rule, and opens
 /// the review. If the item cannot be cleaned, says why.
-fn plan_cleanup(tree: &Tree, id: NodeId) -> Action {
+pub(super) fn plan_cleanup(tree: &Tree, id: NodeId) -> Action {
     let home = tree.path(tree.root());
     let path = tree.path(id);
     let result = CleanupRoots::new(&home)
