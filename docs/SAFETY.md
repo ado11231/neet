@@ -117,6 +117,9 @@
 8. Saves the real path, its root, and its device and inode.
 
 * Right before moving an item, neet checks its real path, device, and inode again. If anything changed, it skips that item.
+* Right before moving an item, neet also checks again that the rule's apps are closed, and that nothing inside the item changed within the rule's minimum age.
+* Symbolic links are left in place, even ones that lead somewhere inside their root. Finder may act on what a link leads to rather than the link, so neet never hands it one.
+* If neet cannot tell whether an app is open, it treats the app as open.
 * If neet cannot be sure a file is the same one you reviewed, it skips it.
 * **Known gap:** moving to the Trash through Finder takes a path, not an open file. Between the last check and the move, a very short window remains in which a path could be swapped for a link. neet checks right before each move to keep that window as small as possible. Closing it fully would need a way of moving files that macOS does not offer for the Trash.
 * Any other case macOS cannot protect against must be written down here before M4 is done.
