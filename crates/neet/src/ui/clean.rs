@@ -9,10 +9,10 @@ use neet_core::rules::{self, RuleError, Tier};
 use neet_core::safety::CleanupRoots;
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::{Constraint, Flex, Layout, Rect};
 use ratatui::style::{Style, Stylize};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, List, ListItem, ListState, Padding, Paragraph, Wrap};
+use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Padding, Paragraph, Wrap};
 
 use super::app::{Action, Context, Screen};
 use super::format;
@@ -56,6 +56,8 @@ enum State {
 pub struct Clean {
     state: State,
     list: ListState,
+    /// What you have typed to select an `expert` rule, while the box is open
+    typing: Option<String>,
 }
 
 impl Clean {
@@ -86,6 +88,7 @@ impl Clean {
         Self {
             state,
             list: ListState::default().with_selected(Some(0)),
+            typing: None,
         }
     }
 
@@ -122,10 +125,79 @@ impl Clean {
         let Some(rule) = planned.plan.rules.get_mut(index) else {
             return;
         };
-        // Expert rules need a typed confirmation, which is not built yet.
-        if rule.rule.tier != Tier::Expert && !rule.items.is_empty() {
+        if rule.items.is_empty() {
+            return;
+        }
+        if rule.rule.tier == Tier::Expert && !rule.selected {
+            // Selecting an expert rule needs its ID typed out.
+            self.typing = Some(String::new());
+        } else {
             rule.selected = !rule.selected;
         }
+    }
+
+    fn selected_rule(&self) -> Option<&RulePlan> {
+        match &self.state {
+            State::Ready(planned) => planned.plan.rules.get(self.selected()),
+            _ => None,
+        }
+    }
+
+    /// Handles a key while the box for an `expert` rule is open.
+    fn type_key(&mut self, code: KeyCode) {
+        let Some(typed) = &mut self.typing else {
+            return;
+        };
+        match code {
+            KeyCode::Char(c) => typed.push(c),
+            KeyCode::Backspace => {
+                typed.pop();
+            }
+            KeyCode::Enter => {
+                let typed = self.typing.take().unwrap_or_default();
+                let index = self.selected();
+                if let State::Ready(planned) = &mut self.state
+                    && let Some(planned) = Arc::get_mut(planned)
+                    && let Some(rule) = planned.plan.rules.get_mut(index)
+                    && typed == rule.rule.id
+                {
+                    rule.selected = true;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn draw_typing(&self, frame: &mut Frame, area: Rect) {
+        let (Some(typed), Some(rule)) = (&self.typing, self.selected_rule()) else {
+            return;
+        };
+        let lines = vec![
+            Line::from(format!("{} is an expert rule.", rule.rule.name)).bold(),
+            Line::from("Its files may not exist anywhere else.").red(),
+            Line::default(),
+            Line::from(vec![
+                Span::raw("Type "),
+                Span::raw(rule.rule.id.clone()).bold(),
+                Span::raw(" and press Enter to select it."),
+            ]),
+            Line::from(format!("> {typed}█")).cyan(),
+        ];
+        let [area] = Layout::vertical([Constraint::Length(7)])
+            .flex(Flex::Center)
+            .areas(area);
+        let [area] = Layout::horizontal([Constraint::Length(64)])
+            .flex(Flex::Center)
+            .areas(area);
+        frame.render_widget(Clear, area);
+        frame.render_widget(
+            Paragraph::new(lines).wrap(Wrap { trim: false }).block(
+                Block::bordered()
+                    .title(" Select an expert rule ")
+                    .padding(Padding::horizontal(1)),
+            ),
+            area,
+        );
     }
 
     fn rule_count(&self) -> usize {
@@ -399,9 +471,14 @@ impl Screen for Clean {
                 .padding(Padding::horizontal(1)),
         );
         frame.render_widget(body, detail_area);
+        self.draw_typing(frame, area);
     }
 
     fn handle_key(&mut self, key: KeyEvent, _context: &Context) -> Action {
+        if self.typing.is_some() {
+            self.type_key(key.code);
+            return Action::None;
+        }
         let last = self.rule_count().saturating_sub(1);
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
@@ -425,7 +502,22 @@ impl Screen for Clean {
         Action::None
     }
 
+    fn back(&mut self) -> Action {
+        if self.typing.take().is_some() {
+            Action::None
+        } else {
+            Action::Back
+        }
+    }
+
+    fn takes_text(&self) -> bool {
+        self.typing.is_some()
+    }
+
     fn hints(&self) -> &'static str {
+        if self.typing.is_some() {
+            return "type the ID · enter select · esc cancel";
+        }
         "↑↓ move · space select · enter review · esc home · ? help · q quit"
     }
 
@@ -433,7 +525,10 @@ impl Screen for Clean {
         &[
             ("↑ ↓  j k", "Move between rules"),
             ("g  G", "Jump to the first or last rule"),
-            ("Space", "Select or clear a rule"),
+            (
+                "Space",
+                "Select or clear a rule. An expert rule asks you to type its ID",
+            ),
             ("Enter", "Review every path the selected rules found"),
             ("Esc", "Go back to Home"),
             ("q", "Quit"),
@@ -572,6 +667,65 @@ mod tests {
         select_rule(&mut clean, "xcode-derived-data");
         press(&mut clean, KeyCode::Char(' '));
         assert!(matches!(clean.handle_key(enter, &context), Action::None));
+    }
+
+    #[test]
+    fn an_expert_rule_needs_its_id_typed() {
+        let dir = fake_home();
+        let mut planned = planned(&dir);
+        let npm = planned
+            .plan
+            .rules
+            .iter_mut()
+            .find(|rule| rule.rule.id == "npm-cache")
+            .expect("rule should be planned");
+        npm.rule.tier = Tier::Expert;
+        let mut clean = Clean::ready(planned);
+        select_rule(&mut clean, "npm-cache");
+
+        press(&mut clean, KeyCode::Char(' '));
+        assert!(clean.takes_text());
+        assert!(render(&mut clean).contains("Type npm-cache"));
+        for c in "npm-cach".chars() {
+            press(&mut clean, KeyCode::Char(c));
+        }
+        press(&mut clean, KeyCode::Enter);
+        assert!(
+            !is_selected(&clean, "npm-cache"),
+            "a wrong ID should not select"
+        );
+
+        press(&mut clean, KeyCode::Char(' '));
+        for c in "npm-cachx".chars() {
+            press(&mut clean, KeyCode::Char(c));
+        }
+        press(&mut clean, KeyCode::Backspace);
+        press(&mut clean, KeyCode::Char('e'));
+        press(&mut clean, KeyCode::Enter);
+        assert!(is_selected(&clean, "npm-cache"));
+        assert!(!clean.takes_text());
+
+        press(&mut clean, KeyCode::Char(' '));
+        assert!(
+            !is_selected(&clean, "npm-cache"),
+            "clearing needs no typing"
+        );
+    }
+
+    #[test]
+    fn esc_closes_the_expert_box_before_leaving() {
+        let dir = fake_home();
+        let mut planned = planned(&dir);
+        for rule in &mut planned.plan.rules {
+            rule.rule.tier = Tier::Expert;
+        }
+        let mut clean = Clean::ready(planned);
+        select_rule(&mut clean, "npm-cache");
+        press(&mut clean, KeyCode::Char(' '));
+
+        assert!(matches!(clean.back(), Action::None));
+        assert!(!clean.takes_text());
+        assert!(matches!(clean.back(), Action::Back));
     }
 
     #[test]

@@ -419,7 +419,7 @@ impl Screen for Cleanup {
         Action::None
     }
 
-    fn back(&self) -> Action {
+    fn back(&mut self) -> Action {
         if self.is_moving() {
             Action::None
         } else {

@@ -182,7 +182,7 @@
 | --- | --- |
 | `Up` / `Down` | Move between rules. |
 | `g` / `G` | Jump to the first or last rule. |
-| `Space` | Select or clear a rule. A rule that found nothing cannot be selected. |
+| `Space` | Select or clear a rule. A rule that found nothing cannot be selected. An `expert` rule opens a box where you type the rule's ID, then `Enter`. A wrong ID selects nothing, and `Esc` closes the box. Clearing never needs typing. |
 | `Enter` | Review the paths the selected rules found. Does nothing when no rule is selected. |
 
 | Tier | How It Is Selected |
