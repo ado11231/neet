@@ -72,7 +72,7 @@
 
 | Feature | What It Does | Phase | Status |
 | --- | --- | --- | --- |
-| Home folder scan | Scans your home folder into a tree of sizes. It does not follow symbolic links or cross onto another disk. Listing other disks still needs a test on a real Mac. | P1 | Built |
+| Home folder scan | Scans your home folder into a tree of sizes. It reads folders on several threads, does not follow symbolic links, and does not cross onto another disk. | P1 | Built |
 | Size on disk | Measures the space a file really uses, so files with empty parts are measured correctly. | P1 | Built |
 | Hard link tracking | Spots files with more than one name, so their space is counted once. | P1 | Built |
 | Folder tree and totals | Stores each folder's parent and children, adds up folder totals, and rebuilds paths. | P1 | Built |

@@ -1,8 +1,7 @@
-use std::fs;
+use std::fs::{self, Metadata};
 use std::io;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use walkdir::WalkDir;
 
 use crate::size::{HardLinkTracker, allocated_size};
 use crate::tree::{NodeId, NodeKind, Tree};
@@ -27,7 +26,7 @@ pub struct ScanError {
 }
 
 impl ScanError {
-    fn new(path: Option<PathBuf>, error: &walkdir::Error) -> Self {
+    fn new(path: Option<PathBuf>, error: &jwalk::Error) -> Self {
         let io_error = error.io_error();
         Self {
             path,
@@ -55,23 +54,158 @@ impl Scan {
     }
 }
 
-/// Walks a directory without following links or crossing filesystem boundaries
-pub fn walk_directory(root: &Path) -> impl Iterator<Item = walkdir::Result<walkdir::DirEntry>> {
-    WalkDir::new(root)
+/// A walker that keeps each entry's metadata, read on the walker's threads
+type Walk = jwalk::WalkDirGeneric<((), Option<jwalk::Result<Metadata>>)>;
+
+/// How many times to retry a lookup that macOS interrupted
+const RETRIES: usize = 3;
+
+/// macOS sometimes interrupts a lookup when many run at once. Trying again
+/// usually works, so these are not real read failures.
+fn interrupted(error: &jwalk::Error) -> bool {
+    error
+        .io_error()
+        .is_some_and(|error| error.kind() == io::ErrorKind::Interrupted)
+}
+
+/// Walks a folder without following links or leaving its disk. Entries come
+/// out parents first, one folder at a time, even when folders are read on
+/// several threads.
+fn walk(root: &Path, root_device: u64, parallelism: jwalk::Parallelism) -> Walk {
+    Walk::new(root)
+        .skip_hidden(false)
         .follow_links(false)
-        .same_file_system(true)
-        .into_iter()
+        .sort(false)
+        .parallelism(parallelism)
+        .process_read_dir(move |_, _, (), children| {
+            for child in children.iter_mut().flatten() {
+                let mut metadata = child.metadata();
+                for _ in 0..RETRIES {
+                    match &metadata {
+                        Err(error) if interrupted(error) => metadata = child.metadata(),
+                        _ => break,
+                    }
+                }
+                // A folder on another disk is listed, but not entered.
+                if let Ok(metadata) = &metadata
+                    && metadata.is_dir()
+                    && metadata.dev() != root_device
+                {
+                    child.read_children = None;
+                }
+                child.client_state = Some(metadata);
+            }
+        })
+}
+
+fn kind_of(file_type: fs::FileType) -> NodeKind {
+    if file_type.is_dir() {
+        NodeKind::Directory
+    } else if file_type.is_file() {
+        NodeKind::File
+    } else if file_type.is_symlink() {
+        NodeKind::Symlink
+    } else {
+        NodeKind::Other
+    }
+}
+
+/// Fills the tree from one or more walks, keeping what they share
+struct Builder<F> {
+    tree: Tree,
+    errors: Vec<ScanError>,
+    other_disks: Vec<PathBuf>,
+    tracker: HardLinkTracker,
+    progress: Progress,
+    root_device: u64,
+    on_progress: F,
+    /// Folders whose reading was interrupted, to read again afterwards
+    retry: Vec<(NodeId, PathBuf)>,
+}
+
+impl<F: FnMut(Progress)> Builder<F> {
+    /// Adds everything `walk` finds below `folder`, which is already in the tree.
+    fn fill(&mut self, folder: NodeId, walk: Walk, retry_interrupted: bool) {
+        // The folder at each depth on the way down to the current entry
+        let mut ancestors: Vec<NodeId> = vec![folder];
+
+        for result in walk {
+            let entry = match result {
+                Ok(entry) => entry,
+                Err(error) => {
+                    let path = error.path().map(Path::to_path_buf);
+                    self.errors.push(ScanError::new(path, &error));
+                    continue;
+                }
+            };
+
+            // A folder that could not be opened carries the error on its own entry.
+            let read_error = entry
+                .read_children
+                .as_ref()
+                .and_then(jwalk::ReadChildren::error);
+
+            let depth = entry.depth;
+            if depth == 0 {
+                if let Some(error) = read_error {
+                    self.errors.push(ScanError::new(Some(entry.path()), error));
+                }
+                continue;
+            }
+
+            let kind = kind_of(entry.file_type);
+            let size = match &entry.client_state {
+                Some(Ok(metadata))
+                    if kind == NodeKind::Directory && metadata.dev() != self.root_device =>
+                {
+                    self.other_disks.push(entry.path());
+                    0
+                }
+                Some(Ok(metadata)) if self.tracker.first_sighting(metadata) => {
+                    allocated_size(metadata)
+                }
+                Some(Ok(_)) | None => 0,
+                Some(Err(error)) => {
+                    self.errors.push(ScanError::new(Some(entry.path()), error));
+                    0
+                }
+            };
+
+            let path = read_error.map(|_| entry.path());
+            let id = self
+                .tree
+                .add(ancestors[depth - 1], entry.file_name, kind, size);
+            if kind == NodeKind::Directory {
+                ancestors.truncate(depth);
+                ancestors.push(id);
+            }
+            if let (Some(error), Some(path)) = (read_error, path) {
+                if retry_interrupted && interrupted(error) {
+                    self.retry.push((id, path));
+                } else {
+                    self.errors.push(ScanError::new(Some(path), error));
+                }
+            }
+
+            self.progress.entries += 1;
+            self.progress.bytes += size;
+            if self.progress.entries.is_multiple_of(PROGRESS_EVERY) {
+                (self.on_progress)(self.progress);
+            }
+        }
+    }
 }
 
 /// Scans a folder into a tree, counting each hard linked file once
 ///
-/// Unreadable paths are recorded in `errors` and the scan carries on.
-/// `on_progress` is called every so often, and once more at the end.
+/// Folders are read on several threads. Unreadable paths are recorded in
+/// `errors` and the scan carries on. `on_progress` is called every so often,
+/// and once more at the end.
 ///
 /// # Errors
 ///
 /// Returns an error if the root cannot be read or is not a folder.
-pub fn scan(root: &Path, mut on_progress: impl FnMut(Progress)) -> io::Result<Scan> {
+pub fn scan(root: &Path, on_progress: impl FnMut(Progress)) -> io::Result<Scan> {
     let root_metadata = fs::symlink_metadata(root)?;
     if !root_metadata.is_dir() {
         return Err(io::Error::new(
@@ -81,76 +215,37 @@ pub fn scan(root: &Path, mut on_progress: impl FnMut(Progress)) -> io::Result<Sc
     }
     let root_device = root_metadata.dev();
 
-    let mut tree = Tree::new(root.as_os_str());
-    let mut errors = Vec::new();
-    let mut other_disks = Vec::new();
-    let mut tracker = HardLinkTracker::new();
-    let mut progress = Progress::default();
-    // The folder at each depth on the way down to the current entry
-    let mut ancestors: Vec<NodeId> = vec![tree.root()];
+    let mut builder = Builder {
+        tree: Tree::new(root.as_os_str()),
+        errors: Vec::new(),
+        other_disks: Vec::new(),
+        tracker: HardLinkTracker::new(),
+        progress: Progress::default(),
+        root_device,
+        on_progress,
+        retry: Vec::new(),
+    };
+    let root_id = builder.tree.root();
+    let parallel = jwalk::Parallelism::RayonNewPool(0);
+    builder.fill(root_id, walk(root, root_device, parallel), true);
 
-    for result in walk_directory(root) {
-        let entry = match result {
-            Ok(entry) => entry,
-            Err(error) => {
-                errors.push(ScanError::new(error.path().map(Path::to_path_buf), &error));
-                continue;
-            }
-        };
-
-        let depth = entry.depth();
-        if depth == 0 {
-            continue;
-        }
-
-        let file_type = entry.file_type();
-        let kind = if file_type.is_dir() {
-            NodeKind::Directory
-        } else if file_type.is_file() {
-            NodeKind::File
-        } else if file_type.is_symlink() {
-            NodeKind::Symlink
-        } else {
-            NodeKind::Other
-        };
-
-        let size = match entry.metadata() {
-            Ok(metadata) if kind == NodeKind::Directory && metadata.dev() != root_device => {
-                other_disks.push(entry.path().to_path_buf());
-                0
-            }
-            Ok(metadata) if tracker.first_sighting(&metadata) => allocated_size(&metadata),
-            Ok(_) => 0,
-            Err(error) => {
-                errors.push(ScanError::new(Some(entry.path().to_path_buf()), &error));
-                0
-            }
-        };
-
-        let id = tree.add(ancestors[depth - 1], entry.file_name(), kind, size);
-        if kind == NodeKind::Directory {
-            ancestors.truncate(depth);
-            ancestors.push(id);
-        }
-
-        progress.entries += 1;
-        progress.bytes += size;
-        if progress.entries % PROGRESS_EVERY == 0 {
-            on_progress(progress);
-        }
+    // Read interrupted folders again, one at a time. A second failure is real.
+    for (folder, path) in std::mem::take(&mut builder.retry) {
+        let serial = walk(&path, root_device, jwalk::Parallelism::Serial);
+        builder.fill(folder, serial, false);
     }
 
-    on_progress(progress);
+    (builder.on_progress)(builder.progress);
     Ok(Scan {
-        tree,
-        errors,
-        other_disks,
+        tree: builder.tree,
+        errors: builder.errors,
+        other_disks: builder.other_disks,
     })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Progress, scan, walk_directory};
+    use super::{Progress, scan};
     use crate::tree::{NodeKind, Tree};
     use std::fs::{self, File};
     use std::os::unix::fs::{PermissionsExt, symlink};
@@ -161,61 +256,6 @@ mod tests {
         tree.iter()
             .map(|(id, _)| id)
             .find(|&id| tree.path(id) == path)
-    }
-
-    #[test]
-    fn walks_a_directory_and_files() {
-        let root = tempdir().expect("temporary directory should be created");
-        let file_path = root.path().join("example.txt");
-
-        fs::write(&file_path, "example").expect("test file should be written");
-
-        let paths = walk_directory(root.path())
-            .map(|result| {
-                result
-                    .expect("directory entry should be readable")
-                    .into_path()
-            })
-            .collect::<Vec<_>>();
-
-        assert!(paths.contains(&root.path().to_path_buf()));
-        assert!(paths.contains(&file_path));
-    }
-
-    #[test]
-    fn reports_a_symlink_without_following_it() {
-        let root = tempdir().expect("scan directory should be created");
-        let target = tempdir().expect("target directory should be created");
-
-        let target_file = target.path().join("inside.txt");
-        fs::write(&target_file, "example").expect("target file should be written");
-
-        let link_path = root.path().join("linked-directory");
-        symlink(target.path(), &link_path).expect("symbolic link should be created");
-
-        let paths = walk_directory(root.path())
-            .map(|result| {
-                result
-                    .expect("directory entry should be readable")
-                    .into_path()
-            })
-            .collect::<Vec<_>>();
-
-        assert!(paths.contains(&link_path));
-        assert!(!paths.contains(&link_path.join("inside.txt")));
-    }
-    #[test]
-    fn reports_the_path_for_a_missing_root() {
-        let directory = tempdir().expect("temporary directory should be created");
-        let missing_path = directory.path().join("missing");
-
-        let result = walk_directory(&missing_path)
-            .next()
-            .expect("walker should return one result");
-
-        let error = result.expect_err("missing root should produce an error");
-
-        assert_eq!(error.path(), Some(missing_path.as_path()));
     }
 
     #[test]
@@ -354,5 +394,77 @@ mod tests {
 
         assert_eq!(last.entries, 3);
         assert_eq!(last.bytes, result.tree.get(result.tree.root()).total_size);
+    }
+
+    /// Mounts a small disk image at `mount_point`, and detaches it when dropped.
+    struct DiskImage {
+        mount_point: std::path::PathBuf,
+    }
+
+    impl DiskImage {
+        fn attach(image: &Path, mount_point: &Path) -> Option<Self> {
+            let run = |args: &[&std::ffi::OsStr]| {
+                std::process::Command::new("hdiutil")
+                    .args(args)
+                    .output()
+                    .is_ok_and(|output| output.status.success())
+            };
+            let created = run(&[
+                "create".as_ref(),
+                "-size".as_ref(),
+                "2m".as_ref(),
+                "-fs".as_ref(),
+                "HFS+".as_ref(),
+                "-volname".as_ref(),
+                "neet-test".as_ref(),
+                image.as_os_str(),
+            ]);
+            let attached = created
+                && run(&[
+                    "attach".as_ref(),
+                    "-nobrowse".as_ref(),
+                    "-mountpoint".as_ref(),
+                    mount_point.as_os_str(),
+                    image.as_os_str(),
+                ]);
+            attached.then(|| Self {
+                mount_point: mount_point.to_path_buf(),
+            })
+        }
+    }
+
+    impl Drop for DiskImage {
+        fn drop(&mut self) {
+            let _ = std::process::Command::new("hdiutil")
+                .args([
+                    "detach".as_ref(),
+                    "-force".as_ref(),
+                    self.mount_point.as_os_str(),
+                ])
+                .output();
+        }
+    }
+
+    #[test]
+    fn scan_lists_another_disk_without_entering_it() {
+        let root = tempdir().expect("temporary directory should be created");
+        let images = tempdir().expect("image directory should be created");
+        let mount_point = root.path().join("usb");
+        fs::create_dir(&mount_point).expect("mount point should be created");
+
+        let Some(disk) = DiskImage::attach(&images.path().join("disk.dmg"), &mount_point) else {
+            eprintln!("skipping: hdiutil could not attach a disk image");
+            return;
+        };
+        fs::write(mount_point.join("inside.bin"), vec![1_u8; 64 * 1024])
+            .expect("file on the other disk should be written");
+
+        let result = scan(root.path(), |_| {}).expect("scan should succeed");
+        drop(disk);
+
+        assert_eq!(result.other_disks, vec![mount_point.clone()]);
+        assert!(find(&result.tree, &mount_point).is_some());
+        assert!(find(&result.tree, &mount_point.join("inside.bin")).is_none());
+        assert!(result.tree.get(result.tree.root()).total_size < 64 * 1024);
     }
 }

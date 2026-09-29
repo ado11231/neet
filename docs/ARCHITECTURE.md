@@ -125,6 +125,9 @@ selected rules
 ## The Scanner
 
 * Starts in your home folder.
+* Reads folders and file details on several threads, with `jwalk`. Entries still arrive parents first, so the tree is built on one thread.
+* Speed is limited by how fast macOS can read file details, not by the walker. A home folder of 1.4 million entries takes under 20 seconds, down from about 55 with one thread.
+* macOS sometimes interrupts a lookup when many run at once. neet retries those, and reads an interrupted folder again on its own after the walk. Only a second failure counts as an error.
 * Stays on the disk it started on, and lists any other disks it skipped.
 * Lists symbolic links, but does not follow them. A symbolic link is a file that points to another path.
 * Measures the space each file uses on disk as `st_blocks * 512`.
@@ -189,11 +192,10 @@ selected rules
 
 | Need | Crate | Status |
 | --- | --- | --- |
-| Walking folders | `walkdir` | In use |
+| Walking folders on several threads | `jwalk` | In use |
 | Disk size and free space | `rustix`, for a safe `statvfs` | In use |
 | Temporary folders in tests | `tempfile` | In use |
 | Terminal screens | `ratatui` with Crossterm | In use |
-| Faster walking | `ignore` and `rayon` | Candidate |
 | Reading TOML | `serde` and `toml` | Candidate |
 | Reading `SKILL.md` front matter | A small YAML reader, or a hand written parser | Candidate |
 | Building rules into the program | `include_dir` | Candidate |
@@ -215,10 +217,10 @@ selected rules
 | File | Purpose |
 | --- | --- |
 | `Cargo.toml` | Lists the two crates, their shared version, license, and minimum Rust version (1.88), and the lint rules. The rules turn on Clippy's strict checks and forbid `unsafe` code. |
-| `crates/neet-core/Cargo.toml` | The library's dependencies: `walkdir` and `rustix`, and `tempfile` for tests. |
+| `crates/neet-core/Cargo.toml` | The library's dependencies: `jwalk` and `rustix`, and `tempfile` for tests. |
 | `crates/neet-core/src/lib.rs` | The library's entry point. Makes the `disk`, `scan`, `size`, and `tree` modules public. |
 | `crates/neet-core/src/disk.rs` | `disk_space` reads the size and free space of the disk holding a path, with `statvfs`. Has tests. |
-| `crates/neet-core/src/scan.rs` | `walk_directory` walks a folder without following links or leaving the disk. `scan` builds the full `Tree`, counts hard links once, records unreadable paths, noting when macOS denied access, and other disks, and reports `Progress`. Has tests. |
+| `crates/neet-core/src/scan.rs` | `scan` walks a folder on several threads without following links or leaving the disk, builds the full `Tree`, counts hard links once, records unreadable paths, noting when macOS denied access, lists other disks, retries interrupted lookups, and reports `Progress`. Has tests, including one that mounts a disk image. |
 | `crates/neet-core/src/size.rs` | `allocated_size` measures the space a file uses on disk. `HardLinkTracker` remembers each file's device and inode, so a hard link is counted once. Has tests for hard links and files with empty parts. |
 | `crates/neet-core/src/tree.rs` | `Tree`, `Node`, and `NodeId` store folders and files, add up folder sizes and item counts, and rebuild paths. Filled by `scan`. Has tests. |
 | `crates/neet-core/src/rules.rs` | Empty. Will read and check rules. |

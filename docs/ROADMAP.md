@@ -3,7 +3,7 @@
 * What neet does today, what comes next, and how each step is accepted.
 * For anyone tracking progress or picking the next piece of work.
 * A milestone is only marked complete after its checks pass.
-* Last updated September 28, 2026. The 27 library tests and 27 interface tests pass. The program opens the Home screen, and Disk browses the scan.
+* Last updated September 28, 2026. The 25 library tests and 27 interface tests pass. The program opens the Home screen, and Disk browses the scan.
 * Features and their status live in [FEATURES.md](FEATURES.md). Screens live in [INTERFACE.md](INTERFACE.md).
 
 ## Contents
@@ -20,7 +20,7 @@
 | Milestone | Goal | Areas | Phase | Status |
 | --- | --- | --- | --- | --- |
 | M0 | Workspace, licenses, formatting, linting, and CI | Foundation | P1 | Complete |
-| M1 | A full scan of the home folder | Disk analysis | P1 | In Progress |
+| M1 | A full scan of the home folder | Disk analysis | P1 | Complete |
 | M2 | Home screen, disk browser, and keyboard keys | Disk analysis, interface | P1 | Complete |
 | M3 | Rules, risk tiers, and dry run plans in Clean | Cleanup, interface | P1 | Planned |
 | M4 | Review, path checks, open app checks, and moving to the Trash | Cleanup, safety | P1 | Planned |
@@ -45,6 +45,19 @@
 * CI also checks the minimum Rust version, 1.88, caches Cargo files, and cancels runs replaced by a newer push. Added September 28, 2026.
 * These checks do not replace the release builds and real Mac testing in M5.
 
+### M1: Scanner
+
+* Completed September 28, 2026.
+* **Built:**
+  1. `allocated_size` works out the space a file uses on disk.
+  2. `HardLinkTracker` spots files already counted, by device and inode.
+  3. `Tree` stores folders and files, links parents and children, adds up sizes and item counts, and rebuilds paths.
+  4. `scan` walks a folder on several threads with `jwalk`, without following symbolic links or leaving the disk. It counts hard links once, records unreadable paths and marks the scan incomplete, lists folders on other disks, and reports progress.
+  5. Lookups that macOS interrupts are retried, and interrupted folders are read again one at a time, so they are not reported as unreadable.
+  6. 25 tests cover symbolic links, missing and file roots, hard links, files with empty parts, nested folders, unreadable folders, another disk from a mounted disk image, progress, and the tree.
+  7. A scan of a real home folder, 1.4 million entries, takes 17 to 19 seconds with no errors, down from 55 seconds with one thread.
+* **Done when** tests with temporary folders cover links, files with empty parts, nested folders, permissions, and other disks. All are covered.
+
 ### M2: Home And Disk
 
 * Completed September 28, 2026.
@@ -63,20 +76,7 @@
 
 ## In Progress
 
-### M1: Scanner
-
-* **Built:**
-  1. `walk_directory` walks a folder without following symbolic links or leaving the disk.
-  2. `allocated_size` works out the space a file uses on disk.
-  3. `HardLinkTracker` spots files already counted, by device and inode.
-  4. `Tree` stores folders and files, links parents and children, adds up sizes, and rebuilds paths.
-  5. `scan` joins them into one scan. It counts hard links once, records unreadable paths and marks the scan incomplete, lists folders on other disks, and reports progress.
-  6. 27 tests cover walking, symbolic links, missing and file roots, hard links, files with empty parts, nested folders, unreadable folders, progress, and the tree.
-  7. A scan of a real home folder, 1.4 million entries, matched `du` and took about a minute.
-* **Remaining:**
-  1. Test the other disk listing, for example with a mounted disk image.
-  2. Make the scan faster, for example with `ignore` and `rayon`.
-* **Done when** tests with temporary folders cover links, files with empty parts, nested folders, permissions, and other disks.
+* Nothing yet. M3 is next.
 
 ## Planned
 

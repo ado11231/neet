@@ -6,8 +6,8 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+jwalk = "0.9.0"
 rustix = { version = "1.1.5", features = ["fs"] }
-walkdir.workspace = true
 
 [lints]
 workspace = true

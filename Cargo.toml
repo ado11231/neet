@@ -10,7 +10,6 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 ratatui = "0.30.2"
-walkdir = "2.5.0"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
