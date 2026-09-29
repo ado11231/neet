@@ -8,7 +8,7 @@
 | Screens | Phase |
 | --- | --- |
 | Home, Disk, Clean | P1 |
-| Large Files, Remove App | P1.5. Large Files is built. Remove App is next. |
+| Large Files, Remove App | P1.5. Large Files is built. Remove App is being built. |
 | Startup, SSH, Dotfiles, PATH, AI Tools, Settings, Space Breakdown, Projects | P2. Draft designs that still need checking on real Macs. |
 
 ## Contents
@@ -21,13 +21,14 @@
 6. [The Disk Screen](#the-disk-screen)
 7. [The Clean Screen](#the-clean-screen)
 8. [The Large Files Screen](#the-large-files-screen)
-9. [The Projects Screen](#the-projects-screen)
-10. [The SSH Screen](#the-ssh-screen)
-11. [The Dotfiles Screen](#the-dotfiles-screen)
-12. [The PATH Screen](#the-path-screen)
-13. [The Startup Screen](#the-startup-screen)
-14. [The AI Tools Screen](#the-ai-tools-screen)
-15. [The Settings Screen](#the-settings-screen)
+9. [The Remove App Screen](#the-remove-app-screen)
+10. [The Projects Screen](#the-projects-screen)
+11. [The SSH Screen](#the-ssh-screen)
+12. [The Dotfiles Screen](#the-dotfiles-screen)
+13. [The PATH Screen](#the-path-screen)
+14. [The Startup Screen](#the-startup-screen)
+15. [The AI Tools Screen](#the-ai-tools-screen)
+16. [The Settings Screen](#the-settings-screen)
 
 ## The Terminal Interface
 
@@ -236,6 +237,30 @@
 | `a` | Change how long files must be unchanged: any age, 30 days, 3 months, 6 months, 1 year, or 2 years. |
 | `Enter`, `Right`, or `l` | Show the file in Disk, in its folder, with the file selected. `Esc` comes back here. |
 | `d` | Plan a cleanup of the file, then open the path review, as in Disk. |
+
+## The Remove App Screen
+
+```text
++ Discord (com.hnc.Discord) ---------------------------------------------+
+| [x] /Applications/Discord.app                         412 MB           |
+| [x] ~/Library/Caches/com.hnc.Discord                   96 MB           |
+| [x] ~/Library/HTTPStorages/com.hnc.Discord             1 MB            |
+| [ ] ~/Library/Application Support/discord             1.1 GB  may be your data |
+| [ ] ~/Library/Preferences/com.hnc.Discord.plist        4 KB   settings |
++------------------------------------------------------------------------+
+```
+
+* Opens on a list of the apps in `/Applications` and `~/Applications`. Apps neet will not remove are dimmed, with the reason, such as `Apple app` or `link`.
+* `Enter` on an app finds its related files in the background, then lists them with the app. What is found, and what starts selected, follows [App Removal](SAFETY.md#app-removal).
+* An open app cannot be opened here. The screen says to quit it first.
+* `Enter` on the file list opens the same path review, question, and cleanup as Clean.
+
+| Key | Action |
+| --- | --- |
+| `Up` / `Down` | Move the selection. |
+| `Enter` | On the app list, open the app. On the file list, review the selected paths. |
+| `Space` | On the file list, select or clear a file. |
+| `Esc` | Go back one step. |
 
 ## The Projects Screen
 

@@ -14,11 +14,12 @@
 5. [What The Path Check Does](#what-the-path-check-does)
 6. [Cleanup Rules](#cleanup-rules)
 7. [Risk Tiers And Running Apps](#risk-tiers-and-running-apps)
-8. [SSH And Dotfile Changes](#ssh-and-dotfile-changes)
-9. [AI Coding Tool Files](#ai-coding-tool-files)
-10. [Admin Rights](#admin-rights)
-11. [Settings And Startup Changes](#settings-and-startup-changes)
-12. [Tests](#tests)
+8. [App Removal](#app-removal)
+9. [SSH And Dotfile Changes](#ssh-and-dotfile-changes)
+10. [AI Coding Tool Files](#ai-coding-tool-files)
+11. [Admin Rights](#admin-rights)
+12. [Settings And Startup Changes](#settings-and-startup-changes)
+13. [Tests](#tests)
 
 ## Key Terms
 
@@ -82,7 +83,7 @@
 * System logs have no root. Their locations, and a way to clean them without admin rights, are not chosen yet.
 * Adding a root needs a change to this table and to the Rust code, in the same change.
 * A rule cannot add a cleanup root.
-* The P1.5 app removal review does not add apps as a cleanup root. What it may remove must be decided first.
+* App removal does not add apps as a cleanup root. It has its own, narrower check. See [App Removal](#app-removal).
 * `~/.claude` and `~/.codex` are not cleanup roots, so cleanup cannot touch them.
 * Project build folders, such as `target/` and `node_modules/`, are not cleanup roots. The proposed Projects screen cannot remove anything until its [design question](FEATURES.md#design-questions) is settled and this doc says how. Any answer must keep refusing everything else in the protected paths, and must refuse any folder Git does not ignore.
 
@@ -195,6 +196,52 @@ min_age_days = 0
 * Custom cleaners, such as Docker or simulator cleanup, may use the app's own tool. They still show a plan, and go through the same checks and question.
 * A cleaner whose tool cannot be undone the way the Trash can is not allowed. Its targets, and how to recover from it, must be settled first.
 
+## App Removal
+
+* Settled September 29, 2026. App removal does not widen the cleanup roots. It has its own check, `validate_app_removal`, which is the only other way to make a `ValidatedPath`.
+* It follows the same steps as a cleanup: plan, show every path, ask, check each path again, then move it to the Trash through Finder.
+
+### Which Apps
+
+* Only a `.app` folder directly inside `/Applications` or `~/Applications`. Apps in subfolders, such as `/Applications/Utilities`, are refused.
+* Refused:
+  1. Apple's own apps, whose bundle ID starts with `com.apple.`.
+  2. Symbolic links, such as `/Applications/Safari.app`, which leads into the system.
+  3. An app without a readable bundle ID in its `Info.plist`.
+  4. An app that is open. neet checks when you open it, and again right before each move.
+* An app owned by another user, such as one from the App Store, makes Finder ask for your password, as it does when you drag it to the Trash. neet itself never uses `sudo`.
+
+### Which Related Files
+
+* Only direct children of these folders in `~/Library`, found by exact name. No partial or fuzzy matches.
+* `<id>` is the app's bundle ID, such as `com.hnc.Discord`. `<name>` is the app's file name without `.app`, or its `CFBundleName`.
+
+| Folder In `~/Library` | Matches | Selected At The Start | Marked |
+| --- | --- | --- | --- |
+| The app itself | | Yes | |
+| `Caches` | `<id>` | Yes | |
+| `Logs` | `<id>` | Yes | |
+| `Saved Application State` | `<id>.savedState` | Yes | |
+| `HTTPStorages` | `<id>`, `<id>.binarycookies` | Yes | |
+| `WebKit` | `<id>` | Yes | |
+| `Application Support` | `<id>` | No | May be your data |
+| `Containers` | `<id>` | No | May be your data |
+| `Preferences` | `<id>.plist` | No | Settings |
+| `Group Containers` | `group.<id>`, or a 10 character team ID then `.<id>` | No | Shared with other apps |
+| `LaunchAgents` | `<id>.plist` | No | Starts on its own |
+| `Application Support`, `Logs` | `<name>` | No | Matched by name |
+
+* You can select anything listed before the review. Nothing outside this table is ever listed.
+* A related item that is a symbolic link is left in place.
+* The protected paths still apply. A match inside one is refused.
+
+### The Check
+
+* `validate_app_removal` follows the same steps as the path check, with these changes:
+  1. The item must be a `.app` folder directly inside `/Applications` or `~/Applications`, or a direct child of one of the folders in the table above.
+  2. Symbolic links are refused, whatever they lead to.
+  3. It saves which check made the `ValidatedPath`, so the check right before the move is the same one.
+
 ## SSH And Dotfile Changes
 
 * These change files where they are, so they do not use `ValidatedPath` or the Trash. They have their own allow list instead.
@@ -278,5 +325,6 @@ min_age_days = 0
   18. The AI tools view refusing sign in files, chat history, and links that lead out.
   19. PATH changes to a file outside the Shell group, or through a symbolic link that leads out, and PATH changes undone from their backups.
   20. Project build folders that Git does not ignore, that have no project file beside them, or that changed within the minimum age, all refused.
+  21. App removal refusing Apple apps, links, apps in subfolders, open apps, related files outside the table, and partial name matches.
 * Automated tests never use a real home folder, and never change real Mac settings.
 * The M4 manual test moves a harmless temporary file to the Trash, then restores it with Finder's Put Back. It passed on macOS 26.5 on September 29, 2026.
