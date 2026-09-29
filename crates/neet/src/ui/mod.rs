@@ -1,5 +1,6 @@
 mod app;
 mod art;
+mod disk;
 mod format;
 mod help;
 mod home;

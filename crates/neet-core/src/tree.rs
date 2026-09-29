@@ -20,6 +20,8 @@ pub struct Node {
     pub children: Vec<NodeId>,
     pub own_size: u64,
     pub total_size: u64,
+    /// How many files and folders are anywhere below this node
+    pub total_items: u64,
 }
 #[derive(Debug)]
 pub struct Tree {
@@ -37,6 +39,7 @@ impl Tree {
                 children: Vec::new(),
                 own_size: 0,
                 total_size: 0,
+                total_items: 0,
             }],
         }
     }
@@ -59,7 +62,7 @@ impl Tree {
         self.nodes.len()
     }
 
-    /// Adds a node under a parent and adds size to every folder above it
+    /// Adds a node under a parent, and adds its size and count to every folder above it
     #[must_use]
     pub fn add(
         &mut self,
@@ -77,6 +80,7 @@ impl Tree {
             children: Vec::new(),
             own_size: size,
             total_size: size,
+            total_items: 0,
         });
 
         self.nodes[parent.0].children.push(id);
@@ -85,6 +89,7 @@ impl Tree {
 
         while let Some(folder) = current {
             self.nodes[folder.0].total_size += size;
+            self.nodes[folder.0].total_items += 1;
             current = self.nodes[folder.0].parent;
         }
 
@@ -212,5 +217,21 @@ mod tests {
 
         assert_eq!(ids, vec![root, first, second]);
         assert_eq!(names, vec!["/scan/root", "first", "second"]);
+    }
+
+    #[test]
+    fn item_counts_add_up_to_every_parent() {
+        let mut tree = Tree::new("/scan/root");
+        let root = tree.root();
+
+        let outer = tree.add(root, "outer", NodeKind::Directory, 0);
+        let inner = tree.add(outer, "inner", NodeKind::Directory, 0);
+        let file = tree.add(inner, "a.bin", NodeKind::File, 1);
+        let _ = tree.add(outer, "b.bin", NodeKind::File, 1);
+
+        assert_eq!(tree.get(file).total_items, 0);
+        assert_eq!(tree.get(inner).total_items, 1);
+        assert_eq!(tree.get(outer).total_items, 3);
+        assert_eq!(tree.get(root).total_items, 4);
     }
 }

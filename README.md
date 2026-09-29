@@ -6,7 +6,7 @@
 
 * **Status:** early development. Nothing below works yet.
 * The library can scan a folder into a tree of sizes, counting hard links once. The program runs it when it opens, and shows progress on the Home screen.
-* The program opens a Home menu, but the Disk and Clean screens are not built yet. Progress is in the [roadmap](docs/ROADMAP.md).
+* The program opens a Home menu, and the Disk screen browses your folders by size. Clean is not built yet. Progress is in the [roadmap](docs/ROADMAP.md).
 
 **1. Install neet (Planned)**
 

@@ -7,6 +7,7 @@ use ratatui::widgets::{Block, List, ListItem, ListState, Padding, Paragraph, Wra
 
 use super::app::{Action, Context, Screen};
 use super::art::ART;
+use super::disk::Disk;
 use super::format;
 use super::placeholder::Placeholder;
 use super::scan::ScanStatus;
@@ -36,7 +37,7 @@ const ENTRIES: &[Entry] = &[
     Entry {
         label: "Disk",
         about: "Browse your folders by size.",
-        target: Target::Screen(|| Box::new(Placeholder::new("Disk"))),
+        target: Target::Screen(|| Box::new(Disk::new())),
     },
     Entry {
         label: "Clean",
@@ -249,7 +250,7 @@ impl Screen for Home {
         self.draw_info(frame, info, context.scan);
     }
 
-    fn handle_key(&mut self, key: KeyEvent) -> Action {
+    fn handle_key(&mut self, key: KeyEvent, _context: &Context) -> Action {
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => self.step(false),
             KeyCode::Down | KeyCode::Char('j') => self.step(true),
@@ -288,7 +289,11 @@ mod tests {
     use ratatui::crossterm::event::KeyModifiers;
 
     fn press(home: &mut Home, code: KeyCode) -> Action {
-        home.handle_key(KeyEvent::new(code, KeyModifiers::NONE))
+        let scan = ScanStatus::Failed(String::new());
+        home.handle_key(
+            KeyEvent::new(code, KeyModifiers::NONE),
+            &Context { scan: &scan },
+        )
     }
 
     fn render(home: &mut Home, width: u16, height: u16) -> String {

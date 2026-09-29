@@ -25,7 +25,7 @@ pub struct Context<'a> {
 pub trait Screen {
     fn draw(&mut self, frame: &mut Frame, area: Rect, context: &Context);
 
-    fn handle_key(&mut self, key: KeyEvent) -> Action;
+    fn handle_key(&mut self, key: KeyEvent, context: &Context) -> Action;
 
     /// Key hints shown in the footer.
     fn hints(&self) -> &'static str;
@@ -96,12 +96,15 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
-        let screen = self.top();
+        let context = Context {
+            scan: self.scan.status(),
+        };
+        let screen = self.stack.last_mut().expect("Home is never popped");
         let action = match key.code {
             KeyCode::Char('q') if !screen.is_dialog() => Action::Quit,
             KeyCode::Esc => Action::Back,
             KeyCode::Char('?') => Action::Open(Box::new(Help::new(screen.help()))),
-            _ => screen.handle_key(key),
+            _ => screen.handle_key(key, &context),
         };
         self.apply(action);
     }

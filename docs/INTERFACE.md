@@ -84,14 +84,18 @@
 ## The Disk Screen
 
 * A column browser that starts at your home folder.
+* The left column lists the current folder. Each row shows a bar and a percent for its share of the folder, its size on disk, and its name. Folders end in `/`, and symbolic links in `@`.
+* The title shows the folder's path, its total size, how many items are inside it, and the sort order.
+* The right column previews the selected row: a folder's contents, or a file's size, kind, and path. It is hidden on terminals narrower than 100 columns.
+* Until the scan finishes, the screen shows its progress instead.
 
 | Key | Action |
 | --- | --- |
-| `Right` or `Enter` | Open the selected folder. |
-| `Left` | Go back to the parent folder. |
+| `Right`, `Enter`, or `l` | Open the selected folder. |
+| `Left` or `h` | Go up to the parent folder, with the folder you left still selected. |
 | `Up` / `Down` | Move the selection. |
-| `s` | Change the sort order. |
-| `d` | Plan a cleanup of the selected item. |
+| `s` | Sort by size, then name, then items. The selection stays on the same row. |
+| `d` | Plan a cleanup of the selected item. Not built yet. |
 | `g` / `G` | Jump to the first or last row. |
 
 * A cleanup started here goes through the same checks, review, and question as any other.

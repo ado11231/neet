@@ -2,7 +2,7 @@
 
 * How neet is built: its parts, how data moves between them, and what each file does.
 * For people working on the code. To learn what neet does, read [FEATURES.md](FEATURES.md).
-* Much of this is the planned design. Today only the walker, size helpers, and folder tree exist. The cleanup files are empty. The program opens the Home screen, but Disk and Clean are placeholders.
+* Much of this is the planned design. Today the scanner, the Home screen, and the Disk screen exist. The cleanup files are empty, and Clean is a placeholder.
 * For progress, read [ROADMAP.md](ROADMAP.md). For the planned screens, read [INTERFACE.md](INTERFACE.md).
 
 ## Contents
@@ -217,7 +217,7 @@ selected rules
 | `crates/neet-core/src/lib.rs` | The library's entry point. Makes the `scan`, `size`, and `tree` modules public. |
 | `crates/neet-core/src/scan.rs` | `walk_directory` walks a folder without following links or leaving the disk. `scan` builds the full `Tree`, counts hard links once, records unreadable paths and other disks, and reports `Progress`. Has tests. |
 | `crates/neet-core/src/size.rs` | `allocated_size` measures the space a file uses on disk. `HardLinkTracker` remembers each file's device and inode, so a hard link is counted once. Has tests for hard links and files with empty parts. |
-| `crates/neet-core/src/tree.rs` | `Tree`, `Node`, and `NodeId` store folders and files, add up folder sizes, and rebuild paths. Filled by `scan`. Has tests. |
+| `crates/neet-core/src/tree.rs` | `Tree`, `Node`, and `NodeId` store folders and files, add up folder sizes and item counts, and rebuild paths. Filled by `scan`. Has tests. |
 | `crates/neet-core/src/rules.rs` | Empty. Will read and check rules. |
 | `crates/neet-core/src/safety.rs` | Empty. Will hold `validate_deletable` and `ValidatedPath`. |
 | `crates/neet-core/src/clean.rs` | Empty. Will plan cleanups and move items to the Trash. |
@@ -230,5 +230,6 @@ selected rules
 | `crates/neet/src/ui/scan.rs` | `ScanTask` runs the home folder scan on its own thread, and `ScanStatus` holds its progress or result. Has tests. |
 | `crates/neet/src/ui/format.rs` | Formats sizes the way Finder does, and counts with commas. Has tests. |
 | `crates/neet/src/ui/help.rs` | The help box opened by `?`, drawn over the current screen. |
-| `crates/neet/src/ui/placeholder.rs` | Stands in for Disk and Clean until they are built. |
+| `crates/neet/src/ui/disk.rs` | The Disk screen: a folder column with size bars, a preview column, sorting, and navigation over the scan tree. Has tests. |
+| `crates/neet/src/ui/placeholder.rs` | Stands in for Clean until it is built. |
 | `.github/workflows/ci.yml` | Checks formatting, runs Clippy and tests, and runs `cargo check` for Apple silicon and Intel targets. |

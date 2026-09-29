@@ -3,7 +3,7 @@
 * What neet does today, what comes next, and how each step is accepted.
 * For anyone tracking progress or picking the next piece of work.
 * A milestone is only marked complete after its checks pass.
-* Last updated September 28, 2026. The 23 library tests and 13 interface tests pass. The program opens the Home screen.
+* Last updated September 28, 2026. The 24 library tests and 21 interface tests pass. The program opens the Home screen, and Disk browses the scan.
 * Features and their status live in [FEATURES.md](FEATURES.md). Screens live in [INTERFACE.md](INTERFACE.md).
 
 ## Contents
@@ -54,7 +54,7 @@
   3. `HardLinkTracker` spots files already counted, by device and inode.
   4. `Tree` stores folders and files, links parents and children, adds up sizes, and rebuilds paths.
   5. `scan` joins them into one scan. It counts hard links once, records unreadable paths and marks the scan incomplete, lists folders on other disks, and reports progress.
-  6. 23 tests cover walking, symbolic links, missing and file roots, hard links, files with empty parts, nested folders, unreadable folders, progress, and the tree.
+  6. 24 tests cover walking, symbolic links, missing and file roots, hard links, files with empty parts, nested folders, unreadable folders, progress, and the tree.
   7. A scan of a real home folder, 1.4 million entries, matched `du` and took about a minute.
 * **Remaining:**
   1. Test the other disk listing, for example with a mounted disk image.
@@ -68,11 +68,11 @@
   2. The interface loop, the screen stack, and `Esc`, `q`, and `?` on every screen.
   3. The Home screen: art, menu, and info panel. Unbuilt features are dimmed and skipped.
   4. The home folder scan runs on a background thread from the start. Home shows live progress, then the total, and flags incomplete scans and skipped disks.
-  5. Tests for the menu, the screen stack, the background scan, size formatting, and the Home layout at wide and narrow sizes.
+  5. The Disk screen: a folder column with size bars and percents, a preview column, sorting by size, name, or items, and keys to open folders and go back up. It shows scan progress until the scan finishes.
+  6. Tests for the menu, the screen stack, the background scan, size formatting, the Disk browser, and the Home and Disk layouts.
 * **Remaining:**
   1. The final ASCII art.
   2. The disk gauge in the Home panel, and a list of the paths the scan skipped.
-  3. The column browser, size bars, sorting, navigation, progress, warnings, and disk gauge.
 * **Done when** the screen keeps responding during a scan, and marks incomplete scans.
 
 ## Planned

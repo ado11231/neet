@@ -23,7 +23,7 @@ impl Screen for Placeholder {
         frame.render_widget(body, area);
     }
 
-    fn handle_key(&mut self, _key: KeyEvent) -> Action {
+    fn handle_key(&mut self, _key: KeyEvent, _context: &Context) -> Action {
         Action::None
     }
 
