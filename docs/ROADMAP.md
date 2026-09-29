@@ -21,7 +21,7 @@
 | --- | --- | --- | --- | --- |
 | M0 | Workspace, licenses, formatting, linting, and CI | Foundation | P1 | Complete |
 | M1 | A full scan of the home folder | Disk analysis | P1 | In Progress |
-| M2 | Dashboard, disk browser, and keyboard keys | Disk analysis, interface | P1 | Planned |
+| M2 | Home screen, disk browser, and keyboard keys | Disk analysis, interface | P1 | Planned |
 | M3 | Rules, risk tiers, and dry run plans in Clean | Cleanup, interface | P1 | Planned |
 | M4 | Review, path checks, open app checks, and moving to the Trash | Cleanup, safety | P1 | Planned |
 | M5 | Packages, testing on real Macs, and the P1 release checks | Distribution | P1 | Planned |
@@ -63,9 +63,9 @@
 
 ## Planned
 
-### M2: Disk Tab
+### M2: Home And Disk
 
-* The Dashboard, column browser, size bars, sorting, navigation, progress, warnings, disk gauge, and contextual help.
+* The Home screen with its menu and status panel, the column browser, size bars, sorting, navigation, progress, warnings, disk gauge, and contextual help.
 * The program entry point and its `--help` and `--version` options.
 * **Done when** the screen keeps responding during a scan, and marks incomplete scans.
 
@@ -97,10 +97,10 @@
 
 ### M7: P2
 
-* The Startup tab, with background items.
-* The SSH tab and the Dotfiles tab.
+* The Startup screen, with background items.
+* The SSH screen and the Dotfiles screen.
 * A view only screen for Claude Code and Codex settings, instruction files, and skills.
-* The Settings tab: power mode, graphics switching, refresh rate, Game Mode guidance, what keeps the Mac awake, and wake settings.
+* The Settings screen: power mode, graphics switching, refresh rate, Game Mode guidance, what keeps the Mac awake, and wake settings.
 * Saved neet preferences and the optional treemap, after their scope is defined.
 * **Done when:**
   1. Every change saves its old state, and tests restore it.

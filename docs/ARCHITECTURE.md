@@ -54,10 +54,48 @@ neet/
 | Path | Will Hold |
 | --- | --- |
 | `crates/neet-core/tests/` | Tests that use the library from outside. |
-| `crates/neet/src/ui/` | The terminal screens. |
+| `crates/neet/src/ui/` | The terminal screens. See [The Interface Loop](#the-interface-loop). |
 | `rules/` | The bundled cleanup rules. |
 
 ## How Data Moves
+
+### Starting neet
+
+```text
+neet
+    -> --help or --version: print and exit
+    -> refuse to run as root
+    -> set up the terminal, with a panic hook that puts it back
+    -> start the home folder scan on a background thread
+    -> run the interface loop on the Home screen
+    -> put the terminal back and exit
+```
+
+### The Interface Loop
+
+```text
+loop:
+    draw the screen on top of the stack
+    wait for a key, a scan message, or a timer tick
+    the top screen handles it and returns an Action
+        None         -> keep going
+        Open(screen) -> push the screen
+        Back         -> pop one screen
+        Quit         -> leave the loop
+```
+
+* Screens form a stack, with Home at the bottom. Dialogs, such as the path review and the confirmation, are screens too.
+* Each screen implements one trait, with a `draw` method and a `handle` method that returns an `Action`.
+* The scan sends its progress over a channel. Home, Disk, and Clean all read the same scan, so it only runs once.
+* Adding a feature means adding one menu row and one screen file.
+
+| File | Will Hold |
+| --- | --- |
+| `ui/app.rs` | The `App`, the screen stack, the shared scan, and the `Action` type. |
+| `ui/event.rs` | The event type and the loop that waits for keys, scan messages, and ticks. |
+| `ui/home.rs` | The Home screen: art, menu, and status panel. |
+| `ui/art.rs` | The ASCII art. |
+| `ui/disk.rs`, `ui/clean.rs` | The P1 feature screens. |
 
 ### A Scan
 

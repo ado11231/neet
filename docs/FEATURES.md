@@ -54,7 +54,7 @@
 
 | Area | P1 | P1.5 | P2 |
 | --- | --- | --- | --- |
-| [Disk analysis](#disk-analysis-and-file-discovery) | Scan, sizes, browser, dashboard, progress | Large and old file filters | Treemap |
+| [Disk analysis](#disk-analysis-and-file-discovery) | Scan, sizes, browser, Home status, progress | Large and old file filters | Treemap |
 | [Cleanup](#cleanup-and-rules) | Dry run, review, Trash, risk tiers, rules | | |
 | [Apps](#application-management) | | App removal review | |
 | [Startup](#startup-and-background-services) | | | Inventory, details, disable and restore |
@@ -62,7 +62,7 @@
 | [Dotfiles](#dotfile-management) | | | Inventory, safe editing, export |
 | [AI tools](#ai-coding-tool-files) | | | Claude Code and Codex settings, instructions, and skills |
 | [Settings](#performance-power-and-displays) | | | Power, graphics, refresh rate, sleep and wake |
-| [Interface](#interface-preferences-and-distribution) | Tabs, help, install | | Saved preferences |
+| [Interface](#interface-preferences-and-distribution) | Home menu, help, install | | Saved preferences |
 | [Safety](#safety-and-recovery) | Path limits, identity check, no `sudo` cleanup | | Backups, undo, scoped admin commands |
 
 ## Disk Analysis And File Discovery
@@ -77,7 +77,7 @@
 | Hard link tracking | Spots files with more than one name, so their space is counted once. Not yet used by the scan. | P1 | Built |
 | Folder tree and totals | Stores each folder's parent and children, adds up folder totals, and rebuilds paths. Not yet filled by the scan. | P1 | Built |
 | Disk browser | Browses folders in columns, sorted by size, name, or file count, with a bar for each folder's share. | P1 | Planned |
-| Dashboard and disk gauge | Shows free and used space, whether the scan was complete, and cleanup categories that link to Clean. | P1 | Planned |
+| Home status and disk gauge | On the Home screen, shows free and used space, scan progress, whether the scan was complete, and how much Clean can free. | P1 | Planned |
 | Scan progress and warnings | Keeps the screen responsive. Lists folders it could not read and disks it skipped. Marks a scan as incomplete, including when Full Disk Access is missing. | P1 | Planned |
 | Large and old file filters | Finds files above a size you choose, or not changed since a date you choose, and opens them in Disk. Finding a file does not make it a cleanup target. | P1.5 | Planned |
 | Treemap | A view where each folder's area shows its size. How you interact with it is not designed yet. | P2 | Proposed |
@@ -154,7 +154,7 @@
 
 * Changes that affect the whole Mac may need one reviewed command run with `sudo`.
 * How to read background items, and which macOS versions work, still need checking.
-* See the [Startup tab](INTERFACE.md#the-startup-tab).
+* See the [Startup screen](INTERFACE.md#the-startup-screen).
 
 ## SSH Management
 
@@ -171,7 +171,7 @@
 | Known hosts | Lists known hosts and removes the ones you select, using `ssh-keygen -R`, after a backup. | P2 | Proposed |
 
 * Every change shows a preview and asks first.
-* The views and permission modes are in the [SSH tab](INTERFACE.md#the-ssh-tab).
+* The views and permission modes are in the [SSH screen](INTERFACE.md#the-ssh-screen).
 
 ## Dotfile Management
 
@@ -186,7 +186,7 @@
 * Secret detection helps your review. It cannot promise a file has no secrets.
 * Private keys and the listed credential files are always left out.
 * Importing and syncing are not included.
-* The supported files, checks, and exclusions are in the [Dotfiles tab](INTERFACE.md#the-dotfiles-tab).
+* The supported files, checks, and exclusions are in the [Dotfiles screen](INTERFACE.md#the-dotfiles-screen).
 
 ## AI Coding Tool Files
 
@@ -226,13 +226,13 @@
 
 * A change that runs a command shows the command first, and uses `sudo` only when needed.
 * Display changes use CoreGraphics.
-* The draft flows and setting names are in the [Settings tab](INTERFACE.md#the-settings-tab).
+* The draft flows and setting names are in the [Settings screen](INTERFACE.md#the-settings-screen).
 
 ## Interface, Preferences, And Distribution
 
 | Feature | What It Does | Phase | Status |
 | --- | --- | --- | --- |
-| Keyboard tabs | Opens on Dashboard, with Disk and Clean tabs. Works with arrow keys, Vim keys outside text fields, and tab switching. The other tabs come in P2. | P1 | Planned |
+| Home menu | Opens on a Home screen with ASCII art and a menu of features, moved with the arrow keys. `Enter` opens a screen and `Esc` goes back. Works with Vim keys outside text fields. Features not built yet show dimmed. | P1 | Planned |
 | Help | Press `?` for help on the current screen and the selected rule. | P1 | Planned |
 | Command line | Run `neet` to open it. The only options are `--help` and `--version`. Cleanup happens only inside the interface. | P1 | Planned |
 | Install with Homebrew or Cargo | Packages for both. Neither is published yet. | P1 | Planned |
@@ -268,8 +268,7 @@
 | Startup control | Check how each item type is found, turned off, and turned back on, on every supported macOS version, including when the list is incomplete. |
 | Power and display | Check which settings exist, what they really do, and that refresh rate rollback works, on real Macs. Draft command names are not proof. |
 | Treemap and preferences | Design the interaction, the saved choices, and how they are stored. Then add their M7 checks. |
-| AI coding tool files | Decide which tab shows them. Confirm where each tool saves project skills. Folder layouts change between tool versions, so check them on each release. |
-| P1.5 screens | Decide where the large and old file filters and the app removal review fit in the tabs. |
+| AI coding tool files | Confirm where each tool saves project skills. Folder layouts change between tool versions, so check them on each release. |
 
 ## Excluded Features
 
@@ -287,7 +286,7 @@
 | Deleting files for good, or emptying the Trash, in P1 | Everything goes to the Trash, so it can be put back. |
 | Showing private SSH keys | Only key details are shown. |
 | Creating or deleting SSH keys | Use `ssh-keygen` for that. |
-| Mac settings unrelated to speed, battery life, or sleep | The Settings tab covers only those. |
+| Mac settings unrelated to speed, battery life, or sleep | The Settings screen covers only those. |
 | Editing or deleting AI coding tool files | The AI tools section is view only. Use the tool itself to change them. |
 | Importing or syncing dotfiles | Unpack the export into a Git repository, or use a dotfile manager such as chezmoi. |
 

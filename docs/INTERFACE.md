@@ -5,42 +5,83 @@
 * No screens are built yet.
 * For what each feature does and its status, read [FEATURES.md](FEATURES.md). For the rules every change must follow, read [SAFETY.md](SAFETY.md).
 
-| Tabs | Phase |
+| Screens | Phase |
 | --- | --- |
-| Dashboard, Disk, Clean | P1 |
-| Large and old file filters, app removal review | P1.5. Where these fit in the tabs is not decided yet. |
+| Home, Disk, Clean | P1 |
+| Large Files, Remove App | P1.5. Remove App waits on its [design question](FEATURES.md#design-questions). |
 | Startup, SSH, Dotfiles, AI Tools, Settings | P2. Draft designs that still need checking on real Macs. |
 
 ## Contents
 
 1. [The Terminal Interface](#the-terminal-interface)
-2. [The Disk Tab](#the-disk-tab)
-3. [The Clean Tab](#the-clean-tab)
-4. [The SSH Tab](#the-ssh-tab)
-5. [The Dotfiles Tab](#the-dotfiles-tab)
-6. [The Startup Tab](#the-startup-tab)
-7. [The AI Tools Tab](#the-ai-tools-tab)
-8. [The Settings Tab](#the-settings-tab)
+2. [The Home Screen](#the-home-screen)
+3. [Moving Between Screens](#moving-between-screens)
+4. [The Disk Screen](#the-disk-screen)
+5. [The Clean Screen](#the-clean-screen)
+6. [The SSH Screen](#the-ssh-screen)
+7. [The Dotfiles Screen](#the-dotfiles-screen)
+8. [The Startup Screen](#the-startup-screen)
+9. [The AI Tools Screen](#the-ai-tools-screen)
+10. [The Settings Screen](#the-settings-screen)
 
 ## The Terminal Interface
 
 * Run `neet` to open it.
 * The only options are `--version`, which prints the version, and `--help`, which prints a short usage note. There are no other commands or options.
-* The Dashboard opens first. It shows:
+* neet opens on the Home screen, and starts scanning your home folder straight away, in the background.
+* Each feature has its own screen. You open it from the Home menu, and go back to Home when you are done.
+
+## The Home Screen
+
+```text
++----------------------------------+-----------------------------+
+|                                  |  > Disk          412 GB used|
+|                                  |    Clean         ~18 GB     |
+|           ASCII art              |    Large Files       soon   |
+|                                  |    Startup           soon   |
+|                                  |    ...                      |
+|                                  |    Quit                     |
+|                                  +-----------------------------+
+|                                  | Browse your folders by size |
+|                                  | Disk [#######...] 82% used  |
+|                                  | Scanning: 1.2M files        |
++----------------------------------+-----------------------------+
+ up/down move . enter open . ? help . q quit
+```
+
+* **Left:** ASCII art, about 45% of the width. On a terminal narrower than about 90 columns the art is hidden and the menu fills the screen.
+* **Right, top:** the menu. One row per feature, with a short summary, such as used space or what can be cleaned.
+* **Right, bottom:** a panel that explains the selected row, and shows:
   1. Free and used space on the disk.
-  2. Whether the last scan was complete.
-  3. Cleanup categories, with links to the Clean tab.
-* The Dashboard shows folder sizes and disk totals separately. They can differ because of APFS copies, snapshots, and space macOS frees on its own.
+  2. Scan progress, and whether the last scan was complete.
+* Features that are not built yet are shown dimmed, marked `soon`. The selection skips over them.
+* The Home screen replaces a separate Dashboard.
+* Folder sizes and disk totals are shown separately. They can differ because of APFS copies, snapshots, and space macOS frees on its own.
 
 | Key | Action |
 | --- | --- |
-| `Tab` / `Shift-Tab` | Next or previous tab. |
+| `Up` / `Down` | Move the selection. |
+| `Enter` or `Right` | Open the selected screen. |
+| `1` to `9` | Open that row directly. |
+| `?` | Help. |
+| `q` | Quit. |
+
+## Moving Between Screens
+
+* Screens stack. Clean opens the path review, and the path review opens the confirmation.
+* `Esc` always goes back one step. From a feature screen it goes back to Home.
+* Going back never skips a step forward. The path review can only be left by going back, or by moving on to the confirmation.
+
+| Key | Action |
+| --- | --- |
+| `Esc` | Back one step. |
 | `?` | Help for the current screen. |
 | `q` | Quit, when no dialog is open. |
 
 * Arrow keys work everywhere. The Vim keys `h`, `j`, `k`, and `l` work outside text fields.
+* `Left` belongs to each screen. In Disk it opens the parent folder, so use `Esc` to leave.
 
-## The Disk Tab
+## The Disk Screen
 
 * A column browser that starts at your home folder.
 
@@ -55,7 +96,7 @@
 
 * A cleanup started here goes through the same checks, review, and question as any other.
 
-## The Clean Tab
+## The Clean Screen
 
 * Each row shows a rule's name, risk tier, number of items, and estimated size.
 
@@ -79,7 +120,7 @@
   4. neet checks each path again, then moves it to the Trash.
 * The path review cannot be skipped.
 
-## The SSH Tab
+## The SSH Screen
 
 * Shows what is in `~/.ssh` without ever showing a private key.
 
@@ -100,9 +141,9 @@
 | Old hosts | Removes the entries you select with `ssh-keygen -R`, which keeps `known_hosts.old`. neet also saves its own backup. |
 
 * Each change shows what it will do and asks first.
-* To edit `~/.ssh/config`, use the Dotfiles tab.
+* To edit `~/.ssh/config`, use the Dotfiles screen.
 
-## The Dotfiles Tab
+## The Dotfiles Screen
 
 * Lists the dotfiles neet knows about, but only the ones on your Mac. If you have no tmux settings, there is no tmux row.
 
@@ -140,7 +181,7 @@
 * These are never exported: private keys, `~/.netrc`, `~/.aws/credentials`, `~/.npmrc`, and `~/.pypirc`.
 * To keep dotfiles in Git, unpack the archive into a repository.
 
-## The Startup Tab
+## The Startup Screen
 
 * Lists the programs that start on their own. Many never appear in the Dock or menu bar.
 
@@ -159,13 +200,12 @@
   3. It runs the command, with `sudo` when the item runs for the whole Mac.
 * Turning it back on puts back the saved state.
 * neet never edits or deletes a launch agent or launch daemon file.
-* If neet cannot read the background items, the tab says its list may be incomplete.
+* If neet cannot read the background items, the screen says its list may be incomplete.
 
-## The AI Tools Tab
+## The AI Tools Screen
 
 * Shows the settings, instruction files, and skills that Claude Code and Codex keep on your Mac.
 * View only. There are no actions that change a file.
-* Which tab holds this view is still an open question in [FEATURES.md](FEATURES.md#design-questions).
 
 | Section | Shows | Read From |
 | --- | --- | --- |
@@ -183,7 +223,7 @@
 * Opening a skill shows its `SKILL.md` and lists the other files in its folder.
 * Sign in files, chat history, session logs, and databases are never listed or opened.
 
-## The Settings Tab
+## The Settings Screen
 
 * Shows only settings that change speed, battery life, or sleep.
 * Sections that do not apply to this Mac are hidden.

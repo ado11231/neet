@@ -26,16 +26,18 @@ cargo install neet
 neet
 ```
 
-**3. Use The Tabs**
+**3. Pick From The Menu**
 
-| Tab | What It Does |
+* neet opens on a Home screen with a menu. Move with the arrow keys and press `Enter` to open a screen. `Esc` goes back.
+* Home also shows how full the disk is, and how the scan is going.
+
+| Screen | What It Does |
 | --- | --- |
-| Dashboard | Shows how full the disk is, and what can be cleaned. |
 | Disk | Browses your folders by size. |
 | Clean | Moves files your apps can make again to the Trash, after you review every path. |
 
 * Everything happens inside the program. The only options are `--version` and `--help`.
-* Later tabs are proposed for startup items, SSH, dotfiles, AI coding tool files, and power settings. See the [feature list](docs/FEATURES.md).
+* Later screens are proposed for startup items, SSH, dotfiles, AI coding tool files, and power settings. See the [feature list](docs/FEATURES.md).
 
 <br>
 

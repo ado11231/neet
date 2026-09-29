@@ -2,7 +2,7 @@
 
 * The rules neet follows whenever it changes a file or a setting, or reads a private one.
 * For anyone writing code or rules that change things on the Mac.
-* They cover every tab: Disk, Clean, SSH, Dotfiles, Startup, AI Tools, and Settings. They also cover bundled rules, your own rules, and custom cleaners.
+* They cover every screen: Disk, Clean, SSH, Dotfiles, Startup, AI Tools, and Settings. They also cover bundled rules, your own rules, and custom cleaners.
 * These are requirements. None of these safeguards are built yet. For progress, read [ROADMAP.md](ROADMAP.md). For open questions, read [FEATURES.md](FEATURES.md#design-questions).
 
 ## Contents
@@ -121,7 +121,7 @@ min_age_days = 0
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `id` | Yes | Lowercase letters, numbers, and hyphens. |
-| `name` | Yes | The name shown in the Clean tab. |
+| `name` | Yes | The name shown in the Clean screen. |
 | `category` | Yes | `developer`, `package`, `application`, `browser`, `logs`, or `system`. |
 | `tier` | Yes | `safe`, `caution`, or `expert`. |
 | `paths` | Yes | Full paths. `~` may only be used at the start. |
@@ -157,7 +157,7 @@ min_age_days = 0
 
 | Feature | May Change |
 | --- | --- |
-| Dotfile editing | Only the files listed in the Dotfiles tab. |
+| Dotfile editing | Only the files listed in the Dotfiles screen. |
 | SSH permissions | `~/.ssh` and the files directly inside it. |
 | Known hosts | `~/.ssh/known_hosts`, only through `ssh-keygen -R`. |
 | Agent keys | Nothing on disk. `ssh-add` only changes the running agent. |

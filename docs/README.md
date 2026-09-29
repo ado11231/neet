@@ -17,7 +17,7 @@
 | --- | --- |
 | [Project README](../README.md) | What neet is, how far along it is, and how you will install and open it. |
 | [FEATURES.md](FEATURES.md) | Every feature, grouped by purpose, with its phase, status, open questions, and what neet will never do. |
-| [INTERFACE.md](INTERFACE.md) | The planned tabs, what each screen shows, keyboard keys, and review steps. |
+| [INTERFACE.md](INTERFACE.md) | The Home menu, what each screen shows, keyboard keys, and review steps. |
 | [SAFETY.md](SAFETY.md) | Cleanup roots, protected paths, allow lists, backups, admin rights, and the safety tests. |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | The two crates, how data moves, each file's purpose, and dependencies. |
 | [ROADMAP.md](ROADMAP.md) | Milestones, what is built, what remains, and how each milestone is accepted. |
