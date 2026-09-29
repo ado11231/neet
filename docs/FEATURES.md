@@ -29,7 +29,7 @@
 ## Where Things Stand
 
 * The scanner, the cleanup rules, and dry run plans exist in the `neet-core` library.
-* The `neet` program opens a Home menu, with working Disk and Clean screens. Clean shows a dry run only. Nothing is moved to the Trash yet, and no Mac settings are changed.
+* The `neet` program opens a Home menu, with working Disk and Clean screens. Clean moves the items you review and confirm to the Trash. No Mac settings are changed.
 * Nothing below is available to use until it is connected to the program.
 
 ## Status And Phases
@@ -39,6 +39,7 @@
 
 | Status | Meaning |
 | --- | --- |
+| **Done** | Works in the program, and is tested. |
 | **Built** | Written and tested in the library, but not yet used by the program. |
 | **In Progress** | Some of the code exists. The feature is not finished. |
 | **Planned** | Part of P1 or P1.5, but not built. Some details are still open. |
@@ -78,9 +79,9 @@
 | Size on disk | Measures the space a file really uses, so files with empty parts are measured correctly. | P1 | Built |
 | Hard link tracking | Spots files with more than one name, so their space is counted once. | P1 | Built |
 | Folder tree and totals | Stores each folder's parent and children, adds up folder totals, and rebuilds paths. | P1 | Built |
-| Disk browser | Browses folders in columns, sorted by size, name, or item count, with a bar for each folder's share and a preview of the selected row. Press `d` to plan a cleanup of the selected item, with the same checks and review as any rule. | P1 | Built |
-| Home status and disk gauge | On the Home screen, shows free and used space, scan progress, whether the scan was complete, and how much Clean can free. The menu shows used space beside Disk, and beside Clean the total every rule found, planned in the background when neet opens and again after each cleanup. | P1 | Built |
-| Scan progress and warnings | Keeps the screen responsive. Lists folders it could not read and disks it skipped. Marks a scan as incomplete, including when Full Disk Access is missing. The scan runs in the background, Home shows progress and counts, and the Skipped screen lists each path with its reason and a Full Disk Access hint. | P1 | Built |
+| Disk browser | Browses folders in columns, sorted by size, name, or item count, with a bar for each folder's share and a preview of the selected row. Press `d` to plan a cleanup of the selected item, with the same checks and review as any rule. | P1 | Done |
+| Home status and disk gauge | On the Home screen, shows free and used space, scan progress, whether the scan was complete, and how much Clean can free. The menu shows used space beside Disk, and beside Clean the total every rule found, planned in the background when neet opens and again after each cleanup. | P1 | Done |
+| Scan progress and warnings | Keeps the screen responsive. Lists folders it could not read and disks it skipped. Marks a scan as incomplete, including when Full Disk Access is missing. The scan runs in the background, Home shows progress and counts, and the Skipped screen lists each path with its reason and a Full Disk Access hint. | P1 | Done |
 | Large and old file filters | Finds files above a size you choose, or not changed since a date you choose, and opens them in Disk. Finding a file does not make it a cleanup target. | P1.5 | Planned |
 | Treemap | A view where each folder's area shows its size. How you interact with it is not designed yet. | P2 | Proposed |
 | Space breakdown | Explains why the disk's used space and the home folder scan disagree. Splits the difference into parts, such as apps, macOS and its other volumes, local Time Machine snapshots, purgeable space, and folders the scan skipped. Whatever neet cannot explain is shown as unexplained, never hidden. View only. | P2 | Proposed |
@@ -97,14 +98,14 @@
 
 | Feature | What It Does | Phase | Status |
 | --- | --- | --- | --- |
-| Dry run plan | Lists matching paths and changes nothing. Every cleanup starts here. Built and shown in Clean. | P1 | In Progress |
-| Path review and confirmation | Shows every target, the item count, and the estimated size, then asks before going on. You cannot skip it. Built in Clean. | P1 | In Progress |
-| Move to the Trash | Moves confirmed items to the Trash through Finder, so Put Back restores them. Space is freed only when you empty the Trash yourself, and neet shows how much that will be. Built and used by Clean. Put Back still needs the manual test on a real Mac. | P1 | In Progress |
-| Risk tiers | Labels each rule `safe`, `caution`, or `expert`. The tier explains the cost and decides how the rule is selected. Built in Clean. Selecting an `expert` rule needs its ID typed out. | P1 | In Progress |
-| Open app checks | Blocks a rule while its app is open, and checks again right before moving anything. The check before the move is built. Clean does not show open apps yet. | P1 | Built |
-| Recent file protection | Lets a rule skip items changed within its minimum age. A folder counts as changed when anything inside it changed. Built in dry run plans. It must be checked again before the move, in M4. | P1 | In Progress |
-| Selection totals | Shows how many items and how much estimated space your selected rules cover. Built in Clean. | P1 | In Progress |
-| Bundled and user rules | Loads the reviewed TOML rules, plus your own from `~/.config/neet/rules/`. Your rule can replace a bundled rule with the same ID, but can never widen what cleanup may touch, and is never selected from the start. Loading and checking rules is built, with 14 bundled rules. See [Bundled Rules](#bundled-rules). | P1 | In Progress |
+| Dry run plan | Lists matching paths and changes nothing. Every cleanup starts here. | P1 | Done |
+| Path review and confirmation | Shows every target, the item count, and the estimated size, then asks before going on. You cannot skip it. | P1 | Done |
+| Move to the Trash | Moves confirmed items to the Trash through Finder, so Put Back restores them. Space is freed only when you empty the Trash yourself, and neet shows how much that will be. Put Back was checked by hand on macOS 26.5. | P1 | Done |
+| Risk tiers | Labels each rule `safe`, `caution`, or `expert`. The tier explains the cost and decides how the rule is selected. Selecting an `expert` rule needs its ID typed out. | P1 | Done |
+| Open app checks | Blocks a rule while its app is open, and checks again right before moving anything. A `safe` rule whose app is open starts cleared, with a note. | P1 | Done |
+| Recent file protection | Lets a rule skip items changed within its minimum age. A folder counts as changed when anything inside it changed. Checked in the plan, and again right before the move. | P1 | Done |
+| Selection totals | Shows how many items and how much estimated space your selected rules cover. | P1 | Done |
+| Bundled and user rules | Loads the reviewed TOML rules, plus your own from `~/.config/neet/rules/`. Your rule can replace a bundled rule with the same ID, but can never widen what cleanup may touch, and is never selected from the start. There are 14 bundled rules. See [Bundled Rules](#bundled-rules). | P1 | Done |
 | Cleanup from Disk | Plans a cleanup for the item selected in Disk, with the same checks, review, and question as Clean. Items outside the allowed folders are refused. | P1 | Planned |
 | Project build folders | Finds build output inside your code projects, such as `target/` and `node_modules/`, grouped by project and sorted by size or by how long since you last worked on the project. Uses the home folder scan, so it does not walk the disk again. Offers a folder only when Git ignores it. Waits on its [design question](#design-questions), because project folders are outside the cleanup roots. | P2 | Proposed |
 
