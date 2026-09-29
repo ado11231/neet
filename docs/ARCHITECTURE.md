@@ -225,7 +225,7 @@ selected rules
 | `crates/neet-core/src/tree.rs` | `Tree`, `Node`, and `NodeId` store folders and files, add up folder sizes and item counts, and rebuild paths. Filled by `scan`. Has tests. |
 | `crates/neet-core/src/rules.rs` | Reads rule files into `Rule`s, checks every field and path against the rule format and `covers_pattern`, treats a `safe` tier in your own rule as `caution`, and lets your rule replace a bundled one with the same `id`. A rule with a problem is left out and reported in `RuleSet::errors`. Has tests. |
 | `crates/neet-core/src/safety.rs` | `CleanupRoots` holds the cleanup roots and protected paths for a home folder. `validate_deletable` is the only way to make a `ValidatedPath`. `covers_pattern` checks that a rule pattern stays inside a root. Has tests. |
-| `crates/neet-core/src/clean.rs` | Empty. Will plan cleanups and move items to the Trash. |
+| `crates/neet-core/src/clean.rs` | Makes dry run plans. Expands each rule path, runs the path check on every item, measures its size and newest change without following links, skips items newer than the minimum age, and gives an item found by two rules to the first. Changes nothing on disk. Moving to the Trash comes in M4. Has tests. |
 | `crates/neet/Cargo.toml` | The program's dependencies: `neet-core` and `ratatui`, and `tempfile` for tests. |
 | `crates/neet/src/main.rs` | The program's entry point. Handles `--help` and `--version`, then opens the terminal interface. |
 | `crates/neet/src/ui/mod.rs` | The interface loop. Draws the screen, waits for a key, and passes it on. |
