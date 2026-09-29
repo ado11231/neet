@@ -4,6 +4,11 @@ on:
   push:
   pull_request:
 
+# A newer push to the same branch cancels the run still going for the old one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Format, lint, and test
@@ -20,6 +25,9 @@ jobs:
         with:
           components: clippy, rustfmt
 
+      - name: Cache Cargo files
+        uses: Swatinem/rust-cache@v2
+
       - name: Check formatting
         run: cargo fmt --all --check
 
@@ -28,6 +36,28 @@ jobs:
 
       - name: Run tests
         run: cargo test --workspace --all-features
+
+  msrv:
+    name: Minimum Rust version
+    runs-on: macos-latest
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # Keep this in step with rust-version in Cargo.toml.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.88"
+
+      - name: Cache Cargo files
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check with the minimum version
+        run: cargo check --workspace --all-targets --all-features --locked
 
   build:
     name: Build (${{ matrix.target }})
@@ -48,6 +78,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      - name: Cache Cargo files
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
 
       - name: Check target
         run: cargo check --workspace --all-features --target ${{ matrix.target }}

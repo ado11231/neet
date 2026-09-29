@@ -206,6 +206,7 @@ selected rules
 ## Platform Support
 
 * macOS 13 or later, on Apple silicon and Intel.
+* Building needs Rust 1.88 or later. It is set as `rust-version` in `Cargo.toml`, checked in CI, and Clippy warns about anything newer.
 * Not every disk uses APFS. If a disk does something neet does not support, it must stop with a clear message.
 * The workspace does not allow `unsafe` code. macOS calls must go through a crate that handles that.
 
@@ -213,7 +214,7 @@ selected rules
 
 | File | Purpose |
 | --- | --- |
-| `Cargo.toml` | Lists the two crates, their shared version and license, and the lint rules. The rules turn on Clippy's strict checks and forbid `unsafe` code. |
+| `Cargo.toml` | Lists the two crates, their shared version, license, and minimum Rust version (1.88), and the lint rules. The rules turn on Clippy's strict checks and forbid `unsafe` code. |
 | `crates/neet-core/Cargo.toml` | The library's dependencies: `walkdir` and `rustix`, and `tempfile` for tests. |
 | `crates/neet-core/src/lib.rs` | The library's entry point. Makes the `disk`, `scan`, `size`, and `tree` modules public. |
 | `crates/neet-core/src/disk.rs` | `disk_space` reads the size and free space of the disk holding a path, with `statvfs`. Has tests. |
@@ -235,4 +236,4 @@ selected rules
 | `crates/neet/src/ui/disk.rs` | The Disk screen: a folder column with size bars, a preview column, sorting, and navigation over the scan tree. Has tests. |
 | `crates/neet/src/ui/skipped.rs` | The Skipped screen: unreadable paths with reasons, other disks, and a Full Disk Access hint. Has tests. |
 | `crates/neet/src/ui/placeholder.rs` | Stands in for Clean until it is built. |
-| `.github/workflows/ci.yml` | Checks formatting, runs Clippy and tests, and runs `cargo check` for Apple silicon and Intel targets. |
+| `.github/workflows/ci.yml` | Checks formatting, runs Clippy and tests, checks the code builds with the minimum Rust version, and runs `cargo check` for Apple silicon and Intel targets. Caches Cargo files, and cancels a run when a newer push replaces it. |

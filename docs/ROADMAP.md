@@ -42,6 +42,7 @@
 * A Cargo workspace with `neet` and `neet-core`.
 * MIT and Apache 2.0 licenses.
 * CI checks formatting, Clippy, and tests, and runs `cargo check` for Apple silicon and Intel.
+* CI also checks the minimum Rust version, 1.88, caches Cargo files, and cancels runs replaced by a newer push. Added September 28, 2026.
 * These checks do not replace the release builds and real Mac testing in M5.
 
 ### M2: Home And Disk
