@@ -1,6 +1,7 @@
 pub mod apps;
 pub mod clean;
 pub mod disk;
+pub mod large;
 pub mod rules;
 pub mod safety;
 pub mod scan;

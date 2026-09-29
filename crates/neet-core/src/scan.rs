@@ -171,10 +171,17 @@ impl<F: FnMut(Progress)> Builder<F> {
                 }
             };
 
+            let modified = match &entry.client_state {
+                Some(Ok(metadata)) => metadata.modified().ok(),
+                _ => None,
+            };
             let path = read_error.map(|_| entry.path());
             let id = self
                 .tree
                 .add(ancestors[depth - 1], entry.file_name, kind, size);
+            if let Some(modified) = modified {
+                self.tree.set_modified(id, modified);
+            }
             if kind == NodeKind::Directory {
                 ancestors.truncate(depth);
                 ancestors.push(id);
@@ -256,6 +263,21 @@ mod tests {
         tree.iter()
             .map(|(id, _)| id)
             .find(|&id| tree.path(id) == path)
+    }
+
+    #[test]
+    fn scan_records_when_files_changed() {
+        let root = tempdir().expect("temporary directory should be created");
+        let file = root.path().join("a.txt");
+        fs::write(&file, "x").expect("file should be written");
+        let changed = fs::metadata(&file)
+            .and_then(|metadata| metadata.modified())
+            .expect("time should be read");
+
+        let result = scan(root.path(), |_| {}).expect("scan should succeed");
+
+        let id = find(&result.tree, &file).expect("file should be in the tree");
+        assert_eq!(result.tree.get(id).modified, Some(changed));
     }
 
     #[test]
