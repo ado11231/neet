@@ -18,6 +18,7 @@ use ratatui::widgets::{Block, List, ListItem, ListState, Padding, Paragraph, Wra
 use super::app::{Action, Context, Screen};
 use super::clean::{Planned, display_path, skip_reason};
 use super::format;
+use super::loading::Loading;
 use super::review::Review;
 
 fn step(list: &mut ListState, rows: usize, code: KeyCode) {
@@ -292,11 +293,13 @@ impl Screen for AppFiles {
             .padding(Padding::horizontal(1));
         let planned = match &self.state {
             State::Planning { started, .. } => {
-                let text = format!(
-                    "Finding the app's files and measuring them… {}s\n\nNothing is changed while neet looks.",
-                    started.elapsed().as_secs()
-                );
-                frame.render_widget(Paragraph::new(text).cyan().block(block), area);
+                Loading {
+                    title: &self.name,
+                    doing: "Finding the app's files and measuring them",
+                    progress: format!("{}s", started.elapsed().as_secs()),
+                    note: "Nothing is changed while neet looks.",
+                }
+                .draw(frame, area);
                 return;
             }
             State::Failed(reason) => {

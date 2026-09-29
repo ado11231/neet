@@ -17,6 +17,7 @@ use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Padding, Paragra
 
 use super::app::{Action, Context, Screen};
 use super::format;
+use super::loading::Loading;
 use super::review::Review;
 
 /// A plan and the rules that could not be loaded, or why planning failed.
@@ -500,14 +501,13 @@ impl Screen for Clean {
         self.poll();
         let planned = match &self.state {
             State::Planning { started, .. } => {
-                let text = format!(
-                    "Finding files the rules cover… {}s\n\nNothing is changed while neet looks.",
-                    started.elapsed().as_secs()
-                );
-                let block = Block::bordered()
-                    .title(" Clean ")
-                    .padding(Padding::horizontal(1));
-                frame.render_widget(Paragraph::new(text).cyan().block(block), area);
+                Loading {
+                    title: "Clean",
+                    doing: "Finding files the rules cover",
+                    progress: format!("{}s", started.elapsed().as_secs()),
+                    note: "Nothing is changed while neet looks.",
+                }
+                .draw(frame, area);
                 return;
             }
             State::Failed(reason) => {

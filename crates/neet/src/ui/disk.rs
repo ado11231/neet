@@ -16,6 +16,7 @@ use ratatui::widgets::{Block, List, ListItem, ListState, Padding, Paragraph};
 use super::app::{Action, Context, Screen};
 use super::clean::{Planned, skip_reason};
 use super::format;
+use super::loading::scanning;
 use super::review::{Notice, Review};
 use super::scan::ScanStatus;
 
@@ -207,7 +208,7 @@ fn draw_folder(frame: &mut Frame, area: Rect, tree: &Tree, browser: &mut Browser
     let list = List::new(items)
         .block(block)
         .highlight_symbol("▸ ")
-        .highlight_style(Style::new().reversed());
+        .highlight_style(Style::new().bold().cyan());
     frame.render_stateful_widget(list, area, &mut browser.list);
 }
 
@@ -271,7 +272,7 @@ impl Disk {
 
 impl Screen for Disk {
     fn draw(&mut self, frame: &mut Frame, area: Rect, context: &Context) {
-        let message = match context.scan {
+        let progress = match context.scan {
             ScanStatus::Done { scan, .. } => {
                 let tree = &scan.tree;
                 let browser = self.browser.get_or_insert_with(|| Browser::new(tree));
@@ -286,23 +287,29 @@ impl Screen for Disk {
                 }
                 return;
             }
-            ScanStatus::Running(progress) => format!(
-                "Scanning your home folder… {} items so far. The folders show here when the scan finishes.",
-                format::count(progress.entries)
-            ),
+            ScanStatus::Running(progress) => progress,
             ScanStatus::Failed(reason) => {
-                format!("The scan failed, so there is nothing to show. {reason}")
+                let block = Block::bordered()
+                    .title(" Disk ")
+                    .padding(Padding::horizontal(1));
+                frame.render_widget(
+                    Paragraph::new(format!(
+                        "The scan failed, so there is nothing to show. {reason}"
+                    ))
+                    .red()
+                    .wrap(ratatui::widgets::Wrap { trim: true })
+                    .block(block),
+                    area,
+                );
+                return;
             }
         };
-        let block = Block::bordered()
-            .title(" Disk ")
-            .padding(Padding::horizontal(1));
-        frame.render_widget(
-            Paragraph::new(message)
-                .wrap(ratatui::widgets::Wrap { trim: true })
-                .block(block),
-            area,
-        );
+        scanning(
+            "Disk",
+            "Your folders show here when the scan finishes.",
+            *progress,
+        )
+        .draw(frame, area);
     }
 
     fn handle_key(&mut self, key: KeyEvent, context: &Context) -> Action {
@@ -532,12 +539,42 @@ mod tests {
     fn waits_while_the_scan_runs() {
         let scan = ScanStatus::Running(Progress {
             entries: 42,
-            bytes: 0,
+            bytes: 2_000_000,
         });
 
         let screen = render(&mut Disk::new(), &scan, 80);
 
-        assert!(screen.contains("42 items so far"));
+        assert!(screen.contains("Scanning your home folder"));
+        assert!(screen.contains("42 items · 2.0 MB so far"));
+    }
+
+    #[test]
+    fn the_selected_row_is_cyan_without_a_filled_background() {
+        let scan = ScanStatus::Done {
+            scan: Scan {
+                tree: sample(),
+                errors: Vec::new(),
+                other_disks: Vec::new(),
+            },
+            elapsed: std::time::Duration::ZERO,
+        };
+        let mut terminal = Terminal::new(TestBackend::new(80, 12)).unwrap();
+        let context = Context {
+            scan: &scan,
+            disk: None,
+            cleanable: None,
+        };
+        terminal
+            .draw(|frame| Disk::new().draw(frame, frame.area(), &context))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+
+        // The first row sits below the top border, after the padding.
+        let arrow = &buffer[(2, 1)];
+        assert_eq!(arrow.symbol(), "▸");
+        assert_eq!(arrow.fg, ratatui::style::Color::Cyan);
+        assert!(!arrow.modifier.contains(ratatui::style::Modifier::REVERSED));
+        assert_eq!(arrow.bg, ratatui::style::Color::Reset);
     }
 
     #[test]
