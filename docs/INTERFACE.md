@@ -15,14 +15,15 @@
 
 1. [The Terminal Interface](#the-terminal-interface)
 2. [The Home Screen](#the-home-screen)
-3. [Moving Between Screens](#moving-between-screens)
-4. [The Disk Screen](#the-disk-screen)
-5. [The Clean Screen](#the-clean-screen)
-6. [The SSH Screen](#the-ssh-screen)
-7. [The Dotfiles Screen](#the-dotfiles-screen)
-8. [The Startup Screen](#the-startup-screen)
-9. [The AI Tools Screen](#the-ai-tools-screen)
-10. [The Settings Screen](#the-settings-screen)
+3. [The Skipped Screen](#the-skipped-screen)
+4. [Moving Between Screens](#moving-between-screens)
+5. [The Disk Screen](#the-disk-screen)
+6. [The Clean Screen](#the-clean-screen)
+7. [The SSH Screen](#the-ssh-screen)
+8. [The Dotfiles Screen](#the-dotfiles-screen)
+9. [The Startup Screen](#the-startup-screen)
+10. [The AI Tools Screen](#the-ai-tools-screen)
+11. [The Settings Screen](#the-settings-screen)
 
 ## The Terminal Interface
 
@@ -63,8 +64,22 @@
 | `Up` / `Down` | Move the selection. |
 | `Enter` or `Right` | Open the selected screen. |
 | `1` to `9` | Open that row directly. |
+| `s` | Open the Skipped screen. |
 | `?` | Help. |
 | `q` | Quit. |
+
+## The Skipped Screen
+
+* Lists what the scan could not read, with the reason for each path, and the folders on other disks it did not enter.
+* When macOS blocked a folder, it explains how to turn on Full Disk Access for your terminal.
+* Says so when nothing was skipped.
+* When the scan is incomplete, the Home panel says how many paths were skipped and to press `s`.
+
+| Key | Action |
+| --- | --- |
+| `Up` / `Down` | Scroll. |
+| `PgUp` / `PgDn` | Scroll a page. |
+| `g` / `G` | Jump to the top or bottom. |
 
 ## Moving Between Screens
 

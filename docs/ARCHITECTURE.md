@@ -217,7 +217,7 @@ selected rules
 | `crates/neet-core/Cargo.toml` | The library's dependencies: `walkdir` and `rustix`, and `tempfile` for tests. |
 | `crates/neet-core/src/lib.rs` | The library's entry point. Makes the `disk`, `scan`, `size`, and `tree` modules public. |
 | `crates/neet-core/src/disk.rs` | `disk_space` reads the size and free space of the disk holding a path, with `statvfs`. Has tests. |
-| `crates/neet-core/src/scan.rs` | `walk_directory` walks a folder without following links or leaving the disk. `scan` builds the full `Tree`, counts hard links once, records unreadable paths and other disks, and reports `Progress`. Has tests. |
+| `crates/neet-core/src/scan.rs` | `walk_directory` walks a folder without following links or leaving the disk. `scan` builds the full `Tree`, counts hard links once, records unreadable paths, noting when macOS denied access, and other disks, and reports `Progress`. Has tests. |
 | `crates/neet-core/src/size.rs` | `allocated_size` measures the space a file uses on disk. `HardLinkTracker` remembers each file's device and inode, so a hard link is counted once. Has tests for hard links and files with empty parts. |
 | `crates/neet-core/src/tree.rs` | `Tree`, `Node`, and `NodeId` store folders and files, add up folder sizes and item counts, and rebuild paths. Filled by `scan`. Has tests. |
 | `crates/neet-core/src/rules.rs` | Empty. Will read and check rules. |
@@ -233,5 +233,6 @@ selected rules
 | `crates/neet/src/ui/format.rs` | Formats sizes the way Finder does, and counts with commas. Has tests. |
 | `crates/neet/src/ui/help.rs` | The help box opened by `?`, drawn over the current screen. |
 | `crates/neet/src/ui/disk.rs` | The Disk screen: a folder column with size bars, a preview column, sorting, and navigation over the scan tree. Has tests. |
+| `crates/neet/src/ui/skipped.rs` | The Skipped screen: unreadable paths with reasons, other disks, and a Full Disk Access hint. Has tests. |
 | `crates/neet/src/ui/placeholder.rs` | Stands in for Clean until it is built. |
 | `.github/workflows/ci.yml` | Checks formatting, runs Clippy and tests, and runs `cargo check` for Apple silicon and Intel targets. |

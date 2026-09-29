@@ -3,7 +3,7 @@
 * What neet does today, what comes next, and how each step is accepted.
 * For anyone tracking progress or picking the next piece of work.
 * A milestone is only marked complete after its checks pass.
-* Last updated September 28, 2026. The 24 library tests and 21 interface tests pass. The program opens the Home screen, and Disk browses the scan.
+* Last updated September 28, 2026. The 27 library tests and 27 interface tests pass. The program opens the Home screen, and Disk browses the scan.
 * Features and their status live in [FEATURES.md](FEATURES.md). Screens live in [INTERFACE.md](INTERFACE.md).
 
 ## Contents
@@ -21,7 +21,7 @@
 | --- | --- | --- | --- | --- |
 | M0 | Workspace, licenses, formatting, linting, and CI | Foundation | P1 | Complete |
 | M1 | A full scan of the home folder | Disk analysis | P1 | In Progress |
-| M2 | Home screen, disk browser, and keyboard keys | Disk analysis, interface | P1 | In Progress |
+| M2 | Home screen, disk browser, and keyboard keys | Disk analysis, interface | P1 | Complete |
 | M3 | Rules, risk tiers, and dry run plans in Clean | Cleanup, interface | P1 | Planned |
 | M4 | Review, path checks, open app checks, and moving to the Trash | Cleanup, safety | P1 | Planned |
 | M5 | Packages, testing on real Macs, and the P1 release checks | Distribution | P1 | Planned |
@@ -44,6 +44,22 @@
 * CI checks formatting, Clippy, and tests, and runs `cargo check` for Apple silicon and Intel.
 * These checks do not replace the release builds and real Mac testing in M5.
 
+### M2: Home And Disk
+
+* Completed September 28, 2026.
+* **Built:**
+  1. `neet --help` and `neet --version`. Any other option is refused.
+  2. The interface loop, the screen stack, and `Esc`, `q`, and `?` on every screen.
+  3. The Home screen: art, menu, and info panel. Unbuilt features are dimmed and skipped.
+  4. The home folder scan runs on a background thread from the start. Home shows live progress, then the total, and flags incomplete scans and skipped disks.
+  5. The Disk screen: a folder column with size bars and percents, a preview column, sorting by size, name, or items, and keys to open folders and go back up. It shows scan progress until the scan finishes.
+  6. Tests for the menu, the screen stack, the background scan, size formatting, the Disk browser, and the Home and Disk layouts.
+  7. The disk gauge on Home, from the disk's own totals, refreshed every 5 seconds.
+  8. The Skipped screen, opened with `s` on Home. It lists unreadable paths with their reasons, and other disks, and explains Full Disk Access when macOS blocked a folder.
+  9. The Home art: a sleeping cat under a starry skylight, behind the neet wordmark, both in the blue `#82aaff`.
+* **Done when** the screen keeps responding during a scan, and marks incomplete scans. Both are checked.
+* Planning a cleanup from Disk with `d` moves to M4, since it needs the path checks.
+
 ## In Progress
 
 ### M1: Scanner
@@ -54,27 +70,12 @@
   3. `HardLinkTracker` spots files already counted, by device and inode.
   4. `Tree` stores folders and files, links parents and children, adds up sizes, and rebuilds paths.
   5. `scan` joins them into one scan. It counts hard links once, records unreadable paths and marks the scan incomplete, lists folders on other disks, and reports progress.
-  6. 24 tests cover walking, symbolic links, missing and file roots, hard links, files with empty parts, nested folders, unreadable folders, progress, and the tree.
+  6. 27 tests cover walking, symbolic links, missing and file roots, hard links, files with empty parts, nested folders, unreadable folders, progress, and the tree.
   7. A scan of a real home folder, 1.4 million entries, matched `du` and took about a minute.
 * **Remaining:**
   1. Test the other disk listing, for example with a mounted disk image.
   2. Make the scan faster, for example with `ignore` and `rayon`.
 * **Done when** tests with temporary folders cover links, files with empty parts, nested folders, permissions, and other disks.
-
-### M2: Home And Disk
-
-* **Built:**
-  1. `neet --help` and `neet --version`. Any other option is refused.
-  2. The interface loop, the screen stack, and `Esc`, `q`, and `?` on every screen.
-  3. The Home screen: art, menu, and info panel. Unbuilt features are dimmed and skipped.
-  4. The home folder scan runs on a background thread from the start. Home shows live progress, then the total, and flags incomplete scans and skipped disks.
-  5. The Disk screen: a folder column with size bars and percents, a preview column, sorting by size, name, or items, and keys to open folders and go back up. It shows scan progress until the scan finishes.
-  6. Tests for the menu, the screen stack, the background scan, size formatting, the Disk browser, and the Home and Disk layouts.
-  7. The disk gauge on Home, from the disk's own totals, refreshed every 5 seconds.
-  8. The Home art: a sleeping cat under a starry skylight, behind the neet wordmark, both in the blue `#82aaff`.
-* **Remaining:**
-  1. A list of the paths the scan skipped.
-* **Done when** the screen keeps responding during a scan, and marks incomplete scans.
 
 ## Planned
 
@@ -87,6 +88,7 @@
 ### M4: Cleanup
 
 * The path check, checks for open apps, the path review, the question, and moving to the Trash.
+* Planning a cleanup of the item selected in Disk, with `d`.
 * **Done when** the safety tests in [SAFETY.md](SAFETY.md#tests) pass, and Finder restores a test item.
 
 ### M5: P1 Release

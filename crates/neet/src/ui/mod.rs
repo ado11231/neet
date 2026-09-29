@@ -6,6 +6,7 @@ mod help;
 mod home;
 mod placeholder;
 mod scan;
+mod skipped;
 
 use std::io;
 use std::path::PathBuf;

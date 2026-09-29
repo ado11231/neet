@@ -22,6 +22,20 @@ pub struct Progress {
 pub struct ScanError {
     pub path: Option<PathBuf>,
     pub message: String,
+    /// macOS refused access, often because Full Disk Access is off
+    pub permission_denied: bool,
+}
+
+impl ScanError {
+    fn new(path: Option<PathBuf>, error: &walkdir::Error) -> Self {
+        let io_error = error.io_error();
+        Self {
+            path,
+            message: io_error.map_or_else(|| error.to_string(), ToString::to_string),
+            permission_denied: io_error
+                .is_some_and(|error| error.kind() == io::ErrorKind::PermissionDenied),
+        }
+    }
 }
 
 /// The result of scanning a folder
@@ -79,10 +93,7 @@ pub fn scan(root: &Path, mut on_progress: impl FnMut(Progress)) -> io::Result<Sc
         let entry = match result {
             Ok(entry) => entry,
             Err(error) => {
-                errors.push(ScanError {
-                    path: error.path().map(Path::to_path_buf),
-                    message: error.to_string(),
-                });
+                errors.push(ScanError::new(error.path().map(Path::to_path_buf), &error));
                 continue;
             }
         };
@@ -111,10 +122,7 @@ pub fn scan(root: &Path, mut on_progress: impl FnMut(Progress)) -> io::Result<Sc
             Ok(metadata) if tracker.first_sighting(&metadata) => allocated_size(&metadata),
             Ok(_) => 0,
             Err(error) => {
-                errors.push(ScanError {
-                    path: Some(entry.path().to_path_buf()),
-                    message: error.to_string(),
-                });
+                errors.push(ScanError::new(Some(entry.path().to_path_buf()), &error));
                 0
             }
         };
@@ -307,6 +315,12 @@ mod tests {
 
         assert!(!result.is_complete());
         assert_eq!(result.errors[0].path.as_deref(), Some(locked.as_path()));
+        assert!(result.errors[0].permission_denied);
+        assert!(
+            !result.errors[0]
+                .message
+                .contains(&*locked.to_string_lossy())
+        );
         assert!(find(&result.tree, &locked).is_some());
         assert!(find(&result.tree, &root.path().join("visible.txt")).is_some());
     }

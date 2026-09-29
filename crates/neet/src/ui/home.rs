@@ -11,6 +11,7 @@ use super::disk::Disk;
 use super::format;
 use super::placeholder::Placeholder;
 use super::scan::ScanStatus;
+use super::skipped::Skipped;
 use neet_core::disk::DiskSpace;
 
 /// Below this width the art is hidden and the menu fills the screen.
@@ -168,7 +169,6 @@ impl Home {
             Line::default(),
         ];
         lines.push(disk_line(disk));
-        lines.push(Line::default());
         lines.extend(scan_lines(scan));
         let text = Text::from(lines);
         let info = Paragraph::new(text)
@@ -229,7 +229,7 @@ fn scan_lines(scan: &ScanStatus) -> Vec<Line<'static>> {
             if !scan.is_complete() {
                 lines.push(
                     Line::from(format!(
-                        "Incomplete: {} paths could not be read. Full Disk Access may be off.",
+                        "Incomplete: {} paths could not be read. Press s to see them.",
                         format::count(u64::try_from(scan.errors.len()).unwrap_or(u64::MAX))
                     ))
                     .yellow(),
@@ -238,7 +238,7 @@ fn scan_lines(scan: &ScanStatus) -> Vec<Line<'static>> {
             if !scan.other_disks.is_empty() {
                 lines.push(
                     Line::from(format!(
-                        "Skipped {} folders on other disks.",
+                        "Skipped {} folders on other disks. Press s to see them.",
                         scan.other_disks.len()
                     ))
                     .dark_gray(),
@@ -282,6 +282,7 @@ impl Screen for Home {
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
                 return Self::open(self.selected());
             }
+            KeyCode::Char('s') => return Action::Open(Box::new(Skipped::new())),
             KeyCode::Char(c @ '1'..='9') => {
                 let index = c as usize - '1' as usize;
                 return Self::open(index);
@@ -292,7 +293,7 @@ impl Screen for Home {
     }
 
     fn hints(&self) -> &'static str {
-        "↑↓ move · enter open · ? help · q quit"
+        "↑↓ move · enter open · s skipped · ? help · q quit"
     }
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
@@ -300,6 +301,7 @@ impl Screen for Home {
             ("↑ ↓  j k", "Move the selection"),
             ("Enter  →  l", "Open the selected screen"),
             ("1 to 9", "Open that row"),
+            ("s", "See what the scan skipped"),
             ("Esc", "Go back one step"),
             ("q", "Quit"),
         ]
