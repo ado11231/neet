@@ -317,7 +317,7 @@ fn recheck(
     if let Some(app) = rule.requires_quit.iter().find(|app| is_running(app)) {
         return Some(SkipReason::AppOpen(app.clone()));
     }
-    let again = match roots.validate_deletable(item.path.path()) {
+    let again = match roots.validate_again(&item.path) {
         Ok(again) => again,
         Err(error) => return Some(SkipReason::Refused(error)),
     };
