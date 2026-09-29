@@ -72,10 +72,10 @@
 
 | Feature | What It Does | Phase | Status |
 | --- | --- | --- | --- |
-| Home folder scan | Walks your home folder. It does not follow symbolic links or cross onto another disk. The walker exists, but the full scan does not. | P1 | In Progress |
+| Home folder scan | Scans your home folder into a tree of sizes. It does not follow symbolic links or cross onto another disk. Listing other disks still needs a test on a real Mac. | P1 | Built |
 | Size on disk | Measures the space a file really uses, so files with empty parts are measured correctly. | P1 | Built |
-| Hard link tracking | Spots files with more than one name, so their space is counted once. Not yet used by the scan. | P1 | Built |
-| Folder tree and totals | Stores each folder's parent and children, adds up folder totals, and rebuilds paths. Not yet filled by the scan. | P1 | Built |
+| Hard link tracking | Spots files with more than one name, so their space is counted once. | P1 | Built |
+| Folder tree and totals | Stores each folder's parent and children, adds up folder totals, and rebuilds paths. | P1 | Built |
 | Disk browser | Browses folders in columns, sorted by size, name, or file count, with a bar for each folder's share. | P1 | Planned |
 | Home status and disk gauge | On the Home screen, shows free and used space, scan progress, whether the scan was complete, and how much Clean can free. | P1 | Planned |
 | Scan progress and warnings | Keeps the screen responsive. Lists folders it could not read and disks it skipped. Marks a scan as incomplete, including when Full Disk Access is missing. | P1 | Planned |

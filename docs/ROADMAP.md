@@ -3,7 +3,7 @@
 * What neet does today, what comes next, and how each step is accepted.
 * For anyone tracking progress or picking the next piece of work.
 * A milestone is only marked complete after its checks pass.
-* Last updated September 28, 2026. The 15 library tests and 9 interface tests pass. The program opens the Home screen.
+* Last updated September 28, 2026. The 23 library tests and 9 interface tests pass. The program opens the Home screen.
 * Features and their status live in [FEATURES.md](FEATURES.md). Screens live in [INTERFACE.md](INTERFACE.md).
 
 ## Contents
@@ -53,12 +53,12 @@
   2. `allocated_size` works out the space a file uses on disk.
   3. `HardLinkTracker` spots files already counted, by device and inode.
   4. `Tree` stores folders and files, links parents and children, adds up sizes, and rebuilds paths.
-  5. 15 tests cover walking, symbolic links, a missing start folder, hard links, files with empty parts, and the tree.
+  5. `scan` joins them into one scan. It counts hard links once, records unreadable paths and marks the scan incomplete, lists folders on other disks, and reports progress.
+  6. 23 tests cover walking, symbolic links, missing and file roots, hard links, files with empty parts, nested folders, unreadable folders, progress, and the tree.
+  7. A scan of a real home folder, 1.4 million entries, matched `du` and took about a minute.
 * **Remaining:**
-  1. Join the walker, file details, hard link tracker, and tree into one scan that starts at the home folder.
-  2. Fill in folder totals, counting each hard linked file once.
-  3. Send progress and errors while scanning.
-  4. List any other disks it skipped, and mark incomplete scans.
+  1. Test the other disk listing, for example with a mounted disk image.
+  2. Make the scan faster, for example with `ignore` and `rayon`.
 * **Done when** tests with temporary folders cover links, files with empty parts, nested folders, permissions, and other disks.
 
 ### M2: Home And Disk

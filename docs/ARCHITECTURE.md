@@ -98,7 +98,7 @@ loop:
 
 ### A Scan
 
-* This is the planned flow. The walker, size helpers, hard link tracker, and tree exist, but are not joined yet.
+* `scan` does every step except the last. The program does not call it yet.
 
 ```text
 scan request
@@ -215,9 +215,9 @@ selected rules
 | `Cargo.toml` | Lists the two crates, their shared version and license, and the lint rules. The rules turn on Clippy's strict checks and forbid `unsafe` code. |
 | `crates/neet-core/Cargo.toml` | The library's dependencies: `walkdir`, and `tempfile` for tests. |
 | `crates/neet-core/src/lib.rs` | The library's entry point. Makes the `scan`, `size`, and `tree` modules public. |
-| `crates/neet-core/src/scan.rs` | `walk_directory` walks a folder without following links or leaving the disk. Has tests. |
+| `crates/neet-core/src/scan.rs` | `walk_directory` walks a folder without following links or leaving the disk. `scan` builds the full `Tree`, counts hard links once, records unreadable paths and other disks, and reports `Progress`. Has tests. |
 | `crates/neet-core/src/size.rs` | `allocated_size` measures the space a file uses on disk. `HardLinkTracker` remembers each file's device and inode, so a hard link is counted once. Has tests for hard links and files with empty parts. |
-| `crates/neet-core/src/tree.rs` | `Tree`, `Node`, and `NodeId` store folders and files, add up folder sizes, and rebuild paths. Has tests. Not yet filled by the walker. |
+| `crates/neet-core/src/tree.rs` | `Tree`, `Node`, and `NodeId` store folders and files, add up folder sizes, and rebuild paths. Filled by `scan`. Has tests. |
 | `crates/neet-core/src/rules.rs` | Empty. Will read and check rules. |
 | `crates/neet-core/src/safety.rs` | Empty. Will hold `validate_deletable` and `ValidatedPath`. |
 | `crates/neet-core/src/clean.rs` | Empty. Will plan cleanups and move items to the Trash. |
