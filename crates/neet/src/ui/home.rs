@@ -6,6 +6,7 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, List, ListItem, ListState, Padding, Paragraph, Wrap};
 
 use super::app::{Action, Context, Screen};
+use super::apps::RemoveApp;
 use super::art;
 use super::clean::Clean;
 use super::disk::Disk;
@@ -58,7 +59,7 @@ const ENTRIES: &[Entry] = &[
     Entry {
         label: "Remove App",
         about: "Review an app and its files before removing it.",
-        target: Target::Soon,
+        target: Target::Screen(|| Box::new(RemoveApp::new())),
     },
     Entry {
         label: "Startup",
@@ -377,6 +378,8 @@ mod tests {
         assert_eq!(ENTRIES[home.selected()].label, "Clean");
         press(&mut home, KeyCode::Down);
         assert_eq!(ENTRIES[home.selected()].label, "Large Files");
+        press(&mut home, KeyCode::Down);
+        assert_eq!(ENTRIES[home.selected()].label, "Remove App");
         press(&mut home, KeyCode::Down);
         assert_eq!(ENTRIES[home.selected()].label, "Quit");
     }
