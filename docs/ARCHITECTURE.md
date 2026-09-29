@@ -198,7 +198,7 @@ selected rules
 | Reading `SKILL.md` front matter | A small YAML reader, or a hand written parser | Candidate |
 | Building rules into the program | `include_dir` | Candidate |
 | Checking for running apps | `sysinfo` or a macOS API | Candidate |
-| Moving to the Trash | A crate or macOS API that works with Finder's Put Back | Candidate |
+| Moving to the Trash | A crate that moves items through Finder, so Put Back works | Candidate |
 | Writing archives | `tar` and `flate2` | Candidate |
 | Changing display modes | `core-graphics` | Candidate |
 | Errors | `thiserror`, and `anyhow` in the `neet` crate if needed | Candidate |

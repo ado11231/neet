@@ -42,8 +42,9 @@
 6. Move the items to the Trash.
 
 * P1 never deletes files for good and never empties the Trash.
+* Items go to the Trash through Finder, so Finder's Put Back can restore each one to where it was. The first cleanup makes macOS ask whether neet may control Finder. The faster way that skips Finder is not used, because it loses Put Back.
 * Cleanup only happens in the terminal interface. There is no command or option that skips the path list or the question.
-* After a cleanup, neet reminds you the space is only freed once you empty the Trash.
+* After a cleanup, neet shows how much space the cleaned items now take up in the Trash, and that it is only freed once you empty the Trash.
 
 ## The Path Check
 
@@ -56,14 +57,26 @@
 
 * Only this function can make a `ValidatedPath`, so no other code can skip the check.
 * A path must be inside a cleanup root, and never the root itself.
-* P1 has these cleanup roots:
-  1. Developer caches in `~/Library/Developer`.
-  2. Named caches in `~/Library/Caches`.
-  3. Logs in `~/Library/Logs`.
-  4. Saved app state in `~/Library/Saved Application State`.
-  5. Package manager caches that have been reviewed.
-  6. Certain Mail download caches.
-  7. System logs, but only after their exact locations, and a way to clean them without admin rights, are reviewed. None are chosen yet.
+* P1 has exactly these cleanup roots. Each one is a folder whose contents apps can make again. A root never includes installed software or your own data.
+
+| Cleanup Root | Holds |
+| --- | --- |
+| `~/Library/Caches` | App caches, including Homebrew, pip, pnpm, and Yarn caches. Each rule still names the folder it cleans. |
+| `~/Library/Containers/*/Data/Library/Caches` | Caches of sandboxed apps. Only the `Caches` folder inside each app's container, never anything else in the container. |
+| `~/Library/Logs` | App logs. |
+| `~/Library/Saved Application State` | Window state apps save to reopen where you left off. |
+| `~/Library/Developer/Xcode/DerivedData` | Xcode build output. |
+| `~/Library/Developer/Xcode/iOS DeviceSupport` | Debug files Xcode copies from connected devices. |
+| `~/Library/Developer/CoreSimulator/Caches` | Simulator caches. Never the simulators themselves. |
+| `~/.npm/_cacache` | The npm download cache. |
+| `~/.cargo/registry/cache` | Downloaded Rust crate archives. |
+| `~/.cache/pip` | The pip cache, when pip is set to keep it here instead of `~/Library/Caches`. |
+
+* In the Containers root, `*` stands for exactly one folder, an app's container. The path check handles it. It is not a rule pattern.
+* Tool folders such as `~/.rustup`, `~/.pyenv`, `~/.m2`, and the rest of `~/.cargo` hold installed software or downloads you may need offline, so they are not roots.
+* Mail download caches live in `~/Library/Containers/com.apple.mail/Data/Library/Mail Downloads`, outside the Containers root. They are not a root until that exact folder is reviewed. See [Design Questions](FEATURES.md#design-questions).
+* System logs have no root. Their locations, and a way to clean them without admin rights, are not chosen yet.
+* Adding a root needs a change to this table and to the Rust code, in the same change.
 * A rule cannot add a cleanup root.
 * The P1.5 app removal review does not add apps as a cleanup root. What it may remove must be decided first.
 * `~/.claude` and `~/.codex` are not cleanup roots, so cleanup cannot touch them.
@@ -81,6 +94,7 @@
 | `~/Library/Mobile Documents`, `~/Library/CloudStorage` | iCloud and other cloud files. |
 | `~/Library/Keychains`, `~/.ssh` | Passwords and keys. |
 | Any `.git` folder | Repository history. |
+| `~/Library/Developer/Xcode/Archives` | Archived builds with the debug symbols of apps you shipped. They cannot be made again. |
 | The top folder of any disk | Far too broad. |
 
 * Folders inside `/Library` are not P1 targets. Adding one later needs a safety review and a change to the Rust code.
@@ -96,9 +110,9 @@
 6. Saves the real path, device, inode, and other details it needs.
 
 * Right before moving an item, neet checks its real path, device, and inode again. If anything changed, it skips that item.
-* Where macOS allows it, neet moves files in a way that cannot be tricked by a link swapped in after the review.
 * If neet cannot be sure a file is the same one you reviewed, it skips it.
-* Any case macOS cannot protect against must be written down before M4 is done.
+* **Known gap:** moving to the Trash through Finder takes a path, not an open file. Between the last check and the move, a very short window remains in which a path could be swapped for a link. neet checks right before each move to keep that window as small as possible. Closing it fully would need a way of moving files that macOS does not offer for the Trash.
+* Any other case macOS cannot protect against must be written down here before M4 is done.
 
 ## Cleanup Rules
 
@@ -131,6 +145,24 @@ min_age_days = 0
 | `min_age_days` | No | Skip files changed within this many days. |
 
 * neet refuses unknown fields, patterns it does not support, and fixed paths that are not safe.
+
+### Path Patterns
+
+* The only pattern is `*`. It matches any name within one folder level, such as `DerivedData/*` or `Caches/com.example.*`.
+* Not supported: `**`, `?`, `[...]`, and `{a,b}`.
+* A `*` may only appear after the cleanup root part of the path. `~/Library/Caches/*/data` is allowed, but `~/Library/*/Caches` is not.
+* Every path a pattern matches must pass the path check, like any other path.
+
+### Your Own Rules
+
+* Your rules may target anything inside the cleanup roots, and nothing outside them.
+* They are never selected from the start. A `safe` tier in your rule is treated as `caution`.
+* A rule with the same `id` as a bundled rule replaces it, under these same limits.
+
+### Minimum Age
+
+* `min_age_days` compares against the newest change anywhere inside an item. A folder counts as changed when any file inside it changed, not only when entries were added or removed.
+* If neet cannot read the times of everything inside, it skips the item.
 * Every path a pattern matches is checked again. Matching nothing is fine.
 * Never call files junk or useless without saying why they are safe to remove.
 * Before adding a rule:
@@ -216,14 +248,17 @@ min_age_days = 0
   4. Symbolic links that lead out, and links swapped in after the review.
   5. A device or inode that changed after the review.
   6. Names that are not valid `UTF-8`, or that neet does not support.
-  7. Your own rules that try to reach more than a bundled rule.
-  8. Dotfile edits outside the allow list, or through a symbolic link that leads out.
-  9. Permission fixes and dotfile edits undone from their backups.
-  10. Exports that contain a private key or something that looks like a token.
-  11. Starting neet as root.
-  12. `pmset` settings outside the allow list.
-  13. Settings and startup items undone from their saved values.
-  14. A refresh rate that is not kept switching back.
-  15. The AI tools view refusing sign in files, chat history, and links that lead out.
+  7. Your own rules that try to reach outside the cleanup roots, and a `safe` tier in your own rule being treated as `caution`.
+  8. Rule patterns with `**`, `?`, `[...]`, `{a,b}`, or a `*` before the end of the cleanup root.
+  9. Paths inside a container but outside its `Caches` folder, and paths inside `~/Library/Developer/Xcode/Archives`.
+  10. A folder whose own time is old but that holds a recently changed file, skipped by `min_age_days`.
+  11. Dotfile edits outside the allow list, or through a symbolic link that leads out.
+  12. Permission fixes and dotfile edits undone from their backups.
+  13. Exports that contain a private key or something that looks like a token.
+  14. Starting neet as root.
+  15. `pmset` settings outside the allow list.
+  16. Settings and startup items undone from their saved values.
+  17. A refresh rate that is not kept switching back.
+  18. The AI tools view refusing sign in files, chat history, and links that lead out.
 * Automated tests never use a real home folder, and never change real Mac settings.
 * The M4 manual test moves a harmless temporary file to the Trash, then restores it with Finder's Put Back.

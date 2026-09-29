@@ -138,6 +138,8 @@
   3. Confirm the number of items, their size, and that they go to the Trash.
   4. neet checks each path again, then moves it to the Trash.
 * The path review cannot be skipped.
+* The first cleanup makes macOS ask whether neet may control Finder. Finder moves the items, so Put Back works.
+* When it finishes, the screen shows how much space the cleaned items take up in the Trash, and that emptying the Trash frees it.
 
 ## The SSH Screen
 

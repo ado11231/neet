@@ -94,12 +94,12 @@
 | --- | --- | --- | --- |
 | Dry run plan | Lists matching paths and changes nothing. Every cleanup starts here. | P1 | Planned |
 | Path review and confirmation | Shows every target, the item count, and the estimated size, then asks before going on. You cannot skip it. | P1 | Planned |
-| Move to the Trash | Moves confirmed items to the Trash, so you can put them back. Space is freed only when you empty the Trash yourself. | P1 | Planned |
+| Move to the Trash | Moves confirmed items to the Trash through Finder, so Put Back restores them. Space is freed only when you empty the Trash yourself, and neet shows how much that will be. | P1 | Planned |
 | Risk tiers | Labels each rule `safe`, `caution`, or `expert`. The tier explains the cost and decides how the rule is selected. | P1 | Planned |
 | Open app checks | Blocks a rule while its app is open, and checks again right before moving anything. | P1 | Planned |
-| Recent file protection | Lets a rule skip files changed within its minimum age. | P1 | Planned |
+| Recent file protection | Lets a rule skip items changed within its minimum age. A folder counts as changed when anything inside it changed. | P1 | Planned |
 | Selection totals | Shows how many items and how much estimated space your selected rules cover. | P1 | Planned |
-| Bundled and user rules | Loads the reviewed TOML rules, plus your own from `~/.config/neet/rules/`. Your rule can replace a bundled rule with the same ID, but can never widen what cleanup may touch. | P1 | Planned |
+| Bundled and user rules | Loads the reviewed TOML rules, plus your own from `~/.config/neet/rules/`. Your rule can replace a bundled rule with the same ID, but can never widen what cleanup may touch, and is never selected from the start. | P1 | Planned |
 | Cleanup from Disk | Plans a cleanup for the item selected in Disk, with the same checks, review, and question as Clean. Items outside the allowed folders are refused. | P1 | Planned |
 
 ### Cleanup Target Groups
@@ -111,11 +111,11 @@
 | Category | Target Group | What Cleanup Would Do |
 | --- | --- | --- |
 | `developer` | Xcode build files | Removes build output, such as DerivedData. Xcode rebuilds it next time. |
-| `developer` | Simulators | Removes reviewed simulator data. The exact targets, and whether to use simulator tools, are not decided. |
+| `developer` | Simulators | Removes simulator caches in `~/Library/Developer/CoreSimulator/Caches`. Removing simulators themselves, and whether to use simulator tools, are not decided. |
 | `developer` | Docker data | A possible cleaner that uses Docker's own tool. Targets, and a way to undo it that fits the Trash policy, are not decided. |
-| `package` | Package manager caches | Removes cached downloads and build files. Later installs may download or build them again. |
+| `package` | Package manager caches | Removes the npm, Cargo, pip, pnpm, Yarn, and Homebrew download caches listed as cleanup roots. Later installs may download them again. |
 | `application` | App caches | Removes named app caches inside the allowed folders. Each rule says what the app must rebuild. |
-| `application` | Mail download caches | Removes specific cached downloads. Paths are reviewed so mail and your attachments are never touched. |
+| `application` | Mail download caches | Not possible yet. They sit outside the cleanup roots. See [Design Questions](#design-questions). |
 | `browser` | Browser caches | Removes reviewed browser cache files. Targets and costs must be written down before a rule is added. |
 | `logs` | User logs | Removes chosen logs from allowed folders. They will no longer be there for troubleshooting. |
 | `system` | Saved app state | Removes reviewed saved state files. The rule must explain how this affects reopening an app where you left off. |
@@ -264,6 +264,7 @@
 | --- | --- |
 | App removal | P1.5 removes apps, but the allowed folders do not include apps. Decide what may be removed, and update the safety rules before building it. |
 | Docker and simulators | Their tools may not be undoable the way the Trash is. Decide the targets, the preview, and a way to undo. Postpone anything that cannot meet the Trash policy. |
+| Mail downloads | Mail keeps downloaded attachments in `~/Library/Containers/com.apple.mail/Data/Library/Mail Downloads`, outside the Containers cleanup root. Decide whether to add that one folder as a root, after checking it never holds your only copy of an attachment. |
 | System logs | No targets are chosen, and cleanup cannot use `sudo` or touch protected paths. Find targets that fit both limits. |
 | Startup control | Check how each item type is found, turned off, and turned back on, on every supported macOS version, including when the list is incomplete. |
 | Power and display | Check which settings exist, what they really do, and that refresh rate rollback works, on real Macs. Draft command names are not proof. |
