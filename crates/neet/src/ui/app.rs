@@ -20,6 +20,8 @@ pub enum Action {
     None,
     Open(Box<dyn Screen>),
     Back,
+    /// Close every screen above Home
+    Home,
     Quit,
 }
 
@@ -41,6 +43,11 @@ pub trait Screen {
 
     /// Help text shown by `?`.
     fn help(&self) -> &'static [(&'static str, &'static str)];
+
+    /// What `Esc` does. Most screens go back one step.
+    fn back(&self) -> Action {
+        Action::Back
+    }
 
     /// A dialog blocks `q`, so a stray key cannot quit mid question.
     fn is_dialog(&self) -> bool {
@@ -145,7 +152,7 @@ impl App {
         let screen = self.stack.last_mut().expect("Home is never popped");
         let action = match key.code {
             KeyCode::Char('q') if !screen.is_dialog() => Action::Quit,
-            KeyCode::Esc => Action::Back,
+            KeyCode::Esc => screen.back(),
             KeyCode::Char('?') => Action::Open(Box::new(Help::new(screen.help()))),
             _ => screen.handle_key(key, &context),
         };
@@ -161,6 +168,7 @@ impl App {
                     self.stack.pop();
                 }
             }
+            Action::Home => self.stack.truncate(1),
             Action::Quit => self.quit = true,
         }
     }

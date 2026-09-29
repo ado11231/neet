@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::{Instant, SystemTime};
@@ -15,6 +16,7 @@ use ratatui::widgets::{Block, List, ListItem, ListState, Padding, Paragraph, Wra
 
 use super::app::{Action, Context, Screen};
 use super::format;
+use super::review::Review;
 
 /// A plan and the rules that could not be loaded, or why planning failed.
 type Outcome = Result<Planned, String>;
@@ -45,7 +47,8 @@ enum State {
         started: Instant,
         result: Receiver<Outcome>,
     },
-    Ready(Planned),
+    /// Shared with the review and the cleanup while they are open
+    Ready(Arc<Planned>),
     Failed(String),
 }
 
@@ -88,7 +91,7 @@ impl Clean {
 
     #[cfg(test)]
     fn ready(planned: Planned) -> Self {
-        Self::from_state(State::Ready(planned))
+        Self::from_state(State::Ready(Arc::new(planned)))
     }
 
     fn poll(&mut self) {
@@ -96,7 +99,7 @@ impl Clean {
             && let Ok(outcome) = result.try_recv()
         {
             self.state = match outcome {
-                Ok(planned) => State::Ready(planned),
+                Ok(planned) => State::Ready(Arc::new(planned)),
                 Err(reason) => State::Failed(reason),
             };
         }
@@ -109,6 +112,11 @@ impl Clean {
     fn toggle(&mut self) {
         let index = self.selected();
         let State::Ready(planned) = &mut self.state else {
+            return;
+        };
+        // Only the review holds the plan too, and it is closed while this
+        // screen takes keys.
+        let Some(planned) = Arc::get_mut(planned) else {
             return;
         };
         let Some(rule) = planned.plan.rules.get_mut(index) else {
@@ -157,17 +165,20 @@ fn tier_meaning(tier: Tier) -> &'static str {
 }
 
 /// `path` with the home folder shown as `~`.
-fn display_path(home: &Path, path: &Path) -> String {
+pub(super) fn display_path(home: &Path, path: &Path) -> String {
     match path.strip_prefix(home) {
         Ok(rest) => format!("~/{}", rest.display()),
         Err(_) => path.display().to_string(),
     }
 }
 
-fn skip_reason(reason: &SkipReason, min_age_days: u32) -> String {
+pub(super) fn skip_reason(reason: &SkipReason, min_age_days: Option<u32>) -> String {
     match reason {
         SkipReason::Refused(error) => format!("refused: {error}"),
-        SkipReason::TooNew => format!("changed in the last {min_age_days} days"),
+        SkipReason::TooNew => match min_age_days {
+            Some(days) => format!("changed in the last {days} days"),
+            None => "changed too recently".to_string(),
+        },
         SkipReason::Unreadable(error) => format!("could not be read: {error}"),
         SkipReason::Overlaps => "already found by another rule".to_string(),
         SkipReason::Link => "a link, left in place".to_string(),
@@ -177,7 +188,7 @@ fn skip_reason(reason: &SkipReason, min_age_days: u32) -> String {
     }
 }
 
-fn count(value: usize) -> String {
+pub(super) fn count(value: usize) -> String {
     format::count(u64::try_from(value).unwrap_or(u64::MAX))
 }
 
@@ -256,7 +267,7 @@ fn details(rule: &RulePlan, home: &Path, room: usize, width: usize) -> Vec<Line<
         Line::from(format!(
             "   skipped  {}  {}",
             display_path(home, &skipped.path),
-            skip_reason(&skipped.reason, rule.rule.min_age_days)
+            skip_reason(&skipped.reason, Some(rule.rule.min_age_days))
         ))
         .dark_gray()
     }));
@@ -402,13 +413,20 @@ impl Screen for Clean {
             KeyCode::Char('g') | KeyCode::Home => self.list.select(Some(0)),
             KeyCode::Char('G') | KeyCode::End => self.list.select(Some(last)),
             KeyCode::Char(' ') => self.toggle(),
+            KeyCode::Enter => {
+                if let State::Ready(planned) = &self.state
+                    && planned.plan.selected_count() > 0
+                {
+                    return Action::Open(Box::new(Review::new(Arc::clone(planned))));
+                }
+            }
             _ => {}
         }
         Action::None
     }
 
     fn hints(&self) -> &'static str {
-        "↑↓ move · space select · esc home · ? help · q quit"
+        "↑↓ move · space select · enter review · esc home · ? help · q quit"
     }
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
@@ -416,7 +434,7 @@ impl Screen for Clean {
             ("↑ ↓  j k", "Move between rules"),
             ("g  G", "Jump to the first or last rule"),
             ("Space", "Select or clear a rule"),
-            ("Enter", "Review the paths. Not built yet"),
+            ("Enter", "Review every path the selected rules found"),
             ("Esc", "Go back to Home"),
             ("q", "Quit"),
         ]
@@ -536,6 +554,24 @@ mod tests {
 
         press(&mut clean, KeyCode::Char(' '));
         assert!(!is_selected(&clean, "npm-cache"));
+    }
+
+    #[test]
+    fn enter_reviews_only_when_something_is_selected() {
+        let dir = fake_home();
+        let mut clean = Clean::ready(planned(&dir));
+        let scan = super::super::scan::ScanStatus::Failed(String::new());
+        let context = Context {
+            scan: &scan,
+            disk: None,
+        };
+        let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+
+        assert!(matches!(clean.handle_key(enter, &context), Action::Open(_)));
+
+        select_rule(&mut clean, "xcode-derived-data");
+        press(&mut clean, KeyCode::Char(' '));
+        assert!(matches!(clean.handle_key(enter, &context), Action::None));
     }
 
     #[test]

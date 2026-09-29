@@ -96,13 +96,12 @@
   3. `trash::move_to_trash` asks Finder to move an item, so Put Back works.
   4. Plans leave symbolic links in place.
   5. 8 tests, with a stand in for Finder, cover moving only selected rules, open apps, a file replaced after the review, a link swapped in after the review, an item changed after the review, a failed move, and links left out of the plan.
+  6. The path review, opened with `Enter` in Clean, the question, and the cleanup screen. The move runs on its own thread with a progress bar, `Esc` and `q` wait until it is done, and the result shows what moved, the space it takes in the Trash, and every skipped item with its reason. 6 tests.
 * **Remaining:**
-  1. The path review, opened with `Enter` in Clean.
-  2. The question, then the move on a background thread with progress, and the result.
-  3. Selecting `expert` rules with a typed confirmation.
-  4. Showing on Home how much Clean can free.
-  5. Planning a cleanup of the item selected in Disk, with `d`.
-  6. The manual test: move a harmless temporary file to the Trash, then restore it with Put Back.
+  1. Selecting `expert` rules with a typed confirmation.
+  2. Showing on Home how much Clean can free.
+  3. Planning a cleanup of the item selected in Disk, with `d`.
+  4. The manual test: move a harmless temporary file to the Trash, then restore it with Put Back.
 * **Done when** the safety tests in [SAFETY.md](SAFETY.md#tests) pass, and Finder restores a test item.
 
 ## Planned
