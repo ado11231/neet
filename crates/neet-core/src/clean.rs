@@ -154,7 +154,7 @@ fn expand(pattern: &Path) -> Vec<PathBuf> {
 
 /// The space an item uses and its newest change, without following links or
 /// leaving its disk. Fails if anything inside cannot be read.
-fn measure(path: &Path, tracker: &mut HardLinkTracker) -> io::Result<(u64, SystemTime)> {
+pub(crate) fn measure(path: &Path, tracker: &mut HardLinkTracker) -> io::Result<(u64, SystemTime)> {
     let top = fs::symlink_metadata(path)?;
     let device = top.dev();
     let mut size = 0;
