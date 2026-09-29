@@ -5,6 +5,7 @@ mod disk;
 mod format;
 mod help;
 mod home;
+mod review;
 mod scan;
 mod skipped;
 

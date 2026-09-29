@@ -183,7 +183,7 @@
 | `Up` / `Down` | Move between rules. |
 | `g` / `G` | Jump to the first or last rule. |
 | `Space` | Select or clear a rule. A rule that found nothing cannot be selected. |
-| `Enter` | Review the paths the selected rules found. Not built yet. |
+| `Enter` | Review the paths the selected rules found. Does nothing when no rule is selected. |
 
 | Tier | How It Is Selected |
 | --- | --- |
@@ -200,6 +200,15 @@
 * The path review cannot be skipped.
 * The first cleanup makes macOS ask whether neet may control Finder. Finder moves the items, so Put Back works.
 * When it finishes, the screen shows how much space the cleaned items take up in the Trash, and that emptying the Trash frees it.
+
+### Review, Question, And Cleanup
+
+| Step | What It Shows | Keys |
+| --- | --- | --- |
+| Review | Every path the selected rules found, grouped by rule, with sizes. The title shows the item count and total size. | `Up` / `Down`, `PgUp` / `PgDn`, and `g` / `G` scroll. `Enter` goes on to the question. `Esc` goes back to Clean. |
+| Question | A box over the review: how many items, their size, that Finder moves them to the Trash, and that each is checked again. | `y` moves them. `n` or `Esc` goes back. `q` does nothing here. |
+| Cleanup | A progress bar while items move, and a note that macOS may ask about controlling Finder the first time. | No key leaves this step until every item is dealt with. |
+| Result | How many items moved, the space they take up in the Trash, how to use Put Back, and every skipped item with its reason. | `Enter` or `Esc` goes back to Home. The next visit to Clean makes a fresh plan. |
 
 ## The Projects Screen
 
