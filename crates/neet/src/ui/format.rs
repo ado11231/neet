@@ -63,9 +63,55 @@ pub fn percent(part: u64, total: u64) -> u64 {
     u64::try_from(u128::from(part) * 100 / u128::from(total)).unwrap_or(100)
 }
 
+/// Shortens `text` to `width` characters by cutting out its middle, so a
+/// file name keeps its start and its extension.
+pub fn shorten_middle(text: &str, width: usize) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= width {
+        return text.to_string();
+    }
+    if width == 0 {
+        return String::new();
+    }
+    let keep = width - 1;
+    let end = keep / 2;
+    let start = keep - end;
+    let head: String = chars[..start].iter().collect();
+    let tail: String = chars[chars.len() - end..].iter().collect();
+    format!("{head}…{tail}")
+}
+
+/// Shortens a folder path to `width` characters by cutting out its middle.
+/// Keeps where it starts, such as `~/Library`, and the part nearest the file.
+pub fn shorten_path(path: &str, width: usize) -> String {
+    let chars: Vec<char> = path.chars().collect();
+    if chars.len() <= width {
+        return path.to_string();
+    }
+    if width == 0 {
+        return String::new();
+    }
+    // The first two parts, such as `~/Library/`, when they leave room for the end
+    let head: String = path.split_inclusive('/').take(2).collect();
+    let head_len = head.chars().count();
+    let head = if head_len < chars.len() && head_len + 1 + 12 <= width {
+        head
+    } else {
+        String::new()
+    };
+    let keep = width - head.chars().count() - 1;
+    let tail: String = chars[chars.len() - keep..].iter().collect();
+    // Start the end at a whole folder name when there is one
+    let tail = match tail.find('/') {
+        Some(slash) if slash + 1 < tail.len() => tail[slash..].to_string(),
+        _ => tail,
+    };
+    format!("{head}…{tail}")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{age, bar, count, percent, size};
+    use super::{age, bar, count, percent, shorten_middle, shorten_path, size};
     use std::time::Duration;
 
     #[test]
@@ -108,5 +154,20 @@ mod tests {
         assert_eq!(bar(200, 100, 4), "████");
         assert_eq!(percent(1, 3), 33);
         assert_eq!(percent(5, 0), 0);
+    }
+
+    #[test]
+    fn shortening_keeps_the_useful_ends() {
+        assert_eq!(shorten_middle("film.mov", 20), "film.mov");
+        assert_eq!(shorten_middle("a-very-long-name.dmg", 11), "a-ver…e.dmg");
+        assert_eq!(shorten_middle("anything", 0), "");
+        assert_eq!(shorten_path("~/Movies", 20), "~/Movies");
+        assert_eq!(
+            shorten_path("~/Library/Containers/com.docker.docker/Data", 32),
+            "~/Library/…/Data"
+        );
+        // Too narrow to keep the start as well
+        assert_eq!(shorten_path("~/Library/Containers/Docker", 12), "…/Docker");
+        assert_eq!(shorten_path("anything", 1), "…");
     }
 }
