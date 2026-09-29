@@ -27,7 +27,8 @@
 ```text
 neet/
 ├── Cargo.toml                 Workspace settings, shared version, lint rules
-├── release-plz.toml           Release settings
+├── release-plz.toml           Version and crates.io release settings
+├── dist-workspace.toml        Settings for building the ready made programs
 ├── crates/
 │   ├── neet-core/             The library
 │   │   ├── rules/             Built in cleanup rules, one file per category
@@ -129,6 +130,7 @@ selected rules, a picked item, or an app
 | Whether an app is open | `lsappinfo`, part of macOS |
 | Reading an app's details | `plutil`, part of macOS |
 | Moving to the Trash | `osascript` asking Finder, part of macOS |
+| Building release programs | `dist`, run in CI |
 
 * Try each new crate in a small test before relying on it.
 
@@ -152,7 +154,10 @@ selected rules, a picked item, or an app
 | --- | --- |
 | 1. Merge to `master` | release-plz opens or updates a release pull request with the next version and release notes. |
 | 2. Review | Check the version and notes, and edit them if needed. |
-| 3. Merge the release pull request | release-plz publishes both crates to crates.io, tags the release, and makes a GitHub release. |
-| 4. Programs | Planned: ready made programs for Apple silicon and Intel on each GitHub release, and a Homebrew formula. |
+| 3. Merge the release pull request | release-plz publishes both crates to crates.io, and tags the program, such as `neet-v0.1.0`. |
+| 4. The tag | dist builds neet on Apple silicon and Intel Macs, and makes the GitHub release with the downloads, checksums, and an install script. |
 
-* Publishing needs two repository secrets: `CARGO_REGISTRY_TOKEN`, a crates.io token, and `RELEASE_PLZ_TOKEN`, a GitHub token that lets CI run on the release pull request.
+| Secret | Used For |
+| --- | --- |
+| `CARGO_REGISTRY_TOKEN` | Publishing to crates.io. |
+| `RELEASE_PLZ_TOKEN` | A GitHub token, so CI runs on the release pull request, and the tag starts the build. |
