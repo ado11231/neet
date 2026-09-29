@@ -98,10 +98,10 @@
   5. 8 tests, with a stand in for Finder, cover moving only selected rules, open apps, a file replaced after the review, a link swapped in after the review, an item changed after the review, a failed move, and links left out of the plan.
   6. The path review, opened with `Enter` in Clean, the question, and the cleanup screen. The move runs on its own thread with a progress bar, `Esc` and `q` wait until it is done, and the result shows what moved, the space it takes in the Trash, and every skipped item with its reason. 6 tests.
   7. Selecting an `expert` rule by typing its ID. While you type, every key but `Esc` goes to the box, so `q` and `?` can be typed. 3 tests.
+  8. Home shows used space beside Disk, and beside Clean the total every rule found. `Estimate` plans it in the background when neet opens and again after each cleanup. 1 test, plus the Home layout test.
 * **Remaining:**
-  1. Showing on Home how much Clean can free.
-  2. Planning a cleanup of the item selected in Disk, with `d`.
-  3. The manual test: move a harmless temporary file to the Trash, then restore it with Put Back.
+  1. Planning a cleanup of the item selected in Disk, with `d`.
+  2. The manual test: move a harmless temporary file to the Trash, then restore it with Put Back.
 * **Done when** the safety tests in [SAFETY.md](SAFETY.md#tests) pass, and Finder restores a test item.
 
 ## Planned

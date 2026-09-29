@@ -167,7 +167,11 @@ mod tests {
 
     fn render(scan: &ScanStatus) -> String {
         let mut terminal = Terminal::new(TestBackend::new(100, 20)).unwrap();
-        let context = Context { scan, disk: None };
+        let context = Context {
+            scan,
+            disk: None,
+            cleanable: None,
+        };
         terminal
             .draw(|frame| Skipped::new().draw(frame, frame.area(), &context))
             .unwrap();

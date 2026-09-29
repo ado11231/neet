@@ -42,6 +42,44 @@ fn make_plan(home: &Path, user_rules: Option<&Path>) -> Outcome {
     })
 }
 
+/// How much every rule found, planned in the background for Home
+pub struct Estimate {
+    result: Option<Receiver<Outcome>>,
+    size: Option<u64>,
+}
+
+impl Estimate {
+    /// Plans every rule for `home` on its own thread. Nothing on disk is
+    /// changed. Without a home folder there is nothing to plan.
+    pub fn start(home: Option<PathBuf>) -> Self {
+        let result = home.map(|home| {
+            let (sender, result) = mpsc::channel();
+            thread::spawn(move || {
+                let user_rules = home.join(".config/neet/rules");
+                let _ = sender.send(make_plan(&home, Some(&user_rules)));
+            });
+            result
+        });
+        Self { result, size: None }
+    }
+
+    pub fn poll(&mut self) {
+        if let Some(result) = &self.result
+            && let Ok(outcome) = result.try_recv()
+        {
+            self.size = outcome
+                .ok()
+                .map(|planned| planned.plan.rules.iter().map(RulePlan::size).sum());
+            self.result = None;
+        }
+    }
+
+    /// The total, once planned
+    pub fn size(&self) -> Option<u64> {
+        self.size
+    }
+}
+
 enum State {
     Planning {
         started: Instant,
@@ -572,6 +610,7 @@ mod tests {
         let context = Context {
             scan: &scan,
             disk: None,
+            cleanable: None,
         };
         terminal
             .draw(|frame| clean.draw(frame, frame.area(), &context))
@@ -592,6 +631,7 @@ mod tests {
             &Context {
                 scan: &scan,
                 disk: None,
+                cleanable: None,
             },
         );
     }
@@ -659,6 +699,7 @@ mod tests {
         let context = Context {
             scan: &scan,
             disk: None,
+            cleanable: None,
         };
         let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
 
@@ -761,6 +802,24 @@ mod tests {
             .expect("folder should be read")
             .count();
         assert_eq!(before, after);
+    }
+
+    #[test]
+    fn estimate_adds_up_every_rule_in_the_background() {
+        let dir = fake_home();
+        let mut estimate = Estimate::start(Some(dir.path().to_path_buf()));
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while estimate.size().is_none() {
+            assert!(Instant::now() < deadline, "estimate should finish");
+            thread::sleep(Duration::from_millis(5));
+            estimate.poll();
+        }
+
+        let planned = planned(&dir);
+        let all: u64 = planned.plan.rules.iter().map(RulePlan::size).sum();
+        assert_eq!(estimate.size(), Some(all));
+        assert!(all > 0);
+        assert_eq!(Estimate::start(None).size(), None);
     }
 
     #[test]
