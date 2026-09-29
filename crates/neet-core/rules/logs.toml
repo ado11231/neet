@@ -1,0 +1,11 @@
+# Logs. Reviewed on macOS 26.5.
+
+[[rule]]
+id = "user-logs"
+name = "User logs"
+category = "logs"
+tier = "caution"
+paths = ["~/Library/Logs/*"]
+description = "Logs and crash reports apps wrote for you. They will no longer be there for troubleshooting. Logs changed in the last 7 days are kept."
+regenerates = false
+min_age_days = 7

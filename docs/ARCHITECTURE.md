@@ -54,7 +54,7 @@ neet/
 | --- | --- |
 | `crates/neet-core/tests/` | Tests that use the library from outside. |
 | `crates/neet/src/ui/` | The terminal screens. See [The Interface Loop](#the-interface-loop). |
-| `crates/neet-core/rules/` | The bundled cleanup rules, built into the program. |
+| `crates/neet-core/rules/` | The bundled cleanup rules, one `.toml` file per category, built into the program. |
 
 ## How Data Moves
 

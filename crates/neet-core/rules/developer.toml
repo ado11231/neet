@@ -1,0 +1,44 @@
+# Developer tool files. Reviewed on macOS 26.5 with Xcode 26.6.
+
+[[rule]]
+id = "xcode-derived-data"
+name = "Xcode DerivedData"
+category = "developer"
+tier = "safe"
+paths = ["~/Library/Developer/Xcode/DerivedData/*"]
+description = "Build files and indexes. Xcode makes them again during the next build, which takes longer."
+regenerates = true
+requires_quit = ["com.apple.dt.Xcode"]
+min_age_days = 0
+
+[[rule]]
+id = "simulator-caches"
+name = "Simulator caches"
+category = "developer"
+tier = "safe"
+paths = ["~/Library/Developer/CoreSimulator/Caches/*"]
+description = "Caches the simulators make while running. Your simulators and their apps are kept. The next start takes longer."
+regenerates = true
+requires_quit = ["com.apple.iphonesimulator"]
+min_age_days = 0
+
+[[rule]]
+id = "xcode-device-support"
+name = "Xcode device support"
+category = "developer"
+tier = "caution"
+paths = ["~/Library/Developer/Xcode/iOS DeviceSupport/*"]
+description = "Symbol files copied from each iPhone or iPad you connected, one folder per system version. Xcode copies them again the next time that device connects, which can take several minutes."
+regenerates = true
+requires_quit = ["com.apple.dt.Xcode"]
+min_age_days = 30
+
+[[rule]]
+id = "playwright-browsers"
+name = "Playwright browsers"
+category = "developer"
+tier = "caution"
+paths = ["~/Library/Caches/ms-playwright/*"]
+description = "Browsers downloaded for Playwright tests. They do not come back on their own. Run `npx playwright install` before your next test run."
+regenerates = false
+min_age_days = 0

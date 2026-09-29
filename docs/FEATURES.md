@@ -4,7 +4,7 @@
 * Each feature lists its release phase and whether it exists yet.
 * For anyone deciding what to build next, or checking what neet will and will not do.
 * For screens and keys, read [INTERFACE.md](INTERFACE.md). For safeguards, read [SAFETY.md](SAFETY.md). For milestones, read [ROADMAP.md](ROADMAP.md).
-* Status was checked against the code on September 28, 2026.
+* Status was checked against the code on September 29, 2026.
 
 ## Contents
 
@@ -104,13 +104,13 @@
 | Open app checks | Blocks a rule while its app is open, and checks again right before moving anything. | P1 | Planned |
 | Recent file protection | Lets a rule skip items changed within its minimum age. A folder counts as changed when anything inside it changed. | P1 | Planned |
 | Selection totals | Shows how many items and how much estimated space your selected rules cover. | P1 | Planned |
-| Bundled and user rules | Loads the reviewed TOML rules, plus your own from `~/.config/neet/rules/`. Your rule can replace a bundled rule with the same ID, but can never widen what cleanup may touch, and is never selected from the start.  Loading and checking rules is built. No bundled rules are written yet. | P1 | In Progress |
+| Bundled and user rules | Loads the reviewed TOML rules, plus your own from `~/.config/neet/rules/`. Your rule can replace a bundled rule with the same ID, but can never widen what cleanup may touch, and is never selected from the start. Loading and checking rules is built, with 14 bundled rules. See [Bundled Rules](#bundled-rules). | P1 | In Progress |
 | Cleanup from Disk | Plans a cleanup for the item selected in Disk, with the same checks, review, and question as Clean. Items outside the allowed folders are refused. | P1 | Planned |
 | Project build folders | Finds build output inside your code projects, such as `target/` and `node_modules/`, grouped by project and sorted by size or by how long since you last worked on the project. Uses the home folder scan, so it does not walk the disk again. Offers a folder only when Git ignores it. Waits on its [design question](#design-questions), because project folders are outside the cleanup roots. | P2 | Proposed |
 
 ### Cleanup Target Groups
 
-* These are planned rule groups. None are written or reviewed yet.
+* The first 14 bundled rules are written. See [Bundled Rules](#bundled-rules). The other groups are planned and not reviewed yet.
 * Each rule's paths, risk tier, and supported app versions must be reviewed one by one.
 * The category labels match the rule format in [SAFETY.md](SAFETY.md#cleanup-rules).
 
@@ -137,6 +137,33 @@
 | `expert` | Some files may not exist anywhere else. The rule must say so. | You select it and type a confirmation. |
 
 * No tier skips the path checks or the review. The full rule fields and checks are in [SAFETY.md](SAFETY.md#cleanup-rules).
+
+### Bundled Rules
+
+* The rules live in `crates/neet-core/rules/`, one file per category.
+* Tiers follow the table above as written. Anything that must be downloaded again is `caution`, so only files your Mac rebuilds by itself are selected at the start.
+* Each rule removes what is inside its folder and keeps the folder itself.
+* Reviewed on macOS 26.5 with Xcode 26.6.
+
+| Rule | Paths | Category | Tier | Must Quit | Minimum Age |
+| --- | --- | --- | --- | --- | --- |
+| Xcode DerivedData | `~/Library/Developer/Xcode/DerivedData/*` | `developer` | `safe` | Xcode | None |
+| Simulator caches | `~/Library/Developer/CoreSimulator/Caches/*` | `developer` | `safe` | Simulator | None |
+| Xcode device support | `~/Library/Developer/Xcode/iOS DeviceSupport/*` | `developer` | `caution` | Xcode | 30 days |
+| Playwright browsers | `~/Library/Caches/ms-playwright/*` | `developer` | `caution` | | None |
+| npm cache | `~/.npm/_cacache/*` | `package` | `caution` | | None |
+| Homebrew downloads | `~/Library/Caches/Homebrew/*` | `package` | `caution` | | None |
+| pnpm cache | `~/Library/Caches/pnpm/*` | `package` | `caution` | | None |
+| Cargo downloads | `~/.cargo/registry/cache/*` | `package` | `caution` | | None |
+| node-gyp headers | `~/Library/Caches/node-gyp/*` | `package` | `caution` | | None |
+| pip cache | `~/Library/Caches/pip/*`, `~/.cache/pip/*` | `package` | `caution` | | None |
+| Yarn cache | `~/Library/Caches/Yarn/*` | `package` | `caution` | | None |
+| Chrome cache | `~/Library/Caches/Google/Chrome/*` | `browser` | `caution` | Chrome | None |
+| User logs | `~/Library/Logs/*` | `logs` | `caution` | | 7 days |
+| Saved window state | `~/Library/Saved Application State/*` | `system` | `caution` | | 30 days |
+
+* Playwright browsers do not come back on their own. You run `npx playwright install` again.
+* App caches such as Deno, and the pnpm store in `~/Library/pnpm`, are left out. The pnpm store sits outside the cleanup roots.
 
 ### Project Build Folders
 

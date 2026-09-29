@@ -1,0 +1,11 @@
+# macOS files. Reviewed on macOS 26.5.
+
+[[rule]]
+id = "saved-application-state"
+name = "Saved window state"
+category = "system"
+tier = "caution"
+paths = ["~/Library/Saved Application State/*"]
+description = "The windows each app had open, used to reopen an app where you left off. Apps open with fresh windows instead. State changed in the last 30 days is kept."
+regenerates = false
+min_age_days = 30

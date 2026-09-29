@@ -13,7 +13,13 @@ use serde::Deserialize;
 use crate::safety::CleanupRoots;
 
 /// Rules built into neet, as `(file name, contents)`.
-const BUNDLED: &[(&str, &str)] = &[];
+const BUNDLED: &[(&str, &str)] = &[
+    ("developer.toml", include_str!("../rules/developer.toml")),
+    ("package.toml", include_str!("../rules/package.toml")),
+    ("browser.toml", include_str!("../rules/browser.toml")),
+    ("logs.toml", include_str!("../rules/logs.toml")),
+    ("system.toml", include_str!("../rules/system.toml")),
+];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -278,8 +284,9 @@ pub fn load(roots: &CleanupRoots, user_dir: Option<&Path>) -> RuleSet {
 
 #[cfg(test)]
 mod tests {
-    use super::{Category, Source, Tier, load, parse};
+    use super::{BUNDLED, Category, Source, Tier, load, parse};
     use crate::safety::CleanupRoots;
+    use std::collections::HashSet;
     use std::fs;
     use tempfile::{TempDir, tempdir};
 
@@ -455,6 +462,53 @@ mod tests {
         assert_eq!(rule.tier, Tier::Caution);
         assert!(matches!(rule.source, Source::User(_)));
         assert!(set.errors.is_empty(), "{:?}", set.errors);
+    }
+
+    #[test]
+    fn every_bundled_rule_loads() {
+        let (_dir, roots) = roots();
+
+        let set = load(&roots, None);
+
+        assert!(set.errors.is_empty(), "{:?}", set.errors);
+        let ids: HashSet<_> = set.rules.iter().map(|rule| rule.id.as_str()).collect();
+        assert_eq!(ids.len(), set.rules.len(), "bundled rule IDs must differ");
+        assert_eq!(set.rules.len(), 14);
+        assert!(set.rules.iter().all(|rule| rule.source == Source::Bundled));
+    }
+
+    #[test]
+    fn bundled_download_caches_are_never_safe() {
+        let (_dir, roots) = roots();
+
+        let set = load(&roots, None);
+
+        let safe: HashSet<_> = set
+            .rules
+            .iter()
+            .filter(|rule| rule.tier == Tier::Safe)
+            .map(|rule| rule.id.as_str())
+            .collect();
+        assert_eq!(
+            safe,
+            HashSet::from(["xcode-derived-data", "simulator-caches"])
+        );
+        assert!(
+            set.rules
+                .iter()
+                .filter(|rule| rule.category == Category::Package)
+                .all(|rule| rule.tier == Tier::Caution)
+        );
+    }
+
+    #[test]
+    fn bundled_files_have_rules() {
+        let (_dir, roots) = roots();
+
+        for (file, text) in BUNDLED {
+            let set = parse(text, file, &Source::Bundled, &roots);
+            assert!(!set.rules.is_empty(), "{file} has no rules");
+        }
     }
 
     #[test]

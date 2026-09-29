@@ -1,0 +1,12 @@
+# Browser caches. Reviewed on macOS 26.5.
+
+[[rule]]
+id = "chrome-cache"
+name = "Chrome cache"
+category = "browser"
+tier = "caution"
+paths = ["~/Library/Caches/Google/Chrome/*"]
+description = "Web pages, images, and scripts Chrome saved to load sites faster. Bookmarks, history, passwords, and sign ins are kept elsewhere. Sites load slower until the cache fills again."
+regenerates = true
+requires_quit = ["com.google.Chrome"]
+min_age_days = 0
