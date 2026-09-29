@@ -1,8 +1,9 @@
 # Safety
 
-* The rules tidymac follows whenever it changes a file or a setting.
-* They cover every tab that changes something: Disk, Clean, SSH, Dotfiles, Startup, and Settings. They also cover bundled rules, your own rules, and custom cleaners.
-* Nothing here is built yet. For progress, read [ROADMAP.md](ROADMAP.md).
+* The rules neet follows whenever it changes a file or a setting, or reads a private one.
+* For anyone writing code or rules that change things on the Mac.
+* They cover every tab: Disk, Clean, SSH, Dotfiles, Startup, AI Tools, and Settings. They also cover bundled rules, your own rules, and custom cleaners.
+* These are requirements. None of these safeguards are built yet. For progress, read [ROADMAP.md](ROADMAP.md). For open questions, read [FEATURES.md](FEATURES.md#design-questions).
 
 ## Contents
 
@@ -14,16 +15,17 @@
 6. [Cleanup Rules](#cleanup-rules)
 7. [Risk Tiers And Running Apps](#risk-tiers-and-running-apps)
 8. [SSH And Dotfile Changes](#ssh-and-dotfile-changes)
-9. [Admin Rights](#admin-rights)
-10. [Settings And Startup Changes](#settings-and-startup-changes)
-11. [Tests](#tests)
+9. [AI Coding Tool Files](#ai-coding-tool-files)
+10. [Admin Rights](#admin-rights)
+11. [Settings And Startup Changes](#settings-and-startup-changes)
+12. [Tests](#tests)
 
 ## Key Terms
 
 | Term | Meaning |
 | --- | --- |
 | **Cleanup root** | A folder that cleanup may remove items from. The list is fixed in the Rust code. |
-| **Protected path** | A folder tidymac never touches, including everything inside it. |
+| **Protected path** | A folder neet never touches, including everything inside it. |
 | **Symbolic link** | A file that points to another path. |
 | **Real path** | A path after following every symbolic link and `..`. |
 | **Device and inode** | Two numbers that identify a file, even if it is renamed. |
@@ -41,7 +43,7 @@
 
 * P1 never deletes files for good and never empties the Trash.
 * Cleanup only happens in the terminal interface. There is no command or option that skips the path list or the question.
-* After a cleanup, tidymac reminds you the space is only freed once you empty the Trash.
+* After a cleanup, neet reminds you the space is only freed once you empty the Trash.
 
 ## The Path Check
 
@@ -61,12 +63,14 @@
   4. Saved app state in `~/Library/Saved Application State`.
   5. Package manager caches that have been reviewed.
   6. Certain Mail download caches.
-  7. Certain system logs, cleaned by a reviewed cleaner.
+  7. System logs, but only after their exact locations, and a way to clean them without admin rights, are reviewed. None are chosen yet.
 * A rule cannot add a cleanup root.
+* The P1.5 app removal review does not add apps as a cleanup root. What it may remove must be decided first.
+* `~/.claude` and `~/.codex` are not cleanup roots, so cleanup cannot touch them.
 
 ## Protected Paths
 
-* tidymac always refuses these, and everything inside them:
+* Cleanup always refuses these, and everything inside them:
 
 | Path | Why |
 | --- | --- |
@@ -80,6 +84,7 @@
 | The top folder of any disk | Far too broad. |
 
 * Folders inside `/Library` are not P1 targets. Adding one later needs a safety review and a change to the Rust code.
+* SSH and Dotfiles have separate, narrow allow lists for changing files where they are. They never give cleanup access to protected paths.
 
 ## What The Path Check Does
 
@@ -90,14 +95,14 @@
 5. Confirms the path is inside its cleanup root.
 6. Saves the real path, device, inode, and other details it needs.
 
-* Right before moving an item, tidymac checks its real path, device, and inode again. If anything changed, it skips that item.
-* Where macOS allows it, tidymac moves files in a way that cannot be tricked by a link swapped in after the review.
-* If tidymac cannot be sure a file is the same one you reviewed, it skips it.
+* Right before moving an item, neet checks its real path, device, and inode again. If anything changed, it skips that item.
+* Where macOS allows it, neet moves files in a way that cannot be tricked by a link swapped in after the review.
+* If neet cannot be sure a file is the same one you reviewed, it skips it.
 * Any case macOS cannot protect against must be written down before M4 is done.
 
 ## Cleanup Rules
 
-* Bundled rules live in `rules/`. Your own rules live in `~/.config/tidymac/rules/`.
+* Bundled rules live in `rules/`. Your own rules live in `~/.config/neet/rules/`.
 * Your rule can replace a bundled rule by using the same `id`. It still goes through the same Rust checks.
 
 ```toml
@@ -125,7 +130,7 @@ min_age_days = 0
 | `requires_quit` | No | The IDs of apps that must be closed first. |
 | `min_age_days` | No | Skip files changed within this many days. |
 
-* tidymac refuses unknown fields, patterns it does not support, and fixed paths that are not safe.
+* neet refuses unknown fields, patterns it does not support, and fixed paths that are not safe.
 * Every path a pattern matches is checked again. Matching nothing is fine.
 * Never call files junk or useless without saying why they are safe to remove.
 * Before adding a rule:
@@ -142,8 +147,9 @@ min_age_days = 0
 | `expert` | You select it and type a confirmation. | The files may not exist anywhere else. |
 
 * A tier never skips a check or the question.
-* tidymac checks the apps in `requires_quit` when it makes the plan, and again before moving files. If one of them opened in between, its items are skipped.
+* neet checks the apps in `requires_quit` when it makes the plan, and again before moving files. If one of them opened in between, its items are skipped.
 * Custom cleaners, such as Docker or simulator cleanup, may use the app's own tool. They still show a plan, and go through the same checks and question.
+* A cleaner whose tool cannot be undone the way the Trash can is not allowed. Its targets, and how to recover from it, must be settled first.
 
 ## SSH And Dotfile Changes
 
@@ -161,14 +167,26 @@ min_age_days = 0
   2. Refuse symbolic links that lead out of your home folder.
   3. Write to a temporary file in the same folder, then swap it in, so a crash never leaves half a file.
 * Cleanup can still never touch `~/.ssh`.
-* tidymac never reads what is inside a private key. Key details come from `ssh-keygen`.
+* neet never reads what is inside a private key. Key details come from `ssh-keygen`.
 * Exports:
   1. Never include private keys, `~/.netrc`, `~/.aws/credentials`, `~/.npmrc`, or `~/.pypirc`.
   2. Show you anything that looks like a token or password before writing the archive.
+* Detection can miss secrets. Exports must be called reviewed exports, never promised to be free of secrets.
+
+## AI Coding Tool Files
+
+* This view only reads files. It never edits, moves, or deletes anything.
+* It may read only:
+  1. The settings files `~/.claude/settings.json` and `~/.codex/config.toml`.
+  2. The instruction files `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`.
+  3. `SKILL.md` files, and the names of the other files beside them, in each tool's `skills` folder, its plugins, and project skill folders.
+* It never opens sign in files, such as `~/.codex/auth.json`.
+* It never opens chat history, session logs, or databases, such as `history.jsonl`, `sessions`, and `.sqlite` files.
+* It refuses symbolic links that lead out of the folder it is reading.
 
 ## Admin Rights
 
-* tidymac never runs as root. If you start it with `sudo`, it stops and explains why: it would find root's home folder instead of yours.
+* neet never runs as root. If you start it with `sudo`, it stops and explains why: it would find root's home folder instead of yours.
 * A change that needs admin rights runs one command with `sudo`, after showing you that command.
 * The terminal screen pauses while `sudo` asks for your password, then comes back.
 * Cleanup never uses `sudo`.
@@ -183,11 +201,11 @@ min_age_days = 0
 | Refresh rate | Which mode a connected display uses | CoreGraphics |
 | Startup items | Whether a login item, launch agent, or launch daemon runs | `launchctl` or the login item list, with `sudo` for launch daemons |
 
-* tidymac refuses any `pmset` setting not in this table.
-* Before each change, tidymac saves the old value in `~/.local/state/tidymac/`. Undo puts it back.
+* neet refuses any `pmset` setting not in this table.
+* Before each change, neet saves the old value in `~/.local/state/neet/`. Undo puts it back.
 * A new refresh rate switches back after 15 seconds unless you keep it.
 * Items in `/System/Library` are never changed.
-* Launch agent and launch daemon files are never edited or deleted. tidymac only changes whether they run.
+* Launch agent and launch daemon files are never edited or deleted. neet only changes whether they run.
 
 ## Tests
 
@@ -197,14 +215,15 @@ min_age_days = 0
   3. Protected paths written in other ways.
   4. Symbolic links that lead out, and links swapped in after the review.
   5. A device or inode that changed after the review.
-  6. Names that are not valid `UTF-8`, or that tidymac does not support.
+  6. Names that are not valid `UTF-8`, or that neet does not support.
   7. Your own rules that try to reach more than a bundled rule.
   8. Dotfile edits outside the allow list, or through a symbolic link that leads out.
   9. Permission fixes and dotfile edits undone from their backups.
   10. Exports that contain a private key or something that looks like a token.
-  11. Starting tidymac as root.
+  11. Starting neet as root.
   12. `pmset` settings outside the allow list.
   13. Settings and startup items undone from their saved values.
   14. A refresh rate that is not kept switching back.
+  15. The AI tools view refusing sign in files, chat history, and links that lead out.
 * Automated tests never use a real home folder, and never change real Mac settings.
 * The M4 manual test moves a harmless temporary file to the Trash, then restores it with Finder's Put Back.

@@ -1,8 +1,10 @@
 # Roadmap
 
-* What tidymac does today, what comes next, and how each step is accepted.
+* What neet does today, what comes next, and how each step is accepted.
+* For anyone tracking progress or picking the next piece of work.
 * A milestone is only marked complete after its checks pass.
-* Last updated September 24, 2026.
+* Last updated September 28, 2026. The 15 library tests pass. The program's `main` is still empty.
+* Features and their status live in [FEATURES.md](FEATURES.md). Screens live in [INTERFACE.md](INTERFACE.md).
 
 ## Contents
 
@@ -15,30 +17,32 @@
 
 ## Status
 
-| Milestone | Goal | Status |
-| --- | --- | --- |
-| M0 | Workspace, licenses, formatting, linting, and CI | Complete |
-| M1 | Scanner | In progress |
-| M2 | Disk tab | Planned |
-| M3 | Rules and dry runs | Planned |
-| M4 | Cleanup to the Trash | Planned |
-| M5 | P1 release | Planned |
-| M6 | P1.5: large and old files, and app removal | Planned |
-| M7 | P2: startup and background items, SSH, dotfiles, and optimization settings | Planned |
+| Milestone | Goal | Areas | Phase | Status |
+| --- | --- | --- | --- | --- |
+| M0 | Workspace, licenses, formatting, linting, and CI | Foundation | P1 | Complete |
+| M1 | A full scan of the home folder | Disk analysis | P1 | In Progress |
+| M2 | Dashboard, disk browser, and keyboard keys | Disk analysis, interface | P1 | Planned |
+| M3 | Rules, risk tiers, and dry run plans in Clean | Cleanup, interface | P1 | Planned |
+| M4 | Review, path checks, open app checks, and moving to the Trash | Cleanup, safety | P1 | Planned |
+| M5 | Packages, testing on real Macs, and the P1 release checks | Distribution | P1 | Planned |
+| M6 | Large and old file filters, and the app removal review | Disk analysis, apps | P1.5 | Planned. App removal scope is open. |
+| M7 | Check and build the P2 proposals | Startup, SSH, dotfiles, AI tools, settings, preferences, treemap | P2 | Proposed |
 
 ## How The Work Is Organized
 
 * Work is split into milestones, M0 to M7.
-* Each milestone leaves tidymac building and its tests passing.
+* Each milestone leaves neet building and its tests passing.
 * M0 to M5 make up P1. M6 is P1.5. M7 is P2.
+* M7 holds draft proposals, not settled plans. Settle the [design questions](FEATURES.md#design-questions) before building a feature they affect.
 
 ## Complete
 
 ### M0: Foundation
 
-* A Cargo workspace with `tidymac` and `tidymac-core`.
+* A Cargo workspace with `neet` and `neet-core`.
 * MIT and Apache 2.0 licenses.
-* CI checks formatting, Clippy, and tests, and builds for Apple silicon and Intel.
+* CI checks formatting, Clippy, and tests, and runs `cargo check` for Apple silicon and Intel.
+* These checks do not replace the release builds and real Mac testing in M5.
 
 ## In Progress
 
@@ -47,10 +51,12 @@
 * **Built:**
   1. `walk_directory` walks a folder without following symbolic links or leaving the disk.
   2. `allocated_size` works out the space a file uses on disk.
-  3. Tests cover a plain folder, a symbolic link that is not followed, and a missing start folder.
+  3. `HardLinkTracker` spots files already counted, by device and inode.
+  4. `Tree` stores folders and files, links parents and children, adds up sizes, and rebuilds paths.
+  5. 15 tests cover walking, symbolic links, a missing start folder, hard links, files with empty parts, and the tree.
 * **Remaining:**
-  1. Count hard links once.
-  2. Build the folder tree.
+  1. Join the walker, file details, hard link tracker, and tree into one scan that starts at the home folder.
+  2. Fill in folder totals, counting each hard linked file once.
   3. Send progress and errors while scanning.
   4. List any other disks it skipped, and mark incomplete scans.
 * **Done when** tests with temporary folders cover links, files with empty parts, nested folders, permissions, and other disks.
@@ -59,12 +65,14 @@
 
 ### M2: Disk Tab
 
-* The column browser, sorting, moving around, progress, warnings, and the disk gauge.
+* The Dashboard, column browser, size bars, sorting, navigation, progress, warnings, disk gauge, and contextual help.
+* The program entry point and its `--help` and `--version` options.
 * **Done when** the screen keeps responding during a scan, and marks incomplete scans.
 
 ### M3: Rules
 
-* The TOML rule format, loading rules, the bundled rules, and dry run plans shown in the Clean tab.
+* The TOML rule format, bundled and user rules, risk tiers, age filters, selection totals, and dry run plans shown in Clean.
+* Docker, simulator, and system log cleaners wait on the [design questions](FEATURES.md#design-questions). Listing a target group does not approve it.
 * **Done when** every bundled rule loads and finds only allowed targets, without changing any file.
 
 ### M4: Cleanup
@@ -80,17 +88,28 @@
 ### M6: P1.5
 
 * Filters for large and old files, and the app removal review.
-* **Done when** both use the existing scanner and safety checks, without widening any cleanup root.
+* **Needed first:** apps are outside the cleanup roots. Decide what app removal may remove, and its screens, before building it. This milestone does not widen any cleanup root.
+* **Done when:**
+  1. The filters use the existing scan.
+  2. Every removal follows the updated safety rules.
+  3. Anything that may be your data stays unselected, and shared folders are flagged.
+  4. An open app cannot be removed.
 
 ### M7: P2
 
 * The Startup tab, with background items.
 * The SSH tab and the Dotfiles tab.
+* A view only screen for Claude Code and Codex settings, instruction files, and skills.
 * The Settings tab: power mode, graphics switching, refresh rate, Game Mode guidance, what keeps the Mac awake, and wake settings.
+* Saved neet preferences and the optional treemap, after their scope is defined.
 * **Done when:**
   1. Every change saves its old state, and tests restore it.
   2. A refresh rate change that is not kept switches back.
   3. The `pmset` setting names are checked on real Macs, for each supported macOS version.
+  4. Finding, turning off, and turning back on each kind of startup item is checked, and an incomplete list is labeled.
+  5. SSH and dotfile changes stay within their allow lists, and the backup, restore, check, and export tests pass.
+  6. The AI tools view reads only its allowed files, never opens sign in files or chat history, and finds project skills from the scan.
+  7. Preferences keep the agreed choices between runs, and the treemap shows the scan without changing files.
 
 ## P1 Release Checks
 
@@ -99,4 +118,4 @@
 3. Read every path the bundled rules find.
 4. Move a harmless item to the Trash and restore it with Finder.
 5. Check the labels that explain size on disk and APFS limits.
-6. Confirm tidymac shows every path and asks before changing anything.
+6. Confirm neet shows every path and asks before changing anything.

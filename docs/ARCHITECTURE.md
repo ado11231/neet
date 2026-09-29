@@ -1,7 +1,9 @@
 # Architecture
 
-* How tidymac is built: its parts, how data moves between them, and what each file does.
-* For people working on the code. To learn what tidymac does, read [FEATURES.md](FEATURES.md).
+* How neet is built: its parts, how data moves between them, and what each file does.
+* For people working on the code. To learn what neet does, read [FEATURES.md](FEATURES.md).
+* Much of this is the planned design. Today only the walker, size helpers, and folder tree exist. The cleanup files are empty, and the program has an empty `main`.
+* For progress, read [ROADMAP.md](ROADMAP.md). For the planned screens, read [INTERFACE.md](INTERFACE.md).
 
 ## Contents
 
@@ -11,36 +13,39 @@
 4. [The Scanner](#the-scanner)
 5. [Cleanup](#cleanup)
 6. [SSH And Dotfiles](#ssh-and-dotfiles)
-7. [Settings And Startup](#settings-and-startup)
-8. [Dependencies](#dependencies)
-9. [Platform Support](#platform-support)
-10. [File Reference](#file-reference)
+7. [AI Coding Tool Files](#ai-coding-tool-files)
+8. [Settings And Startup](#settings-and-startup)
+9. [Dependencies](#dependencies)
+10. [Platform Support](#platform-support)
+11. [File Reference](#file-reference)
 
 ## Overview
 
-* tidymac is split into two crates. A crate is one Rust package.
-  1. **`tidymac-core`** is the library. It scans, measures sizes, reads rules, checks paths, and plans cleanups. It never draws anything on screen.
-  2. **`tidymac`** is the program you run. It holds the screens and keyboard input. It only accepts `--version` and `--help`, read from `std::env::args` without an argument parsing crate.
-* `tidymac` uses `tidymac-core`. `tidymac-core` does not use `tidymac`.
+* neet is split into two crates. A crate is one Rust package.
+  1. **`neet-core`** is the library. It scans, measures sizes, reads rules, checks paths, and plans cleanups. It never draws anything on screen.
+  2. **`neet`** is the program you run. It holds the screens and keyboard input. It only accepts `--version` and `--help`, read from `std::env::args` without an argument parsing crate.
+* `neet` uses `neet-core`. `neet-core` does not use `neet`.
+* The project was renamed from tidymac. The crate folders and `Cargo.toml` names in the code still say `tidymac` until that rename is made.
 
 ## How The Code Is Organized
 
 ```text
-tidymac/
-├── Cargo.toml                 Workspace settings
+neet/
+├── Cargo.toml             Workspace settings
 ├── crates/
-│   ├── tidymac-core/          The library
+│   ├── neet-core/         The library
 │   │   └── src/
 │   │       ├── lib.rs
 │   │       ├── scan.rs
 │   │       ├── size.rs
+│   │       ├── tree.rs
 │   │       ├── rules.rs
 │   │       ├── safety.rs
 │   │       └── clean.rs
-│   └── tidymac/               The program
+│   └── neet/              The program
 │       └── src/
 │           └── main.rs
-├── docs/
+├── docs/                  Guide, features, interface, safety, architecture, roadmap
 └── .github/workflows/ci.yml
 ```
 
@@ -48,13 +53,15 @@ tidymac/
 
 | Path | Will Hold |
 | --- | --- |
-| `crates/tidymac-core/tests/` | Tests that use the library from outside. |
-| `crates/tidymac/src/ui/` | The terminal screens. |
+| `crates/neet-core/tests/` | Tests that use the library from outside. |
+| `crates/neet/src/ui/` | The terminal screens. |
 | `rules/` | The bundled cleanup rules. |
 
 ## How Data Moves
 
 ### A Scan
+
+* This is the planned flow. The walker, size helpers, hard link tracker, and tree exist, but are not joined yet.
 
 ```text
 scan request
@@ -96,17 +103,17 @@ selected rules
 ## Cleanup
 
 * Most cleanup targets come from TOML rules built into the program.
-* Your own rules load from `~/.config/tidymac/rules/`.
+* Your own rules load from `~/.config/neet/rules/`.
 * Targets that need an app's own tool, such as Docker, use a `Cleaner` trait instead of a rule.
 * All of them go through the same safety checks.
 
 ## SSH And Dotfiles
 
 * Both change files where they are, so they do not use `ValidatedPath` or the Trash.
-* A separate allow list in `tidymac-core` names every file they may change.
-* Before each change, tidymac saves the old content or permissions.
+* A separate allow list in `neet-core` names every file they may change.
+* Before each change, neet saves the old content or permissions.
 * It writes the new content to a temporary file, then swaps it in, so a crash never leaves half a file.
-* tidymac runs the usual tools instead of writing its own:
+* neet runs the usual tools instead of writing its own:
 
 | Need | Tool |
 | --- | --- |
@@ -116,12 +123,19 @@ selected rules
 | Checking a file for mistakes | `ssh -G`, `zsh -n`, `bash -n`, `git config --list --file` |
 | Editing | Your editor, from `$VISUAL` or `$EDITOR` |
 
+## AI Coding Tool Files
+
+* Only reads files. It has no code that writes, moves, or deletes them.
+* A fixed list in `neet-core` names the files it may read. Sign in files and chat history are never on it. See [SAFETY.md](SAFETY.md#ai-coding-tool-files).
+* Reads the name and description from the front matter at the top of each `SKILL.md`.
+* Finds project skill folders in the finished home folder scan, instead of walking the disk again.
+
 ## Settings And Startup
 
-* Both change Mac settings instead of files. tidymac saves the old value before each change, and undo puts it back.
-* The allow list in `tidymac-core` names every setting and startup action they may use.
-* A change that needs admin rights runs one command with `sudo`. tidymac itself never runs as root.
-* tidymac runs the usual tools instead of writing its own:
+* Both change Mac settings instead of files. neet saves the old value before each change, and undo puts it back.
+* The allow list in `neet-core` names every setting and startup action they may use.
+* A change that needs admin rights runs one command with `sudo`. neet itself never runs as root.
+* neet runs the usual tools instead of writing its own:
 
 | Need | Tool |
 | --- | --- |
@@ -143,17 +157,18 @@ selected rules
 | Terminal screens | `ratatui` with Crossterm | Candidate |
 | Faster walking | `ignore` and `rayon` | Candidate |
 | Reading TOML | `serde` and `toml` | Candidate |
+| Reading `SKILL.md` front matter | A small YAML reader, or a hand written parser | Candidate |
 | Building rules into the program | `include_dir` | Candidate |
 | Checking for running apps | `sysinfo` or a macOS API | Candidate |
 | Moving to the Trash | A crate or macOS API that works with Finder's Put Back | Candidate |
 | Writing archives | `tar` and `flate2` | Candidate |
 | Changing display modes | `core-graphics` | Candidate |
-| Errors | `thiserror`, and `anyhow` in the `tidymac` crate if needed | Candidate |
+| Errors | `thiserror`, and `anyhow` in the `neet` crate if needed | Candidate |
 
 ## Platform Support
 
 * macOS 13 or later, on Apple silicon and Intel.
-* Not every disk uses APFS. If a disk does something tidymac does not support, it must stop with a clear message.
+* Not every disk uses APFS. If a disk does something neet does not support, it must stop with a clear message.
 * The workspace does not allow `unsafe` code. macOS calls must go through a crate that handles that.
 
 ## File Reference
@@ -161,13 +176,14 @@ selected rules
 | File | Purpose |
 | --- | --- |
 | `Cargo.toml` | Lists the two crates, their shared version and license, and the lint rules. The rules turn on Clippy's strict checks and forbid `unsafe` code. |
-| `crates/tidymac-core/Cargo.toml` | The library's dependencies: `walkdir`, and `tempfile` for tests. |
-| `crates/tidymac-core/src/lib.rs` | The library's entry point. Makes the `scan` and `size` modules public. |
-| `crates/tidymac-core/src/scan.rs` | `walk_directory` walks a folder without following links or leaving the disk. Has tests. |
-| `crates/tidymac-core/src/size.rs` | `allocated_size` works out the space a file uses on disk. |
-| `crates/tidymac-core/src/rules.rs` | Empty. Will read and check rules. |
-| `crates/tidymac-core/src/safety.rs` | Empty. Will hold `validate_deletable` and `ValidatedPath`. |
-| `crates/tidymac-core/src/clean.rs` | Empty. Will plan cleanups and move items to the Trash. |
-| `crates/tidymac/Cargo.toml` | The program's dependencies: `tidymac-core`. |
-| `crates/tidymac/src/main.rs` | The program's entry point. An empty `main` for now. Will open the terminal interface. |
-| `.github/workflows/ci.yml` | Checks formatting, runs Clippy and the tests, and builds for Apple silicon and Intel. |
+| `crates/neet-core/Cargo.toml` | The library's dependencies: `walkdir`, and `tempfile` for tests. |
+| `crates/neet-core/src/lib.rs` | The library's entry point. Makes the `scan`, `size`, and `tree` modules public. |
+| `crates/neet-core/src/scan.rs` | `walk_directory` walks a folder without following links or leaving the disk. Has tests. |
+| `crates/neet-core/src/size.rs` | `allocated_size` measures the space a file uses on disk. `HardLinkTracker` remembers each file's device and inode, so a hard link is counted once. Has tests for hard links and files with empty parts. |
+| `crates/neet-core/src/tree.rs` | `Tree`, `Node`, and `NodeId` store folders and files, add up folder sizes, and rebuild paths. Has tests. Not yet filled by the walker. |
+| `crates/neet-core/src/rules.rs` | Empty. Will read and check rules. |
+| `crates/neet-core/src/safety.rs` | Empty. Will hold `validate_deletable` and `ValidatedPath`. |
+| `crates/neet-core/src/clean.rs` | Empty. Will plan cleanups and move items to the Trash. |
+| `crates/neet/Cargo.toml` | The program's dependencies: `neet-core`. |
+| `crates/neet/src/main.rs` | The program's entry point. An empty `main` for now. Will open the terminal interface. |
+| `.github/workflows/ci.yml` | Checks formatting, runs Clippy and tests, and runs `cargo check` for Apple silicon and Intel targets. |

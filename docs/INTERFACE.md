@@ -1,0 +1,254 @@
+# Interface
+
+* The planned screens, keyboard keys, and review steps for neet.
+* For anyone building or reviewing the terminal interface.
+* No screens are built yet.
+* For what each feature does and its status, read [FEATURES.md](FEATURES.md). For the rules every change must follow, read [SAFETY.md](SAFETY.md).
+
+| Tabs | Phase |
+| --- | --- |
+| Dashboard, Disk, Clean | P1 |
+| Large and old file filters, app removal review | P1.5. Where these fit in the tabs is not decided yet. |
+| Startup, SSH, Dotfiles, AI Tools, Settings | P2. Draft designs that still need checking on real Macs. |
+
+## Contents
+
+1. [The Terminal Interface](#the-terminal-interface)
+2. [The Disk Tab](#the-disk-tab)
+3. [The Clean Tab](#the-clean-tab)
+4. [The SSH Tab](#the-ssh-tab)
+5. [The Dotfiles Tab](#the-dotfiles-tab)
+6. [The Startup Tab](#the-startup-tab)
+7. [The AI Tools Tab](#the-ai-tools-tab)
+8. [The Settings Tab](#the-settings-tab)
+
+## The Terminal Interface
+
+* Run `neet` to open it.
+* The only options are `--version`, which prints the version, and `--help`, which prints a short usage note. There are no other commands or options.
+* The Dashboard opens first. It shows:
+  1. Free and used space on the disk.
+  2. Whether the last scan was complete.
+  3. Cleanup categories, with links to the Clean tab.
+* The Dashboard shows folder sizes and disk totals separately. They can differ because of APFS copies, snapshots, and space macOS frees on its own.
+
+| Key | Action |
+| --- | --- |
+| `Tab` / `Shift-Tab` | Next or previous tab. |
+| `?` | Help for the current screen. |
+| `q` | Quit, when no dialog is open. |
+
+* Arrow keys work everywhere. The Vim keys `h`, `j`, `k`, and `l` work outside text fields.
+
+## The Disk Tab
+
+* A column browser that starts at your home folder.
+
+| Key | Action |
+| --- | --- |
+| `Right` or `Enter` | Open the selected folder. |
+| `Left` | Go back to the parent folder. |
+| `Up` / `Down` | Move the selection. |
+| `s` | Change the sort order. |
+| `d` | Plan a cleanup of the selected item. |
+| `g` / `G` | Jump to the first or last row. |
+
+* A cleanup started here goes through the same checks, review, and question as any other.
+
+## The Clean Tab
+
+* Each row shows a rule's name, risk tier, number of items, and estimated size.
+
+| Key | Action |
+| --- | --- |
+| `Space` | Select or clear a rule. |
+| `Enter` | Review the paths the selected rules found. |
+| `?` | Explain the selected rule and its tier. |
+
+| Tier | How It Is Selected |
+| --- | --- |
+| `safe` | Selected from the start. |
+| `caution` | You select it yourself. |
+| `expert` | You select it and type a confirmation. |
+
+* A rule cannot be selected while its app is open.
+* Every cleanup follows the same steps:
+  1. Select rules.
+  2. Review every path.
+  3. Confirm the number of items, their size, and that they go to the Trash.
+  4. neet checks each path again, then moves it to the Trash.
+* The path review cannot be skipped.
+
+## The SSH Tab
+
+* Shows what is in `~/.ssh` without ever showing a private key.
+
+| Section | Shows |
+| --- | --- |
+| Config | Each host in `~/.ssh/config`, with its host name, user, port, and key. |
+| Keys | Each key's type, size, fingerprint, comment, whether it has a passphrase, and whether its `.pub` file exists. |
+| Agent | The keys loaded in the SSH agent, from `ssh-add -l`. |
+| Known hosts | Each entry in `~/.ssh/known_hosts`. |
+| Permissions | Files and folders that other users can read or change. |
+
+* It can make three changes:
+
+| Action | What Happens |
+| --- | --- |
+| Fix permissions | Sets `~/.ssh` to `700`, private keys and `config` to `600`, and public keys to `644`. The old permissions are saved so you can undo. |
+| Agent keys | Adds a key with `ssh-add`, or removes it with `ssh-add -d`. Key files are not touched. |
+| Old hosts | Removes the entries you select with `ssh-keygen -R`, which keeps `known_hosts.old`. neet also saves its own backup. |
+
+* Each change shows what it will do and asks first.
+* To edit `~/.ssh/config`, use the Dotfiles tab.
+
+## The Dotfiles Tab
+
+* Lists the dotfiles neet knows about, but only the ones on your Mac. If you have no tmux settings, there is no tmux row.
+
+| Group | Files |
+| --- | --- |
+| Shell | `~/.zshrc`, `~/.zprofile`, `~/.zshenv`, `~/.bashrc`, `~/.bash_profile`, `~/.profile`, `~/.config/fish/config.fish` |
+| Git | `~/.gitconfig`, `~/.config/git/config`, `~/.config/git/ignore`, `~/.gitignore_global` |
+| SSH | `~/.ssh/config` |
+| Editors | `~/.vimrc`, `~/.config/nvim/init.lua`, `~/.config/nvim/init.vim` |
+| Terminal | `~/.tmux.conf`, `~/.config/tmux/tmux.conf`, `~/.config/starship.toml`, `~/.inputrc` |
+
+### Edit A Dotfile
+
+1. neet saves a backup in `~/.local/state/neet/backups/`, named with the date and time.
+2. It opens the file in your editor, from `$VISUAL` or `$EDITOR`.
+3. When you close the editor, it shows what changed.
+4. It checks the file for mistakes, where a check exists:
+
+   | File | Check |
+   | --- | --- |
+   | zsh | `zsh -n` |
+   | bash | `bash -n` |
+   | Git | `git config --list --file` |
+   | SSH | `ssh -G` |
+
+5. You keep the change, edit again, or restore the backup.
+
+### Export Dotfiles
+
+1. Select the files to export.
+2. neet looks for anything that looks like a token or password, and shows you each match.
+3. Choose where to save it. The default is your home folder.
+4. It writes a `.tar.gz` archive, with a list of what was included and what was left out.
+
+* These are never exported: private keys, `~/.netrc`, `~/.aws/credentials`, `~/.npmrc`, and `~/.pypirc`.
+* To keep dotfiles in Git, unpack the archive into a repository.
+
+## The Startup Tab
+
+* Lists the programs that start on their own. Many never appear in the Dock or menu bar.
+
+| Section | Shows | Read From |
+| --- | --- | --- |
+| Login items | Apps that open when you log in. | The login item list |
+| Background items | Items listed under Allow in the Background in System Settings. | `sfltool dumpbtm` |
+| Launch agents | Programs that run while you are logged in. | `~/Library/LaunchAgents`, `/Library/LaunchAgents` |
+| Launch daemons | Programs that run for the whole Mac, even before anyone logs in. | `/Library/LaunchDaemons` |
+
+* Each row shows the program, publisher information where available, whether it is running, and whether it is signed.
+* Items under `/System/Library` are shown, but can never be changed.
+* Turning an item off:
+  1. neet shows the exact command, such as `launchctl disable gui/501/com.example.helper`.
+  2. It saves the item's current state.
+  3. It runs the command, with `sudo` when the item runs for the whole Mac.
+* Turning it back on puts back the saved state.
+* neet never edits or deletes a launch agent or launch daemon file.
+* If neet cannot read the background items, the tab says its list may be incomplete.
+
+## The AI Tools Tab
+
+* Shows the settings, instruction files, and skills that Claude Code and Codex keep on your Mac.
+* View only. There are no actions that change a file.
+* Which tab holds this view is still an open question in [FEATURES.md](FEATURES.md#design-questions).
+
+| Section | Shows | Read From |
+| --- | --- | --- |
+| Tools | Which tools are set up, their folders, and how much space each uses. | `~/.claude`, `~/.codex` |
+| Settings | Each tool's settings file. | `~/.claude/settings.json`, `~/.codex/config.toml` |
+| Instructions | Global instruction files, when they exist. | `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md` |
+| Skills | Each skill's name, description, tool, source, and path. | `SKILL.md` files in each tool's `skills` folder and plugins |
+| Project skills | Skills saved inside project folders, grouped by project. | Folders such as `<project>/.claude/skills`, found by the home folder scan |
+
+| Key | Action |
+| --- | --- |
+| `Enter` | Open the selected file or skill. |
+| `Up` / `Down` | Move the selection. |
+
+* Opening a skill shows its `SKILL.md` and lists the other files in its folder.
+* Sign in files, chat history, session logs, and databases are never listed or opened.
+
+## The Settings Tab
+
+* Shows only settings that change speed, battery life, or sleep.
+* Sections that do not apply to this Mac are hidden.
+
+### Power Mode
+
+| Preset | Effect |
+| --- | --- |
+| Battery Life | Turns on Low Power Mode. Slower and cooler, and the battery lasts longer. |
+| Balanced | The macOS default. |
+| Maximum Performance | Turns on High Power Mode, on Macs that support it. Faster during long, heavy work, with more fan noise and power use. |
+
+* Set separately for battery and for the charger.
+* Uses `pmset`. The exact setting names differ between macOS versions, and must be checked on a real Mac before this is built.
+
+### Graphics Switching
+
+* Only on Intel Macs with two GPUs.
+* Turns Automatic Graphics Switching on or off, with `pmset gpuswitch`.
+* On saves battery by using the built in GPU for light work. Off always uses the faster GPU.
+
+### Refresh Rate
+
+* Lists each display, including ProMotion and supported external displays, with:
+  1. Its current refresh rate.
+  2. The rates it offers.
+  3. Whether it supports Adaptive Sync.
+* Switching:
+  1. Pick a rate. Higher is smoother. Lower uses less power.
+  2. neet switches the display, then asks whether to keep it.
+  3. If you do not answer within 15 seconds, it switches back. So if the screen goes blank, it fixes itself.
+* Uses CoreGraphics display modes.
+
+### Game Mode
+
+* Shows whether this Mac offers Game Mode.
+* Explains how to get it: open a supported game in full screen. macOS then turns Game Mode on and lets the game use the CPU and GPU first.
+* neet cannot turn Game Mode on. It only explains.
+
+### What Keeps Your Mac Awake
+
+| View | Shows | Read From |
+| --- | --- | --- |
+| Now | Apps keeping the Mac awake right now, and the reason each gives. | `pmset -g assertions` |
+| Overnight | Each time the Mac woke while asleep, and what woke it. | `pmset -g log` |
+
+* Each row links to the app or setting that caused it. It can show the app in Finder, or jump to the matching wake setting below.
+* This view changes nothing. neet never quits an app.
+
+### Wake Settings
+
+* These are draft controls. Which Macs support them, and what they really do, must be checked before they are built.
+
+| Setting | Turning It Off Means | `pmset` Key |
+| --- | --- | --- |
+| Wake for network access | The Mac no longer wakes for network requests, such as file sharing. | `womp` |
+| Power Nap | The Mac no longer checks mail or runs backups while asleep. | `powernap` |
+| Keep network connections alive | Some network features may stop working during sleep. The exact effects need checking. | `tcpkeepalive` |
+
+### Every Change
+
+1. neet shows the exact command it will run.
+2. It saves the current value.
+3. It runs the command, with `sudo` only when administrative rights are required.
+4. Undo puts back the saved value.
+
+* Refresh rate changes show the new display mode instead of a command. They use CoreGraphics, and switch back after 15 seconds unless you keep them.
+* Game Mode, What Keeps Your Mac Awake, and Overnight are view only.
