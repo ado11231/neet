@@ -54,6 +54,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
+name = "neet"
+version = "0.1.0"
+dependencies = [
+ "neet-core",
+]
+
+[[package]]
+name = "neet-core"
+version = "0.1.0"
+dependencies = [
+ "tempfile",
+ "walkdir",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -98,21 +113,6 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys",
-]
-
-[[package]]
-name = "tidymac"
-version = "0.1.0"
-dependencies = [
- "tidymac-core",
-]
-
-[[package]]
-name = "tidymac-core"
-version = "0.1.0"
-dependencies = [
- "tempfile",
- "walkdir",
 ]
 
 [[package]]

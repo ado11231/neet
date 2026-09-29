@@ -1,14 +1,11 @@
 [package]
-name = "tidymac-core"
+name = "neet"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-walkdir.workspace = true
+neet-core = { path = "../neet-core" }
 
 [lints]
 workspace = true
-
-[dev-dependencies]
-tempfile = "3"

@@ -25,7 +25,6 @@
   1. **`neet-core`** is the library. It scans, measures sizes, reads rules, checks paths, and plans cleanups. It never draws anything on screen.
   2. **`neet`** is the program you run. It holds the screens and keyboard input. It only accepts `--version` and `--help`, read from `std::env::args` without an argument parsing crate.
 * `neet` uses `neet-core`. `neet-core` does not use `neet`.
-* The project was renamed from tidymac. The crate folders and `Cargo.toml` names in the code still say `tidymac` until that rename is made.
 
 ## How The Code Is Organized
 
