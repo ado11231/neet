@@ -75,7 +75,8 @@ neet/
 | `ui/large.rs` | Large Files. |
 | `ui/apps.rs` | Remove App: the app list and the app's files. |
 | `ui/help.rs` | The help box opened with `?`. |
-| `ui/format.rs` | Sizes, counts, bars, and ages as text. |
+| `ui/loading.rs` | The loading box a screen shows while slow work runs. |
+| `ui/format.rs` | Sizes, counts, bars, and ages as text, and shortening long names and folders. |
 
 ## How neet Runs
 
