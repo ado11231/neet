@@ -32,6 +32,48 @@ fn display_path(root: &Path, path: &Path) -> String {
     }
 }
 
+/// The app neet runs in, which is what Full Disk Access is given to. Reads
+/// the variables each terminal sets, through `var`.
+fn terminal_name(var: impl Fn(&str) -> Option<String>) -> Option<&'static str> {
+    // kitty, Alacritty, and Ghostty mark their windows even without TERM_PROGRAM.
+    if var("KITTY_WINDOW_ID").is_some() {
+        return Some("kitty");
+    }
+    if var("ALACRITTY_WINDOW_ID").is_some() {
+        return Some("Alacritty");
+    }
+    if var("GHOSTTY_RESOURCES_DIR").is_some() {
+        return Some("Ghostty");
+    }
+    match var("TERM_PROGRAM")?.as_str() {
+        "Apple_Terminal" => Some("Terminal"),
+        "iTerm.app" => Some("iTerm"),
+        "vscode" => Some("Visual Studio Code"),
+        "WezTerm" => Some("WezTerm"),
+        "WarpTerminal" => Some("Warp"),
+        "ghostty" => Some("Ghostty"),
+        _ => None,
+    }
+}
+
+/// How to let neet read the folders macOS blocked
+fn allow_steps(terminal: Option<&str>) -> Vec<Line<'static>> {
+    let app = terminal.map_or_else(|| "your terminal app".to_string(), str::to_string);
+    let reopen = terminal.unwrap_or("the terminal");
+    vec![
+        Line::from("macOS blocked some folders, so their sizes are missing.")
+            .yellow()
+            .bold(),
+        Line::from("To let neet read them:"),
+        Line::from("  1. Open System Settings, then Privacy & Security, then Full Disk Access."),
+        Line::from(format!("  2. Turn on {app}.")),
+        Line::from(format!(
+            "  3. Quit and reopen {reopen}, then run neet again."
+        )),
+        Line::default(),
+    ]
+}
+
 fn heading(text: String) -> Line<'static> {
     Line::from(text).bold()
 }
@@ -41,13 +83,8 @@ fn lines(scan: &Scan) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
     if scan.errors.iter().any(|error| error.permission_denied) {
-        lines.push(Line::from("macOS blocked some folders.").yellow().bold());
-        lines.push(Line::from(
-            "To let neet read them, open System Settings, go to Privacy & Security, \
-             then Full Disk Access, and turn it on for your terminal. Then restart the \
-             terminal and neet.",
-        ));
-        lines.push(Line::default());
+        let terminal = terminal_name(|name| std::env::var(name).ok());
+        lines.extend(allow_steps(terminal));
     }
 
     if scan.errors.is_empty() && scan.other_disks.is_empty() {
@@ -211,5 +248,41 @@ mod tests {
 
         assert!(screen.contains("Nothing was skipped"));
         assert!(!screen.contains("Full Disk Access"));
+    }
+
+    #[test]
+    fn names_the_terminal_that_needs_full_disk_access() {
+        let env = |pairs: &'static [(&'static str, &'static str)]| {
+            move |name: &str| {
+                pairs
+                    .iter()
+                    .find(|(key, _)| *key == name)
+                    .map(|(_, value)| (*value).to_string())
+            }
+        };
+
+        assert_eq!(
+            terminal_name(env(&[("KITTY_WINDOW_ID", "1")])),
+            Some("kitty")
+        );
+        assert_eq!(
+            terminal_name(env(&[("TERM_PROGRAM", "Apple_Terminal")])),
+            Some("Terminal")
+        );
+        assert_eq!(
+            terminal_name(env(&[("TERM_PROGRAM", "vscode")])),
+            Some("Visual Studio Code")
+        );
+        assert_eq!(terminal_name(env(&[("TERM_PROGRAM", "tmux")])), None);
+        assert_eq!(terminal_name(env(&[])), None);
+
+        let steps: String = allow_steps(Some("kitty"))
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        assert!(steps.contains("2. Turn on kitty."));
+        assert!(steps.contains("3. Quit and reopen kitty"));
+        let steps: String = allow_steps(None).iter().map(ToString::to_string).collect();
+        assert!(steps.contains("2. Turn on your terminal app."));
     }
 }
