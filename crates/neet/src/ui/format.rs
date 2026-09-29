@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 /// Formats bytes the way Finder does, in powers of 1000.
 #[allow(clippy::cast_precision_loss)] // One decimal place is all that is shown.
 pub fn size(bytes: u64) -> String {
@@ -39,6 +41,20 @@ pub fn bar(part: u64, total: u64, width: usize) -> String {
     format!("{}{}", "█".repeat(filled), "░".repeat(width - filled))
 }
 
+/// How long ago something was, in the largest whole unit, such as `3 days`.
+pub fn age(elapsed: Duration) -> String {
+    const DAY: u64 = 24 * 60 * 60;
+    let days = elapsed.as_secs() / DAY;
+    let (value, unit) = match days {
+        0 => return "today".to_string(),
+        1..=59 => (days, "day"),
+        60..=364 => (days / 30, "month"),
+        _ => (days / 365, "year"),
+    };
+    let plural = if value == 1 { "" } else { "s" };
+    format!("{value} {unit}{plural} ago")
+}
+
 /// `part` as a whole percent of `total`, rounded down.
 pub fn percent(part: u64, total: u64) -> u64 {
     if total == 0 {
@@ -49,7 +65,8 @@ pub fn percent(part: u64, total: u64) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{bar, count, percent, size};
+    use super::{age, bar, count, percent, size};
+    use std::time::Duration;
 
     #[test]
     fn sizes_use_powers_of_1000() {
@@ -59,6 +76,17 @@ mod tests {
         assert_eq!(size(1_500_000), "1.5 MB");
         assert_eq!(size(999_990_000), "1.0 GB");
         assert_eq!(size(111_200_000_000), "111.2 GB");
+    }
+
+    #[test]
+    fn ages_use_the_largest_whole_unit() {
+        let day = Duration::from_secs(24 * 60 * 60);
+        assert_eq!(age(day / 2), "today");
+        assert_eq!(age(day), "1 day ago");
+        assert_eq!(age(day * 45), "45 days ago");
+        assert_eq!(age(day * 90), "3 months ago");
+        assert_eq!(age(day * 400), "1 year ago");
+        assert_eq!(age(day * 800), "2 years ago");
     }
 
     #[test]

@@ -2,13 +2,13 @@
 
 * The planned screens, keyboard keys, and review steps for neet.
 * For anyone building or reviewing the terminal interface.
-* No screens are built yet.
+* Home, Skipped, Disk, Clean, and Large Files are built. The rest are plans.
 * For what each feature does and its status, read [FEATURES.md](FEATURES.md). For the rules every change must follow, read [SAFETY.md](SAFETY.md).
 
 | Screens | Phase |
 | --- | --- |
 | Home, Disk, Clean | P1 |
-| Large Files, Remove App | P1.5. Remove App waits on its [design question](FEATURES.md#design-questions). |
+| Large Files, Remove App | P1.5. Large Files is built. Remove App is next. |
 | Startup, SSH, Dotfiles, PATH, AI Tools, Settings, Space Breakdown, Projects | P2. Draft designs that still need checking on real Macs. |
 
 ## Contents
@@ -20,13 +20,14 @@
 5. [Moving Between Screens](#moving-between-screens)
 6. [The Disk Screen](#the-disk-screen)
 7. [The Clean Screen](#the-clean-screen)
-8. [The Projects Screen](#the-projects-screen)
-9. [The SSH Screen](#the-ssh-screen)
-10. [The Dotfiles Screen](#the-dotfiles-screen)
-11. [The PATH Screen](#the-path-screen)
-12. [The Startup Screen](#the-startup-screen)
-13. [The AI Tools Screen](#the-ai-tools-screen)
-14. [The Settings Screen](#the-settings-screen)
+8. [The Large Files Screen](#the-large-files-screen)
+9. [The Projects Screen](#the-projects-screen)
+10. [The SSH Screen](#the-ssh-screen)
+11. [The Dotfiles Screen](#the-dotfiles-screen)
+12. [The PATH Screen](#the-path-screen)
+13. [The Startup Screen](#the-startup-screen)
+14. [The AI Tools Screen](#the-ai-tools-screen)
+15. [The Settings Screen](#the-settings-screen)
 
 ## The Terminal Interface
 
@@ -210,6 +211,31 @@
 | Question | A box over the review: how many items, their size, that Finder moves them to the Trash, and that each is checked again. | `y` moves them. `n` or `Esc` goes back. `q` does nothing here. |
 | Cleanup | A progress bar while items move, and a note that macOS may ask about controlling Finder the first time. | No key leaves this step until every item is dealt with. |
 | Result | How many items moved, the space they take up in the Trash, how to use Put Back, and every skipped item with its reason. | `Enter` or `Esc` goes back to Home. The next visit to Clean makes a fresh plan. |
+
+## The Large Files Screen
+
+```text
++ Large Files: 107 files of 100.0 MB or more, 31.2 GB in all -----+
+| >   11.0 GB  3 days ago      ~/Library/Containers/.../Docker.raw |
+|      4.3 GB  1 month ago     ~/Library/Application Support/...   |
+|    179.0 MB  1 year ago      ~/Library/Caches/Homebrew/...dmg    |
++------------------------------------------------------------------+
+```
+
+* Lists files from the home folder scan, largest first, with the size, how long ago each changed, and the path. Folders are not listed.
+* Starts with files of 100 MB or more, at any age. A file whose change time could not be read never counts as old.
+* Shows at most 1,000 files, then says how many more there are.
+* Finding a file does not make it a cleanup target. `d` runs the same checks as Disk, so most files found here are refused with a reason.
+* Until the scan finishes, the screen shows its progress instead.
+
+| Key | Action |
+| --- | --- |
+| `Up` / `Down` | Move the selection. |
+| `g` / `G` | Jump to the first or last file. |
+| `s` | Change the smallest size: 10 MB, 50 MB, 100 MB, 500 MB, 1 GB, or 5 GB. |
+| `a` | Change how long files must be unchanged: any age, 30 days, 3 months, 6 months, 1 year, or 2 years. |
+| `Enter`, `Right`, or `l` | Show the file in Disk, in its folder, with the file selected. `Esc` comes back here. |
+| `d` | Plan a cleanup of the file, then open the path review, as in Disk. |
 
 ## The Projects Screen
 

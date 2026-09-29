@@ -10,6 +10,7 @@ use super::art;
 use super::clean::Clean;
 use super::disk::Disk;
 use super::format;
+use super::large::LargeFiles;
 use super::scan::ScanStatus;
 use super::skipped::Skipped;
 use neet_core::disk::DiskSpace;
@@ -52,7 +53,7 @@ const ENTRIES: &[Entry] = &[
     Entry {
         label: "Large Files",
         about: "Find large and old files, and open them in Disk.",
-        target: Target::Soon,
+        target: Target::Screen(|| Box::new(LargeFiles::new())),
     },
     Entry {
         label: "Remove App",
@@ -374,6 +375,8 @@ mod tests {
         let mut home = Home::new();
         press(&mut home, KeyCode::Down);
         assert_eq!(ENTRIES[home.selected()].label, "Clean");
+        press(&mut home, KeyCode::Down);
+        assert_eq!(ENTRIES[home.selected()].label, "Large Files");
         press(&mut home, KeyCode::Down);
         assert_eq!(ENTRIES[home.selected()].label, "Quit");
     }
