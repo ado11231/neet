@@ -6,10 +6,12 @@ use std::path::Path;
 use std::process::Command;
 
 /// The path is passed as an argument, never written into the script, so no
-/// name can change what the script does.
-const SCRIPT: [&str; 3] = [
+/// name can change what the script does. It becomes a file reference before
+/// Finder sees it, since Finder cannot read `POSIX file` itself.
+const SCRIPT: [&str; 4] = [
     "on run argv",
-    "tell application \"Finder\" to delete (POSIX file (item 1 of argv))",
+    "set picked to (POSIX file (item 1 of argv)) as alias",
+    "tell application \"Finder\" to delete picked",
     "end run",
 ];
 
