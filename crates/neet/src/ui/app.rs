@@ -8,6 +8,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::text::Line;
 
+use super::clean::Estimate;
 use super::help::Help;
 use super::home::Home;
 use super::scan::{ScanStatus, ScanTask};
@@ -30,6 +31,8 @@ pub struct Context<'a> {
     pub scan: &'a ScanStatus,
     /// How full the disk is, if it could be read.
     pub disk: Option<DiskSpace>,
+    /// How much every cleanup rule found, once planned
+    pub cleanable: Option<u64>,
 }
 
 /// One screen on the stack. Home is always at the bottom.
@@ -97,16 +100,22 @@ impl DiskWatch {
 pub struct App {
     stack: Vec<Box<dyn Screen>>,
     scan: ScanTask,
+    /// How much Clean can free, for Home. Planned again after a cleanup.
+    estimate: Estimate,
+    home: Option<PathBuf>,
     disk: DiskWatch,
     quit: bool,
 }
 
 impl App {
-    /// `disk_root` is any path on the disk to show in the gauge.
+    /// `disk_root` is the home folder: the disk to show in the gauge, and
+    /// where Clean looks.
     pub fn new(scan: ScanTask, disk_root: Option<PathBuf>) -> Self {
         Self {
             stack: vec![Box::new(Home::new())],
             scan,
+            estimate: Estimate::start(disk_root.clone()),
+            home: disk_root.clone(),
             disk: DiskWatch::new(disk_root),
             quit: false,
         }
@@ -115,6 +124,7 @@ impl App {
     /// Picks up progress from the background scan, and rereads the disk now and then.
     pub fn poll(&mut self) {
         self.scan.poll();
+        self.estimate.poll();
         self.disk.poll();
     }
 
@@ -141,6 +151,7 @@ impl App {
         let context = Context {
             scan: self.scan.status(),
             disk: self.disk.space,
+            cleanable: self.estimate.size(),
         };
         for screen in &mut self.stack[base..] {
             screen.draw(frame, body, &context);
@@ -154,6 +165,7 @@ impl App {
         let context = Context {
             scan: self.scan.status(),
             disk: self.disk.space,
+            cleanable: self.estimate.size(),
         };
         let screen = self.stack.last_mut().expect("Home is never popped");
         let action = match key.code {
@@ -175,7 +187,11 @@ impl App {
                     self.stack.pop();
                 }
             }
-            Action::Home => self.stack.truncate(1),
+            Action::Home => {
+                self.stack.truncate(1);
+                // A cleanup may have just run, so the old amount is stale.
+                self.estimate = Estimate::start(self.home.clone());
+            }
             Action::Quit => self.quit = true,
         }
     }

@@ -492,6 +492,7 @@ mod tests {
         let context = Context {
             scan: &scan,
             disk: None,
+            cleanable: None,
         };
         terminal
             .draw(|frame| screen.draw(frame, frame.area(), &context))
@@ -512,6 +513,7 @@ mod tests {
             &Context {
                 scan: &scan,
                 disk: None,
+                cleanable: None,
             },
         )
     }

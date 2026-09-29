@@ -131,7 +131,7 @@ impl Home {
         }
     }
 
-    fn draw_menu(&mut self, frame: &mut Frame, area: Rect) {
+    fn draw_menu(&mut self, frame: &mut Frame, area: Rect, context: &Context) {
         let items = ENTRIES.iter().enumerate().map(|(index, entry)| {
             let number = match entry.target {
                 Target::Quit => "  ".to_string(),
@@ -141,6 +141,9 @@ impl Home {
                 Span::raw(number).dark_gray(),
                 Span::raw(format!("{:<14}", entry.label)),
             ];
+            if let Some(summary) = summary(entry.label, context) {
+                spans.push(Span::raw(summary).dark_gray());
+            }
             if matches!(entry.target, Target::Soon) {
                 spans.push(Span::raw("soon").italic());
                 ListItem::new(Line::from(spans)).dark_gray()
@@ -175,6 +178,20 @@ impl Home {
             .wrap(Wrap { trim: true })
             .block(Block::bordered().padding(Padding::horizontal(1)));
         frame.render_widget(info, area);
+    }
+}
+
+/// A short note beside a menu row, such as how much Clean can free.
+fn summary(label: &str, context: &Context) -> Option<String> {
+    match label {
+        "Disk" => context
+            .disk
+            .map(|disk| format!("{} used", format::size(disk.used()))),
+        "Clean" => Some(context.cleanable.map_or_else(
+            || "finding…".to_string(),
+            |size| format!("~{} found", format::size(size)),
+        )),
+        _ => None,
     }
 }
 
@@ -271,7 +288,7 @@ impl Screen for Home {
         let menu_height = u16::try_from(ENTRIES.len() + 2).unwrap_or(u16::MAX);
         let [menu, info] =
             Layout::vertical([Constraint::Length(menu_height), Constraint::Fill(1)]).areas(right);
-        self.draw_menu(frame, menu);
+        self.draw_menu(frame, menu, context);
         self.draw_info(frame, info, context);
     }
 
@@ -322,6 +339,7 @@ mod tests {
             &Context {
                 scan: &scan,
                 disk: None,
+                cleanable: None,
             },
         )
     }
@@ -338,6 +356,7 @@ mod tests {
                 total: 500_000_000_000,
                 available: 100_000_000_000,
             }),
+            cleanable: Some(18_400_000_000),
         };
         terminal
             .draw(|frame| home.draw(frame, frame.area(), &context))
@@ -386,6 +405,8 @@ mod tests {
         assert!(screen.contains("1,234 items · 5.0 MB"));
         assert!(screen.contains("80% used"));
         assert!(screen.contains("100.0 GB free of 500.0 GB"));
+        assert!(screen.contains("400.0 GB used"));
+        assert!(screen.contains("~18.4 GB found"));
     }
 
     #[test]

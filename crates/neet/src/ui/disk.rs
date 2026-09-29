@@ -424,7 +424,11 @@ mod tests {
 
     fn render(disk: &mut Disk, scan: &ScanStatus, width: u16) -> String {
         let mut terminal = Terminal::new(TestBackend::new(width, 12)).unwrap();
-        let context = Context { scan, disk: None };
+        let context = Context {
+            scan,
+            disk: None,
+            cleanable: None,
+        };
         terminal
             .draw(|frame| disk.draw(frame, frame.area(), &context))
             .unwrap();
@@ -459,6 +463,7 @@ mod tests {
             &Context {
                 scan: &scan,
                 disk: None,
+                cleanable: None,
             },
         );
         let screen = render(&mut disk, &scan, 120);
