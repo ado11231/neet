@@ -49,7 +49,7 @@
  up/down move . enter open . ? help . q quit
 ```
 
-* **Left:** ASCII art, about 45% of the width. On a terminal narrower than about 90 columns the art is hidden and the menu fills the screen.
+* **Left:** ASCII art of a sleeping cat behind the neet wordmark, both in the blue `#82aaff`, under a sky of grey stars that thins out towards uneven edges. It takes about 45% of the width, and always leaves a gap before the menu. On a terminal narrower than about 90 columns the art is hidden and the menu fills the screen.
 * **Right, top:** the menu. One row per feature, with a short summary, such as used space or what can be cleaned.
 * **Right, bottom:** a panel that explains the selected row, and shows:
   1. Free and used space on the disk.

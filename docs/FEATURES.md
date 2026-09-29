@@ -232,7 +232,7 @@
 
 | Feature | What It Does | Phase | Status |
 | --- | --- | --- | --- |
-| Home menu | Opens on a Home screen with ASCII art and a menu of features, moved with the arrow keys. `Enter` opens a screen and `Esc` goes back. Works with Vim keys outside text fields. Features not built yet show dimmed. The art is a placeholder. The status panel shows the scan, but not the disk gauge yet. | P1 | In Progress |
+| Home menu | Opens on a Home screen with ASCII art and a menu of features, moved with the arrow keys. `Enter` opens a screen and `Esc` goes back. Works with Vim keys outside text fields. Features not built yet show dimmed. The status panel shows the scan, but not the disk gauge yet. | P1 | In Progress |
 | Help | Press `?` for help on the current screen and the selected rule. Screen help works. Rule help waits on Clean. | P1 | In Progress |
 | Command line | Run `neet` to open it. The only options are `--help` and `--version`. Cleanup happens only inside the interface. | P1 | Built |
 | Install with Homebrew or Cargo | Packages for both. Neither is published yet. | P1 | Planned |

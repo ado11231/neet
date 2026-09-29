@@ -226,7 +226,7 @@ selected rules
 | `crates/neet/src/ui/mod.rs` | The interface loop. Draws the screen, waits for a key, and passes it on. |
 | `crates/neet/src/ui/app.rs` | `App`, the `Screen` trait, `Action`, `Context`, and the screen stack. Handles `Esc`, `q`, and `?` for every screen. Has tests. |
 | `crates/neet/src/ui/home.rs` | The Home screen: art, menu, and info panel. Has tests. |
-| `crates/neet/src/ui/art.rs` | The ASCII art. A placeholder wordmark for now. |
+| `crates/neet/src/ui/art.rs` | The Home art. `ART` holds the sleeping cat and the wordmark, and can be edited in place. `Night` draws grey stars across the art column, thinning out towards uneven edges, then the art on top. Has tests. |
 | `crates/neet/src/ui/scan.rs` | `ScanTask` runs the home folder scan on its own thread, and `ScanStatus` holds its progress or result. Has tests. |
 | `crates/neet/src/ui/format.rs` | Formats sizes the way Finder does, and counts with commas. Has tests. |
 | `crates/neet/src/ui/help.rs` | The help box opened by `?`, drawn over the current screen. |

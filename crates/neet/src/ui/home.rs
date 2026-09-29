@@ -1,12 +1,12 @@
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
-use ratatui::layout::{Constraint, Flex, Layout, Rect};
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Style, Stylize};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, List, ListItem, ListState, Padding, Paragraph, Wrap};
 
 use super::app::{Action, Context, Screen};
-use super::art::ART;
+use super::art;
 use super::disk::Disk;
 use super::format;
 use super::placeholder::Placeholder;
@@ -14,6 +14,9 @@ use super::scan::ScanStatus;
 
 /// Below this width the art is hidden and the menu fills the screen.
 const MIN_ART_WIDTH: u16 = 90;
+
+/// Columns kept clear between the art and the menu.
+const ART_GAP: u16 = 2;
 
 enum Target {
     Screen(fn() -> Box<dyn Screen>),
@@ -216,28 +219,18 @@ fn scan_lines(scan: &ScanStatus) -> Vec<Line<'static>> {
 }
 
 fn draw_art(frame: &mut Frame, area: Rect) {
-    let lines: Vec<&str> = ART.trim_matches('\n').lines().collect();
-    let height = u16::try_from(lines.len()).unwrap_or(u16::MAX);
-    let width = lines
-        .iter()
-        .map(|line| u16::try_from(line.chars().count()).unwrap_or(u16::MAX))
-        .max()
-        .unwrap_or(0);
-    let [area] = Layout::vertical([Constraint::Length(height)])
-        .flex(Flex::Center)
-        .areas(area);
-    let [area] = Layout::horizontal([Constraint::Length(width)])
-        .flex(Flex::Center)
-        .areas(area);
-    let art = Paragraph::new(lines.into_iter().map(Line::from).collect::<Vec<_>>()).cyan();
-    frame.render_widget(art, area);
+    frame.render_widget(art::Night, area);
 }
 
 impl Screen for Home {
     fn draw(&mut self, frame: &mut Frame, area: Rect, context: &Context) {
         let right = if area.width >= MIN_ART_WIDTH {
+            // About 45% of the width, but always a little wider than the art,
+            // so it never touches the menu.
+            let left_width = (area.width * 45 / 100).max(art::size().0 + ART_GAP);
             let [left, right] =
-                Layout::horizontal([Constraint::Percentage(45), Constraint::Fill(1)]).areas(area);
+                Layout::horizontal([Constraint::Length(left_width), Constraint::Fill(1)])
+                    .areas(area);
             draw_art(frame, left);
             right
         } else {
@@ -344,6 +337,7 @@ mod tests {
     fn wide_terminal_shows_art_and_menu() {
         let screen = render(&mut Home::new(), 120, 30);
         assert!(screen.contains("███"));
+        assert!(screen.contains("⣿"));
         assert!(screen.contains("Disk"));
         assert!(screen.contains("soon"));
         assert!(screen.contains("1,234 items · 5.0 MB"));
