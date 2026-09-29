@@ -115,6 +115,9 @@
 * The Startup screen, with background items.
 * The SSH screen and the Dotfiles screen.
 * A view only screen for Claude Code and Codex settings, instruction files, and skills.
+* The PATH screen: the PATH check, which program wins, and reordering or editing through the dotfile backup steps.
+* The Space Breakdown screen, which explains the gap between disk used space and the scan.
+* The Projects screen for build folders in code projects, after its design question is settled.
 * The Settings screen: power mode, graphics switching, refresh rate, Game Mode guidance, what keeps the Mac awake, and wake settings.
 * Saved neet preferences and the optional treemap, after their scope is defined.
 * **Done when:**
@@ -125,6 +128,9 @@
   5. SSH and dotfile changes stay within their allow lists, and the backup, restore, check, and export tests pass.
   6. The AI tools view reads only its allowed files, never opens sign in files or chat history, and finds project skills from the scan.
   7. Preferences keep the agreed choices between runs, and the treemap shows the scan without changing files.
+  8. PATH changes stay within the Shell group of the dotfile allow list, and are undone from their backups.
+  9. The space breakdown's parts add up to the disk's used space, with anything left over shown as not explained, on each supported macOS version.
+  10. The Projects screen offers only listed build folders that Git ignores, and refuses the rest.
 
 ## P1 Release Checks
 

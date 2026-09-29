@@ -9,21 +9,24 @@
 | --- | --- |
 | Home, Disk, Clean | P1 |
 | Large Files, Remove App | P1.5. Remove App waits on its [design question](FEATURES.md#design-questions). |
-| Startup, SSH, Dotfiles, AI Tools, Settings | P2. Draft designs that still need checking on real Macs. |
+| Startup, SSH, Dotfiles, PATH, AI Tools, Settings, Space Breakdown, Projects | P2. Draft designs that still need checking on real Macs. |
 
 ## Contents
 
 1. [The Terminal Interface](#the-terminal-interface)
 2. [The Home Screen](#the-home-screen)
 3. [The Skipped Screen](#the-skipped-screen)
-4. [Moving Between Screens](#moving-between-screens)
-5. [The Disk Screen](#the-disk-screen)
-6. [The Clean Screen](#the-clean-screen)
-7. [The SSH Screen](#the-ssh-screen)
-8. [The Dotfiles Screen](#the-dotfiles-screen)
-9. [The Startup Screen](#the-startup-screen)
-10. [The AI Tools Screen](#the-ai-tools-screen)
-11. [The Settings Screen](#the-settings-screen)
+4. [The Space Breakdown Screen](#the-space-breakdown-screen)
+5. [Moving Between Screens](#moving-between-screens)
+6. [The Disk Screen](#the-disk-screen)
+7. [The Clean Screen](#the-clean-screen)
+8. [The Projects Screen](#the-projects-screen)
+9. [The SSH Screen](#the-ssh-screen)
+10. [The Dotfiles Screen](#the-dotfiles-screen)
+11. [The PATH Screen](#the-path-screen)
+12. [The Startup Screen](#the-startup-screen)
+13. [The AI Tools Screen](#the-ai-tools-screen)
+14. [The Settings Screen](#the-settings-screen)
 
 ## The Terminal Interface
 
@@ -65,6 +68,7 @@
 | `Enter` or `Right` | Open the selected screen. |
 | `1` to `9` | Open that row directly. |
 | `s` | Open the Skipped screen. |
+| `b` | Open the Space Breakdown screen. Proposed for P2. |
 | `?` | Help. |
 | `q` | Quit. |
 
@@ -80,6 +84,42 @@
 | `Up` / `Down` | Scroll. |
 | `PgUp` / `PgDn` | Scroll a page. |
 | `g` / `G` | Jump to the top or bottom. |
+
+## The Space Breakdown Screen
+
+* Proposed for P2. Opened with `b` on Home.
+* Explains why the disk's used space is bigger than the home folder scan.
+* View only. It never deletes snapshots or frees purgeable space.
+
+```text
+ Disk used                               412 GB
+   Home folder scan                      290 GB   [##############......]
+   Skipped in home folder              unknown    3 paths, press s
+   Apps in /Applications                  38 GB
+   macOS and its other volumes            24 GB
+   Local Time Machine snapshots           2 snapshots, size estimated
+   Purgeable                              31 GB
+   Not explained                          29 GB
+```
+
+| Part | Where The Number Comes From |
+| --- | --- |
+| Home folder scan | The scan neet already ran. |
+| Skipped in home folder | Folders the scan could not read. Their size is unknown, so it is never guessed. |
+| Apps in /Applications | A quick scan of `/Applications`, which changes nothing. |
+| macOS and its other volumes | The used space of the system, Preboot, Recovery, and VM volumes, from `diskutil apfs list`. |
+| Local snapshots | `tmutil listlocalsnapshots /`. macOS may not report their sizes, so the screen says when a size is estimated or missing. |
+| Purgeable | The difference between the free space macOS reports for important files and the plain free space. |
+| Not explained | Whatever is left. Shown plainly, never spread over the other parts. |
+
+* Each part has a short note on what it is, and whether you can do anything about it. For example, snapshots go away on their own, or when Time Machine backs up.
+* Every source above must be checked on real Macs before this is built. See the [design question](FEATURES.md#design-questions).
+
+| Key | Action |
+| --- | --- |
+| `Up` / `Down` | Move the selection. |
+| `Enter` | Open the selected part in Disk, when it is a folder. |
+| `?` | Explain the selected part. |
 
 ## Moving Between Screens
 
@@ -141,6 +181,32 @@
 * The first cleanup makes macOS ask whether neet may control Finder. Finder moves the items, so Put Back works.
 * When it finishes, the screen shows how much space the cleaned items take up in the Trash, and that emptying the Trash frees it.
 
+## The Projects Screen
+
+* Proposed for P2. Waits on its [design question](FEATURES.md#design-questions), because project folders are outside the cleanup roots.
+* Lists build output inside your code projects, found by the home folder scan. The folders and tiers are in [FEATURES.md](FEATURES.md#project-build-folders).
+
+```text
+ Project                      Last Changed   Folder          Size
+ ~/code/old-game              14 months      target/         9.2 GB
+ ~/Documents/rust/neet        today          target/         2.1 GB   too recent
+ ~/code/site                  5 months       node_modules/   1.4 GB
+ ~/code/scratch               8 months       node_modules/   610 MB   not ignored by Git
+```
+
+* Rows that cannot be selected are dimmed, with the reason: too recent, no Git repository, not ignored by Git, or missing its project file.
+* The title shows how many folders are selected and their total size.
+
+| Key | Action |
+| --- | --- |
+| `Space` | Select or clear a folder. |
+| `a` | Select every folder in projects not changed within a chosen number of months. |
+| `s` | Sort by size, then last changed, then project name. |
+| `Enter` | Review the selected paths. |
+| `?` | Explain the selected folder, and what removing it costs. |
+
+* A cleanup from here goes through the same steps as Clean: review every path, confirm, check each path again, then move it to the Trash.
+
 ## The SSH Screen
 
 * Shows what is in `~/.ssh` without ever showing a private key.
@@ -201,6 +267,58 @@
 
 * These are never exported: private keys, `~/.netrc`, `~/.aws/credentials`, `~/.npmrc`, and `~/.pypirc`.
 * To keep dotfiles in Git, unpack the archive into a repository.
+
+## The PATH Screen
+
+* Proposed for P2.
+* Shows your `PATH` as an ordered list, and which copy of a program runs.
+
+```text
+ #  Folder                         Programs  Added By              Problems
+ 1  /opt/homebrew/bin                   212  brew shellenv
+ 2  ~/.cargo/bin                         18  ~/.zshrc line 12
+ 3  ~/.local/bin                          0  ~/.zshrc line 14      does not exist
+ 4  /usr/local/bin                       31  /etc/paths
+ 5  ~/.cargo/bin                         18  ~/.zprofile line 3    listed twice
+ 6  /usr/bin                            980  /etc/paths
+```
+
+* The right column previews the selected folder: the programs in it, and which of them are hidden by an earlier folder.
+* Folders from `/etc/paths` and `/etc/paths.d` are marked view only.
+
+| Problem | What It Means |
+| --- | --- |
+| Listed twice | Only the first one is used. The later one does nothing. |
+| Does not exist | The folder is missing, so it only slows down the search. |
+| Others can change it | Another user could put a program here that runs in place of yours. |
+| Relative folder | A folder such as `.` changes with where you are, so a program in any folder could run. |
+
+### Which Program Wins
+
+* Press `w` and type a program name.
+* The screen lists every copy on your `PATH`, in order, and marks the one that runs.
+* For programs with a known version option, such as `--version`, it shows each copy's version. It never runs an unknown program to find out.
+
+### Changing The PATH
+
+1. Move a folder with `K` and `J`, add one with `a`, or remove one with `x`. Nothing is written yet.
+2. neet shows the old and new `PATH` side by side.
+3. It saves a backup of the shell file, writes the change, shows what changed in the file, and runs its syntax check, the same as [editing a dotfile](#edit-a-dotfile).
+4. It starts a fresh login shell and shows the `PATH` it gets.
+5. You keep the change, or restore the backup.
+
+* Open terminals keep their old `PATH`. The screen says to open a new one.
+* A line such as `eval "$(brew shellenv)"` moves as a whole. neet never edits inside it.
+
+| Key | Action |
+| --- | --- |
+| `Up` / `Down` | Move the selection. |
+| `w` | Find which copy of a program runs. |
+| `K` / `J` | Move the selected folder up or down. |
+| `a` | Add a folder. |
+| `x` | Remove the selected folder. |
+| `Enter` | Review and write the changes. |
+| `?` | Explain the selected problem. |
 
 ## The Startup Screen
 

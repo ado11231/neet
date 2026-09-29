@@ -37,7 +37,7 @@ neet
 | Clean | Moves files your apps can make again to the Trash, after you review every path. |
 
 * Everything happens inside the program. The only options are `--version` and `--help`.
-* Later screens are proposed for startup items, SSH, dotfiles, AI coding tool files, and power settings. See the [feature list](docs/FEATURES.md).
+* Later screens are proposed for startup items, SSH, dotfiles, your shell `PATH`, build folders in code projects, a breakdown of where disk space goes, AI coding tool files, and power settings. See the [feature list](docs/FEATURES.md).
 
 <br>
 

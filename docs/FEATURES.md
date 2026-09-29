@@ -17,13 +17,14 @@
 7. [Startup And Background Services](#startup-and-background-services)
 8. [SSH Management](#ssh-management)
 9. [Dotfile Management](#dotfile-management)
-10. [AI Coding Tool Files](#ai-coding-tool-files)
-11. [Performance, Power, And Displays](#performance-power-and-displays)
-12. [Interface, Preferences, And Distribution](#interface-preferences-and-distribution)
-13. [Safety And Recovery](#safety-and-recovery)
-14. [Design Questions](#design-questions)
-15. [Excluded Features](#excluded-features)
-16. [Key Terms](#key-terms)
+10. [Shell PATH](#shell-path)
+11. [AI Coding Tool Files](#ai-coding-tool-files)
+12. [Performance, Power, And Displays](#performance-power-and-displays)
+13. [Interface, Preferences, And Distribution](#interface-preferences-and-distribution)
+14. [Safety And Recovery](#safety-and-recovery)
+15. [Design Questions](#design-questions)
+16. [Excluded Features](#excluded-features)
+17. [Key Terms](#key-terms)
 
 ## Where Things Stand
 
@@ -48,18 +49,19 @@
 | --- | --- | --- |
 | **P1** | The first release: disk analysis, and reviewed cleanup to the Trash. | M0 to M5 |
 | **P1.5** | Large and old file filters, and an app removal review. | M6 |
-| **P2** | Startup items, SSH, dotfiles, AI coding tool files, speed and battery settings, saved preferences, and a treemap. | M7 |
+| **P2** | Startup items, SSH, dotfiles, shell PATH, AI coding tool files, speed and battery settings, saved preferences, a treemap, a space breakdown, and project build cleanup. | M7 |
 
 ## Features By Phase
 
 | Area | P1 | P1.5 | P2 |
 | --- | --- | --- | --- |
-| [Disk analysis](#disk-analysis-and-file-discovery) | Scan, sizes, browser, Home status, progress | Large and old file filters | Treemap |
-| [Cleanup](#cleanup-and-rules) | Dry run, review, Trash, risk tiers, rules | | |
+| [Disk analysis](#disk-analysis-and-file-discovery) | Scan, sizes, browser, Home status, progress | Large and old file filters | Treemap, space breakdown |
+| [Cleanup](#cleanup-and-rules) | Dry run, review, Trash, risk tiers, rules | | Project build folders |
 | [Apps](#application-management) | | App removal review | |
 | [Startup](#startup-and-background-services) | | | Inventory, details, disable and restore |
 | [SSH](#ssh-management) | | | Hosts, keys, agent, permissions, known hosts |
 | [Dotfiles](#dotfile-management) | | | Inventory, safe editing, export |
+| [Shell PATH](#shell-path) | | | PATH check, which program wins, reorder and edit |
 | [AI tools](#ai-coding-tool-files) | | | Claude Code and Codex settings, instructions, and skills |
 | [Settings](#performance-power-and-displays) | | | Power, graphics, refresh rate, sleep and wake |
 | [Interface](#interface-preferences-and-distribution) | Home menu, help, install | | Saved preferences |
@@ -81,9 +83,12 @@
 | Scan progress and warnings | Keeps the screen responsive. Lists folders it could not read and disks it skipped. Marks a scan as incomplete, including when Full Disk Access is missing. The scan runs in the background, Home shows progress and counts, and the Skipped screen lists each path with its reason and a Full Disk Access hint. | P1 | Built |
 | Large and old file filters | Finds files above a size you choose, or not changed since a date you choose, and opens them in Disk. Finding a file does not make it a cleanup target. | P1.5 | Planned |
 | Treemap | A view where each folder's area shows its size. How you interact with it is not designed yet. | P2 | Proposed |
+| Space breakdown | Explains why the disk's used space and the home folder scan disagree. Splits the difference into parts, such as apps, macOS and its other volumes, local Time Machine snapshots, purgeable space, and folders the scan skipped. Whatever neet cannot explain is shown as unexplained, never hidden. View only. | P2 | Proposed |
 
 * Folder sizes are estimates. On APFS, copies can share space, so neet cannot say exactly how much a cleanup will free.
 * File age means when a file was last changed, not when it was last opened.
+* The space breakdown only explains. It never deletes snapshots or frees purgeable space. macOS manages both.
+* Which volume totals, snapshot sizes, and purgeable figures macOS reports reliably still needs checking. See [Design Questions](#design-questions).
 
 ## Cleanup And Rules
 
@@ -101,6 +106,7 @@
 | Selection totals | Shows how many items and how much estimated space your selected rules cover. | P1 | Planned |
 | Bundled and user rules | Loads the reviewed TOML rules, plus your own from `~/.config/neet/rules/`. Your rule can replace a bundled rule with the same ID, but can never widen what cleanup may touch, and is never selected from the start.  Loading and checking rules is built. No bundled rules are written yet. | P1 | In Progress |
 | Cleanup from Disk | Plans a cleanup for the item selected in Disk, with the same checks, review, and question as Clean. Items outside the allowed folders are refused. | P1 | Planned |
+| Project build folders | Finds build output inside your code projects, such as `target/` and `node_modules/`, grouped by project and sorted by size or by how long since you last worked on the project. Uses the home folder scan, so it does not walk the disk again. Offers a folder only when Git ignores it. Waits on its [design question](#design-questions), because project folders are outside the cleanup roots. | P2 | Proposed |
 
 ### Cleanup Target Groups
 
@@ -120,6 +126,7 @@
 | `logs` | User logs | Removes chosen logs from allowed folders. They will no longer be there for troubleshooting. |
 | `system` | Saved app state | Removes reviewed saved state files. The rule must explain how this affects reopening an app where you left off. |
 | `system` | System logs | A possible cleaner. Where these logs live, and how to clean them without `sudo`, are not decided. |
+| `project` | Project build folders | Removes build output in your code projects. See [Project Build Folders](#project-build-folders). Not a TOML rule, because the folders are found, not fixed paths. |
 
 ### Risk Tiers
 
@@ -130,6 +137,29 @@
 | `expert` | Some files may not exist anywhere else. The rule must say so. | You select it and type a confirmation. |
 
 * No tier skips the path checks or the review. The full rule fields and checks are in [SAFETY.md](SAFETY.md#cleanup-rules).
+
+### Project Build Folders
+
+* A folder is offered only when all of these are true:
+  1. Its name is on the list below.
+  2. The project file that makes it sits in the folder above it.
+  3. The project is a Git repository, and `git check-ignore` says Git ignores the folder.
+  4. Nothing inside it changed within the minimum age, 14 days by default.
+* Folders in a project with no Git repository, or that Git does not ignore, are shown dimmed and cannot be selected.
+
+| Folder | Needs Beside It | Made By | Cost Of Removing | Tier |
+| --- | --- | --- | --- | --- |
+| `target/` | `Cargo.toml` | Cargo | The next build starts from scratch. | `safe` |
+| `node_modules/` | `package.json` and a lock file | npm, pnpm, Yarn, Bun | The next install downloads packages again. | `caution` |
+| `.next/` | `next.config.*` | Next.js | The next build starts from scratch. | `safe` |
+| `.venv/`, `venv/` | `pyproject.toml` or `requirements.txt`, and a lock file | Python | The environment must be made again. Packages installed by hand, without the lock file, are lost. | `caution` |
+| `.gradle/`, `build/` | `build.gradle` or `build.gradle.kts` | Gradle | The next build starts from scratch. | `safe` |
+| `__pycache__/` | Any `.py` file | Python | Python writes them again when it runs. | `safe` |
+
+* `build/` and `dist/` are common names for other things, so only `build/` beside a Gradle file is on the list. `dist/` is not.
+* Each row shows the project, the folder, its size, and when the project last changed. Last changed means the newest Git commit, or the newest change to a tracked file, whichever is later.
+* The list and each tier must be reviewed, like a bundled rule, before this is built.
+* Moving tens of thousands of small files to the Trash through Finder can be slow. The screen shows progress.
 
 ## Application Management
 
@@ -187,6 +217,25 @@
 * Private keys and the listed credential files are always left out.
 * Importing and syncing are not included.
 * The supported files, checks, and exclusions are in the [Dotfiles screen](INTERFACE.md#the-dotfiles-screen).
+
+## Shell PATH
+
+* Shows your `PATH`, the list of folders your shell searches for programs, as an ordered list you can read at a glance.
+* Finds problems in it, and shows which copy of a program runs when several exist.
+* Changes go through the same backup, change list, and syntax check as dotfile editing.
+
+| Feature | What It Does | Phase | Status |
+| --- | --- | --- | --- |
+| PATH view | Lists each `PATH` folder in search order, with how many programs it holds, and where it was added when neet can tell, such as `~/.zshrc` line 12, `/etc/paths.d/`, or a tool like Homebrew. | P2 | Proposed |
+| PATH check | Flags folders listed twice, folders that do not exist, folders other users can change, and relative folders such as `.`. | P2 | Proposed |
+| Which program wins | Type a program name, such as `python3`, to see every copy on your `PATH` in order, which one runs, and each one's version when it can be asked safely. Also lists every program that is hidden by an earlier copy. | P2 | Proposed |
+| Reorder and edit | Move a folder up or down, add one, or remove one. neet shows the old and new `PATH` side by side, then writes the change to a shell file on the dotfile allow list, with a backup, a change list, and a syntax check. | P2 | Proposed |
+| New shell preview | After a change, starts a fresh login shell and shows the `PATH` it really gets, so you can see whether the change worked. Your open terminals keep their old `PATH` until you open a new one. | P2 | Proposed |
+
+* neet never changes `/etc/paths` or `/etc/paths.d`. They are shown, but need admin rights, and belong to macOS and installers.
+* A folder added by a command, such as `eval "$(brew shellenv)"`, is shown with that command. neet does not edit inside it, but it can move the whole line.
+* How to find where each folder was added, and how to write edits without breaking a hand written file, are not decided. See [Design Questions](#design-questions).
+* The screen is in [INTERFACE.md](INTERFACE.md#the-path-screen).
 
 ## AI Coding Tool Files
 
@@ -270,6 +319,9 @@
 | Power and display | Check which settings exist, what they really do, and that refresh rate rollback works, on real Macs. Draft command names are not proof. |
 | Treemap and preferences | Design the interaction, the saved choices, and how they are stored. Then add their M7 checks. |
 | AI coding tool files | Confirm where each tool saves project skills. Folder layouts change between tool versions, so check them on each release. |
+| Space breakdown | Check which numbers macOS reports reliably: the used space of each APFS volume, local snapshot sizes, and purgeable space. Decide which disk totals the Home gauge and the breakdown share, so they always add up. |
+| Project build folders | Project folders are outside the cleanup roots, and many live in `~/Documents` or `~/Desktop`, which are protected. Decide whether a separate, narrow check can allow only the listed build folders inside a Git repository, and only when Git ignores them, without weakening the protected paths for anything else. Update [SAFETY.md](SAFETY.md) first. |
+| Shell PATH | Decide how to find where each `PATH` folder was added. Tracing a login shell as it starts runs your shell files, so decide whether that is acceptable. Decide whether edits go in a block neet owns, marked with comments, or change your own lines in place. |
 
 ## Excluded Features
 
@@ -307,3 +359,7 @@
 | **Skill** | A folder of instructions an AI coding tool can load, described by a `SKILL.md` file. |
 | **Sleep assertion** | A request from an app to keep the Mac awake. |
 | **`sudo`** | Runs one command with admin rights, after asking for your password. |
+| **`PATH`** | The ordered list of folders your shell searches when you type a program name. The first match runs. |
+| **Local snapshot** | A copy of your disk that Time Machine keeps on the Mac itself. It holds space until macOS removes it. |
+| **Purgeable space** | Space macOS counts as used, but can free on its own when it needs room, such as iCloud files it can download again. |
+| **Build output** | Files a build tool makes from your source code, such as `target/` or `node_modules/`. The tool can make them again. |

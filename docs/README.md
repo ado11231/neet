@@ -32,6 +32,7 @@
 | [Startup and background services](FEATURES.md#startup-and-background-services) | See programs that start on their own, and turn them off in a way you can undo. |
 | [SSH management](FEATURES.md#ssh-management) | See hosts and key details, fix permissions, and manage agent keys and known hosts. |
 | [Dotfile management](FEATURES.md#dotfile-management) | List, edit, check, back up, and export settings files. |
+| [Shell PATH](FEATURES.md#shell-path) | See your `PATH` in order, find problems and which program runs, and change it with a backup. |
 | [AI coding tool files](FEATURES.md#ai-coding-tool-files) | View Claude Code and Codex settings, instruction files, and skills. |
 | [Performance, power, and displays](FEATURES.md#performance-power-and-displays) | See what keeps the Mac awake, and change power and display settings. |
 | [Interface and distribution](FEATURES.md#interface-preferences-and-distribution) | Move around the program, get help, install it, and later save preferences. |

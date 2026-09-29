@@ -2,7 +2,7 @@
 
 * The rules neet follows whenever it changes a file or a setting, or reads a private one.
 * For anyone writing code or rules that change things on the Mac.
-* They cover every screen: Disk, Clean, SSH, Dotfiles, Startup, AI Tools, and Settings. They also cover bundled rules, your own rules, and custom cleaners.
+* They cover every screen: Disk, Clean, Projects, SSH, Dotfiles, PATH, Startup, AI Tools, Settings, and Space Breakdown. They also cover bundled rules, your own rules, and custom cleaners.
 * These are requirements. The path check, cleanup roots, and protected paths are built in `neet-core`. The other safeguards are not built yet. For progress, read [ROADMAP.md](ROADMAP.md). For open questions, read [FEATURES.md](FEATURES.md#design-questions).
 
 ## Contents
@@ -84,6 +84,7 @@
 * A rule cannot add a cleanup root.
 * The P1.5 app removal review does not add apps as a cleanup root. What it may remove must be decided first.
 * `~/.claude` and `~/.codex` are not cleanup roots, so cleanup cannot touch them.
+* Project build folders, such as `target/` and `node_modules/`, are not cleanup roots. The proposed Projects screen cannot remove anything until its [design question](FEATURES.md#design-questions) is settled and this doc says how. Any answer must keep refusing everything else in the protected paths, and must refuse any folder Git does not ignore.
 
 ## Protected Paths
 
@@ -201,12 +202,15 @@ min_age_days = 0
 | SSH permissions | `~/.ssh` and the files directly inside it. |
 | Known hosts | `~/.ssh/known_hosts`, only through `ssh-keygen -R`. |
 | Agent keys | Nothing on disk. `ssh-add` only changes the running agent. |
+| PATH changes | Only the shell files in the Dotfiles screen's Shell group. Never `/etc/paths` or `/etc/paths.d`. |
 
 * Every change must:
   1. Save the old content or permissions first, so it can be undone.
   2. Refuse symbolic links that lead out of your home folder.
   3. Write to a temporary file in the same folder, then swap it in, so a crash never leaves half a file.
 * Cleanup can still never touch `~/.ssh`.
+* PATH changes follow the same steps as a dotfile edit: backup, change list, syntax check, then keep or restore.
+* To show program versions, the PATH screen runs only programs on a fixed list, with a fixed version option. It never runs an unknown program.
 * neet never reads what is inside a private key. Key details come from `ssh-keygen`.
 * Exports:
   1. Never include private keys, `~/.netrc`, `~/.aws/credentials`, `~/.npmrc`, or `~/.pypirc`.
@@ -230,6 +234,7 @@ min_age_days = 0
 * A change that needs admin rights runs one command with `sudo`, after showing you that command.
 * The terminal screen pauses while `sudo` asks for your password, then comes back.
 * Cleanup never uses `sudo`.
+* The Space Breakdown screen only reads. It never deletes snapshots, and never uses `sudo`.
 
 ## Settings And Startup Changes
 
@@ -268,5 +273,7 @@ min_age_days = 0
   16. Settings and startup items undone from their saved values.
   17. A refresh rate that is not kept switching back.
   18. The AI tools view refusing sign in files, chat history, and links that lead out.
+  19. PATH changes to a file outside the Shell group, or through a symbolic link that leads out, and PATH changes undone from their backups.
+  20. Project build folders that Git does not ignore, that have no project file beside them, or that changed within the minimum age, all refused.
 * Automated tests never use a real home folder, and never change real Mac settings.
 * The M4 manual test moves a harmless temporary file to the Trash, then restores it with Finder's Put Back.
