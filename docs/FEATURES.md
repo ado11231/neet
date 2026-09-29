@@ -100,7 +100,7 @@
 | Dry run plan | Lists matching paths and changes nothing. Every cleanup starts here. Built and shown in Clean. | P1 | In Progress |
 | Path review and confirmation | Shows every target, the item count, and the estimated size, then asks before going on. You cannot skip it. Built in Clean. | P1 | In Progress |
 | Move to the Trash | Moves confirmed items to the Trash through Finder, so Put Back restores them. Space is freed only when you empty the Trash yourself, and neet shows how much that will be. Built and used by Clean. Put Back still needs the manual test on a real Mac. | P1 | In Progress |
-| Risk tiers | Labels each rule `safe`, `caution`, or `expert`. The tier explains the cost and decides how the rule is selected. Labels and selection are built. Selecting an `expert` rule, which needs a typed confirmation, is not. | P1 | In Progress |
+| Risk tiers | Labels each rule `safe`, `caution`, or `expert`. The tier explains the cost and decides how the rule is selected. Built in Clean. Selecting an `expert` rule needs its ID typed out. | P1 | In Progress |
 | Open app checks | Blocks a rule while its app is open, and checks again right before moving anything. The check before the move is built. Clean does not show open apps yet. | P1 | Built |
 | Recent file protection | Lets a rule skip items changed within its minimum age. A folder counts as changed when anything inside it changed. Built in dry run plans. It must be checked again before the move, in M4. | P1 | In Progress |
 | Selection totals | Shows how many items and how much estimated space your selected rules cover. Built in Clean. | P1 | In Progress |

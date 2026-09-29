@@ -45,8 +45,14 @@ pub trait Screen {
     fn help(&self) -> &'static [(&'static str, &'static str)];
 
     /// What `Esc` does. Most screens go back one step.
-    fn back(&self) -> Action {
+    fn back(&mut self) -> Action {
         Action::Back
+    }
+
+    /// While a screen takes typed text, every key but `Esc` goes to it, so
+    /// `q` and `?` can be typed.
+    fn takes_text(&self) -> bool {
+        false
     }
 
     /// A dialog blocks `q`, so a stray key cannot quit mid question.
@@ -151,8 +157,9 @@ impl App {
         };
         let screen = self.stack.last_mut().expect("Home is never popped");
         let action = match key.code {
-            KeyCode::Char('q') if !screen.is_dialog() => Action::Quit,
             KeyCode::Esc => screen.back(),
+            _ if screen.takes_text() => screen.handle_key(key, &context),
+            KeyCode::Char('q') if !screen.is_dialog() => Action::Quit,
             KeyCode::Char('?') => Action::Open(Box::new(Help::new(screen.help()))),
             _ => screen.handle_key(key, &context),
         };
@@ -203,6 +210,40 @@ mod tests {
         press(&mut app, KeyCode::Esc);
         assert_eq!(app.depth(), 1);
         assert!(!app.should_quit());
+    }
+
+    /// A screen that takes typed text, to check `q` and `?` reach it.
+    struct Field(String);
+
+    impl Screen for Field {
+        fn draw(&mut self, _: &mut Frame, _: Rect, _: &Context) {}
+        fn handle_key(&mut self, key: KeyEvent, _: &Context) -> Action {
+            if let KeyCode::Char(c) = key.code {
+                self.0.push(c);
+            }
+            Action::None
+        }
+        fn hints(&self) -> &'static str {
+            ""
+        }
+        fn help(&self) -> &'static [(&'static str, &'static str)] {
+            &[]
+        }
+        fn takes_text(&self) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn a_text_field_gets_q_and_question_mark() {
+        let mut app = App::new(ScanTask::failed("not scanned in tests"), None);
+        app.apply(Action::Open(Box::new(Field(String::new()))));
+        press(&mut app, KeyCode::Char('q'));
+        press(&mut app, KeyCode::Char('?'));
+        assert!(!app.should_quit());
+        assert_eq!(app.depth(), 2);
+        press(&mut app, KeyCode::Esc);
+        assert_eq!(app.depth(), 1);
     }
 
     #[test]
