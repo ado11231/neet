@@ -78,7 +78,7 @@
 | Size on disk | Measures the space a file really uses, so files with empty parts are measured correctly. | P1 | Built |
 | Hard link tracking | Spots files with more than one name, so their space is counted once. | P1 | Built |
 | Folder tree and totals | Stores each folder's parent and children, adds up folder totals, and rebuilds paths. | P1 | Built |
-| Disk browser | Browses folders in columns, sorted by size, name, or item count, with a bar for each folder's share and a preview of the selected row. Planning a cleanup from here is not built. | P1 | In Progress |
+| Disk browser | Browses folders in columns, sorted by size, name, or item count, with a bar for each folder's share and a preview of the selected row. Press `d` to plan a cleanup of the selected item, with the same checks and review as any rule. | P1 | Built |
 | Home status and disk gauge | On the Home screen, shows free and used space, scan progress, whether the scan was complete, and how much Clean can free. The menu shows used space beside Disk, and beside Clean the total every rule found, planned in the background when neet opens and again after each cleanup. | P1 | Built |
 | Scan progress and warnings | Keeps the screen responsive. Lists folders it could not read and disks it skipped. Marks a scan as incomplete, including when Full Disk Access is missing. The scan runs in the background, Home shows progress and counts, and the Skipped screen lists each path with its reason and a Full Disk Access hint. | P1 | Built |
 | Large and old file filters | Finds files above a size you choose, or not changed since a date you choose, and opens them in Disk. Finding a file does not make it a cleanup target. | P1.5 | Planned |

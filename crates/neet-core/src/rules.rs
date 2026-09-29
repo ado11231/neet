@@ -50,6 +50,8 @@ pub enum Source {
     Bundled,
     /// One of your own rule files
     User(PathBuf),
+    /// An item you picked in the Disk screen
+    Disk,
 }
 
 #[derive(Clone, Debug)]
