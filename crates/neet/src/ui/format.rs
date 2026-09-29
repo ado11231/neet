@@ -27,9 +27,29 @@ pub fn count(value: u64) -> String {
     out
 }
 
+/// A bar `width` characters wide, filled to show `part` as a share of `total`.
+pub fn bar(part: u64, total: u64, width: usize) -> String {
+    let filled = if total == 0 {
+        0
+    } else {
+        let width = u128::try_from(width).unwrap_or(0);
+        let filled = (u128::from(part) * width + u128::from(total) / 2) / u128::from(total);
+        usize::try_from(filled.min(width)).unwrap_or(0)
+    };
+    format!("{}{}", "█".repeat(filled), "░".repeat(width - filled))
+}
+
+/// `part` as a whole percent of `total`, rounded down.
+pub fn percent(part: u64, total: u64) -> u64 {
+    if total == 0 {
+        return 0;
+    }
+    u64::try_from(u128::from(part) * 100 / u128::from(total)).unwrap_or(100)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{count, size};
+    use super::{bar, count, percent, size};
 
     #[test]
     fn sizes_use_powers_of_1000() {
@@ -47,5 +67,18 @@ mod tests {
         assert_eq!(count(999), "999");
         assert_eq!(count(1000), "1,000");
         assert_eq!(count(1_394_799), "1,394,799");
+    }
+
+    #[test]
+    fn bars_and_percents_show_the_share() {
+        assert_eq!(bar(0, 0, 12), "░".repeat(12));
+        assert_eq!(
+            bar(50, 100, 12),
+            format!("{}{}", "█".repeat(6), "░".repeat(6))
+        );
+        assert_eq!(bar(100, 100, 12), "█".repeat(12));
+        assert_eq!(bar(200, 100, 4), "████");
+        assert_eq!(percent(1, 3), 33);
+        assert_eq!(percent(5, 0), 0);
     }
 }

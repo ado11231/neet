@@ -11,6 +11,7 @@ use super::disk::Disk;
 use super::format;
 use super::placeholder::Placeholder;
 use super::scan::ScanStatus;
+use neet_core::disk::DiskSpace;
 
 /// Below this width the art is hidden and the menu fills the screen.
 const MIN_ART_WIDTH: u16 = 90;
@@ -157,13 +158,17 @@ impl Home {
         frame.render_stateful_widget(list, area, &mut self.list);
     }
 
-    fn draw_info(&self, frame: &mut Frame, area: Rect, scan: &ScanStatus) {
+    fn draw_info(&self, frame: &mut Frame, area: Rect, context: &Context) {
+        let scan = context.scan;
+        let disk = context.disk;
         let entry = &ENTRIES[self.selected()];
         let mut lines = vec![
             Line::from(entry.label).bold(),
             Line::from(entry.about),
             Line::default(),
         ];
+        lines.push(disk_line(disk));
+        lines.push(Line::default());
         lines.extend(scan_lines(scan));
         let text = Text::from(lines);
         let info = Paragraph::new(text)
@@ -171,6 +176,33 @@ impl Home {
             .block(Block::bordered().padding(Padding::horizontal(1)));
         frame.render_widget(info, area);
     }
+}
+
+/// How many characters wide the disk gauge is.
+const GAUGE_WIDTH: usize = 16;
+
+/// A gauge of how full the disk is, from the disk's own totals.
+fn disk_line(disk: Option<DiskSpace>) -> Line<'static> {
+    let Some(disk) = disk else {
+        return Line::from("Disk space could not be read.").dark_gray();
+    };
+    let used = format::percent(disk.used(), disk.total);
+    let gauge = Span::raw(format::bar(disk.used(), disk.total, GAUGE_WIDTH));
+    let gauge = match used {
+        90.. => gauge.red(),
+        75..90 => gauge.yellow(),
+        _ => gauge.cyan(),
+    };
+    Line::from(vec![
+        gauge,
+        Span::raw(format!(" {used}% used")).bold(),
+        Span::raw(format!(
+            " · {} free of {}",
+            format::size(disk.available),
+            format::size(disk.total)
+        ))
+        .dark_gray(),
+    ])
 }
 
 /// Describes the home folder scan for the info panel.
@@ -240,7 +272,7 @@ impl Screen for Home {
         let [menu, info] =
             Layout::vertical([Constraint::Length(menu_height), Constraint::Fill(1)]).areas(right);
         self.draw_menu(frame, menu);
-        self.draw_info(frame, info, context.scan);
+        self.draw_info(frame, info, context);
     }
 
     fn handle_key(&mut self, key: KeyEvent, _context: &Context) -> Action {
@@ -285,7 +317,10 @@ mod tests {
         let scan = ScanStatus::Failed(String::new());
         home.handle_key(
             KeyEvent::new(code, KeyModifiers::NONE),
-            &Context { scan: &scan },
+            &Context {
+                scan: &scan,
+                disk: None,
+            },
         )
     }
 
@@ -295,7 +330,13 @@ mod tests {
             entries: 1_234,
             bytes: 5_000_000,
         });
-        let context = Context { scan: &scan };
+        let context = Context {
+            scan: &scan,
+            disk: Some(neet_core::disk::DiskSpace {
+                total: 500_000_000_000,
+                available: 100_000_000_000,
+            }),
+        };
         terminal
             .draw(|frame| home.draw(frame, frame.area(), &context))
             .unwrap();
@@ -341,12 +382,15 @@ mod tests {
         assert!(screen.contains("Disk"));
         assert!(screen.contains("soon"));
         assert!(screen.contains("1,234 items · 5.0 MB"));
+        assert!(screen.contains("80% used"));
+        assert!(screen.contains("100.0 GB free of 500.0 GB"));
     }
 
     #[test]
     fn narrow_terminal_hides_art() {
         let screen = render(&mut Home::new(), 60, 30);
-        assert!(!screen.contains("███"));
+        assert!(!screen.contains("⣿"));
+        assert!(!screen.contains("╚═╝"));
         assert!(screen.contains("Clean"));
     }
 }

@@ -70,9 +70,10 @@
   4. The home folder scan runs on a background thread from the start. Home shows live progress, then the total, and flags incomplete scans and skipped disks.
   5. The Disk screen: a folder column with size bars and percents, a preview column, sorting by size, name, or items, and keys to open folders and go back up. It shows scan progress until the scan finishes.
   6. Tests for the menu, the screen stack, the background scan, size formatting, the Disk browser, and the Home and Disk layouts.
-  7. The Home art: a sleeping cat under a starry skylight, behind the neet wordmark, both in the blue `#82aaff`.
+  7. The disk gauge on Home, from the disk's own totals, refreshed every 5 seconds.
+  8. The Home art: a sleeping cat under a starry skylight, behind the neet wordmark, both in the blue `#82aaff`.
 * **Remaining:**
-  1. The disk gauge in the Home panel, and a list of the paths the scan skipped.
+  1. A list of the paths the scan skipped.
 * **Done when** the screen keeps responding during a scan, and marks incomplete scans.
 
 ## Planned

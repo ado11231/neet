@@ -13,7 +13,7 @@ use super::format;
 use super::scan::ScanStatus;
 
 /// How many characters wide each size bar is.
-const BAR_WIDTH: u64 = 12;
+const BAR_WIDTH: usize = 12;
 
 /// Below this width the preview column is hidden.
 const MIN_PREVIEW_WIDTH: u16 = 100;
@@ -131,27 +131,6 @@ fn sorted_children(tree: &Tree, folder: NodeId, sort: Sort) -> Vec<NodeId> {
     rows
 }
 
-/// A bar showing `size` as a share of `total`.
-fn bar(size: u64, total: u64) -> String {
-    let filled = if total == 0 {
-        0
-    } else {
-        let filled =
-            (u128::from(size) * u128::from(BAR_WIDTH) + u128::from(total) / 2) / u128::from(total);
-        u64::try_from(filled).unwrap_or(BAR_WIDTH).min(BAR_WIDTH)
-    };
-    let filled = usize::try_from(filled).unwrap_or(0);
-    let empty = usize::try_from(BAR_WIDTH).unwrap_or(0) - filled;
-    format!("{}{}", "█".repeat(filled), "░".repeat(empty))
-}
-
-fn percent(size: u64, total: u64) -> u64 {
-    if total == 0 {
-        return 0;
-    }
-    u64::try_from(u128::from(size) * 100 / u128::from(total)).unwrap_or(100)
-}
-
 fn display_name(tree: &Tree, id: NodeId) -> String {
     let node = tree.get(id);
     let name = node.name.to_string_lossy();
@@ -182,9 +161,13 @@ fn row(tree: &Tree, id: NodeId, parent_total: u64) -> ListItem<'static> {
         name
     };
     ListItem::new(Line::from(vec![
-        Span::raw(bar(node.total_size, parent_total)).cyan(),
+        Span::raw(format::bar(node.total_size, parent_total, BAR_WIDTH)).cyan(),
         Span::raw(format!(" {:>9} ", format::size(node.total_size))),
-        Span::raw(format!("{:>3}%  ", percent(node.total_size, parent_total))).dark_gray(),
+        Span::raw(format!(
+            "{:>3}%  ",
+            format::percent(node.total_size, parent_total)
+        ))
+        .dark_gray(),
         name,
     ]))
 }
@@ -439,18 +422,9 @@ mod tests {
         assert_eq!(browser.list.selected(), Some(2));
     }
 
-    #[test]
-    fn bars_and_percents_show_the_share_of_the_parent() {
-        assert_eq!(bar(0, 0), "░".repeat(12));
-        assert_eq!(bar(50, 100), format!("{}{}", "█".repeat(6), "░".repeat(6)));
-        assert_eq!(bar(100, 100), "█".repeat(12));
-        assert_eq!(percent(1, 3), 33);
-        assert_eq!(percent(5, 0), 0);
-    }
-
     fn render(disk: &mut Disk, scan: &ScanStatus, width: u16) -> String {
         let mut terminal = Terminal::new(TestBackend::new(width, 12)).unwrap();
-        let context = Context { scan };
+        let context = Context { scan, disk: None };
         terminal
             .draw(|frame| disk.draw(frame, frame.area(), &context))
             .unwrap();
@@ -480,7 +454,13 @@ mod tests {
         assert!(screen.contains("sort: size"));
 
         let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
-        disk.handle_key(key, &Context { scan: &scan });
+        disk.handle_key(
+            key,
+            &Context {
+                scan: &scan,
+                disk: None,
+            },
+        );
         let screen = render(&mut disk, &scan, 120);
         assert!(screen.contains("~/big"));
     }

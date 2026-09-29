@@ -22,11 +22,12 @@ const TICK: Duration = Duration::from_millis(250);
 
 /// Runs the interface loop until the user quits.
 pub fn run(terminal: &mut DefaultTerminal) -> io::Result<()> {
-    let scan = match std::env::var_os("HOME") {
-        Some(home) => ScanTask::start(PathBuf::from(home)),
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let scan = match &home {
+        Some(home) => ScanTask::start(home.clone()),
         None => ScanTask::failed("HOME is not set, so there is no home folder to scan."),
     };
-    let mut app = App::new(scan);
+    let mut app = App::new(scan, home);
     while !app.should_quit() {
         app.poll();
         terminal.draw(|frame| app.draw(frame))?;

@@ -1,3 +1,7 @@
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
+use neet_core::disk::{self, DiskSpace};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -7,6 +11,9 @@ use ratatui::text::Line;
 use super::help::Help;
 use super::home::Home;
 use super::scan::{ScanStatus, ScanTask};
+
+/// How often to reread the disk's free space.
+const DISK_REFRESH: Duration = Duration::from_secs(5);
 
 /// What a screen asks the app to do after handling a key.
 pub enum Action {
@@ -19,6 +26,8 @@ pub enum Action {
 /// Shared state every screen can read while drawing.
 pub struct Context<'a> {
     pub scan: &'a ScanStatus,
+    /// How full the disk is, if it could be read.
+    pub disk: Option<DiskSpace>,
 }
 
 /// One screen on the stack. Home is always at the bottom.
@@ -44,24 +53,56 @@ pub trait Screen {
     }
 }
 
+/// The disk's free space, reread every few seconds so the gauge stays current.
+struct DiskWatch {
+    root: Option<PathBuf>,
+    space: Option<DiskSpace>,
+    checked: Instant,
+}
+
+impl DiskWatch {
+    fn new(root: Option<PathBuf>) -> Self {
+        let space = root.as_deref().and_then(|root| disk::disk_space(root).ok());
+        Self {
+            root,
+            space,
+            checked: Instant::now(),
+        }
+    }
+
+    fn poll(&mut self) {
+        if self.checked.elapsed() < DISK_REFRESH {
+            return;
+        }
+        self.checked = Instant::now();
+        if let Some(root) = &self.root {
+            self.space = disk::disk_space(root).ok();
+        }
+    }
+}
+
 pub struct App {
     stack: Vec<Box<dyn Screen>>,
     scan: ScanTask,
+    disk: DiskWatch,
     quit: bool,
 }
 
 impl App {
-    pub fn new(scan: ScanTask) -> Self {
+    /// `disk_root` is any path on the disk to show in the gauge.
+    pub fn new(scan: ScanTask, disk_root: Option<PathBuf>) -> Self {
         Self {
             stack: vec![Box::new(Home::new())],
             scan,
+            disk: DiskWatch::new(disk_root),
             quit: false,
         }
     }
 
-    /// Picks up progress from the background scan.
+    /// Picks up progress from the background scan, and rereads the disk now and then.
     pub fn poll(&mut self) {
         self.scan.poll();
+        self.disk.poll();
     }
 
     pub fn should_quit(&self) -> bool {
@@ -86,6 +127,7 @@ impl App {
             .unwrap_or(0);
         let context = Context {
             scan: self.scan.status(),
+            disk: self.disk.space,
         };
         for screen in &mut self.stack[base..] {
             screen.draw(frame, body, &context);
@@ -98,6 +140,7 @@ impl App {
     pub fn handle_key(&mut self, key: KeyEvent) {
         let context = Context {
             scan: self.scan.status(),
+            disk: self.disk.space,
         };
         let screen = self.stack.last_mut().expect("Home is never popped");
         let action = match key.code {
@@ -139,7 +182,7 @@ mod tests {
 
     #[test]
     fn enter_opens_a_screen_and_esc_goes_back() {
-        let mut app = App::new(ScanTask::failed("not scanned in tests"));
+        let mut app = App::new(ScanTask::failed("not scanned in tests"), None);
         press(&mut app, KeyCode::Enter);
         assert_eq!(app.depth(), 2);
         press(&mut app, KeyCode::Esc);
@@ -148,7 +191,7 @@ mod tests {
 
     #[test]
     fn esc_on_home_stays_on_home() {
-        let mut app = App::new(ScanTask::failed("not scanned in tests"));
+        let mut app = App::new(ScanTask::failed("not scanned in tests"), None);
         press(&mut app, KeyCode::Esc);
         assert_eq!(app.depth(), 1);
         assert!(!app.should_quit());
@@ -156,14 +199,14 @@ mod tests {
 
     #[test]
     fn q_quits() {
-        let mut app = App::new(ScanTask::failed("not scanned in tests"));
+        let mut app = App::new(ScanTask::failed("not scanned in tests"), None);
         press(&mut app, KeyCode::Char('q'));
         assert!(app.should_quit());
     }
 
     #[test]
     fn question_mark_opens_help() {
-        let mut app = App::new(ScanTask::failed("not scanned in tests"));
+        let mut app = App::new(ScanTask::failed("not scanned in tests"), None);
         press(&mut app, KeyCode::Char('?'));
         assert_eq!(app.depth(), 2);
     }
