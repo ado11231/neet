@@ -4,14 +4,15 @@ use neet_core::large::{self, Filter};
 use neet_core::tree::{NodeId, Tree};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
-use ratatui::layout::Rect;
+use ratatui::layout::{Constraint, Rect};
 use ratatui::style::{Style, Stylize};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, List, ListItem, ListState, Padding, Paragraph, Wrap};
+use ratatui::widgets::{Block, Cell, Padding, Paragraph, Row, Table, TableState, Wrap};
 
 use super::app::{Action, Context, Screen};
 use super::disk::{Disk, display_path, plan_cleanup};
 use super::format;
+use super::loading::scanning;
 use super::scan::ScanStatus;
 
 const DAY: Duration = Duration::from_secs(24 * 60 * 60);
@@ -40,6 +41,18 @@ const AGES: [(u32, &str); 6] = [
 /// At most this many files are listed, largest first.
 const MAX_ROWS: usize = 1000;
 
+/// Width of the size column, such as `179.0 MB`
+const SIZE_WIDTH: u16 = 9;
+
+/// Width of the last changed column, such as `11 months ago`
+const AGE_WIDTH: u16 = 13;
+
+/// Space between columns
+const GAP: u16 = 2;
+
+/// Files this big are shown in red, and in yellow above a fifth of it
+const HUGE: u64 = 5_000_000_000;
+
 /// Lists files above a size, and optionally unchanged for a while, from the
 /// home folder scan. Finding a file does not make it a cleanup target.
 pub struct LargeFiles {
@@ -47,7 +60,7 @@ pub struct LargeFiles {
     age: usize,
     /// Found files, worked out again when a filter changes
     found: Option<Vec<NodeId>>,
-    list: ListState,
+    table: TableState,
 }
 
 impl LargeFiles {
@@ -56,7 +69,7 @@ impl LargeFiles {
             size: 2,
             age: 0,
             found: None,
-            list: ListState::default().with_selected(Some(0)),
+            table: TableState::default().with_selected(Some(0)),
         }
     }
 
@@ -76,11 +89,11 @@ impl LargeFiles {
 
     fn refilter(&mut self) {
         self.found = None;
-        self.list.select(Some(0));
+        self.table.select(Some(0));
     }
 
     fn selected(&self) -> Option<NodeId> {
-        let index = self.list.selected()?;
+        let index = self.table.selected()?;
         self.found.as_ref()?.get(index).copied()
     }
 
@@ -91,50 +104,78 @@ impl LargeFiles {
             (_, label) => format!(", unchanged for {label}"),
         };
         format!(
-            " Large Files: {} files of {} or more{age}, {} in all ",
+            " Large Files: {} {} of {} or more{age}, {} in all ",
             format::count(u64::try_from(found.len()).unwrap_or(u64::MAX)),
+            if found.len() == 1 { "file" } else { "files" },
             format::size(SIZES[self.size]),
             format::size(total)
         )
     }
 }
 
-fn row(tree: &Tree, id: NodeId, now: SystemTime) -> ListItem<'static> {
+/// One file as a table row. `name` and `folder` are the widths of those
+/// columns, so long text is shortened at its least useful end.
+fn row(tree: &Tree, id: NodeId, now: SystemTime, name: usize, folder: usize) -> Row<'static> {
     let node = tree.get(id);
-    let age = node
+    let size = Span::raw(format::size(node.own_size));
+    let size = if node.own_size >= HUGE {
+        size.red().bold()
+    } else if node.own_size >= HUGE / 5 {
+        size.yellow()
+    } else {
+        size
+    };
+
+    let elapsed = node
         .modified
-        .and_then(|modified| now.duration_since(modified).ok())
-        .map_or_else(|| "unknown".to_string(), format::age);
-    ListItem::new(Line::from(vec![
-        Span::raw(format!("{:>10}  ", format::size(node.own_size))),
-        Span::raw(format!("{age:<14}  ")).dark_gray(),
-        Span::raw(display_path(tree, id)),
-    ]))
+        .and_then(|modified| now.duration_since(modified).ok());
+    let age = Span::raw(elapsed.map_or_else(|| "unknown".to_string(), format::age));
+    // Recent files are dimmed. Files left alone over a year stand out, since
+    // they are the likeliest to be forgotten.
+    let age = match elapsed {
+        Some(elapsed) if elapsed >= DAY * 365 => age.magenta(),
+        Some(elapsed) if elapsed >= DAY * 30 => age,
+        _ => age.dark_gray(),
+    };
+
+    let path = display_path(tree, id);
+    let (parent, file) = path.rsplit_once('/').unwrap_or(("", path.as_str()));
+    Row::new([
+        Cell::from(Line::from(size).right_aligned()),
+        Cell::from(age),
+        Cell::from(format::shorten_middle(file, name)),
+        Cell::from(Span::raw(format::shorten_path(parent, folder)).dark_gray()),
+    ])
 }
 
 impl Screen for LargeFiles {
     fn draw(&mut self, frame: &mut Frame, area: Rect, context: &Context) {
-        let ScanStatus::Done { scan, .. } = context.scan else {
-            let message = match context.scan {
-                ScanStatus::Running(progress) => format!(
-                    "Scanning your home folder… {} items so far. Large files show here when the scan finishes.",
-                    format::count(progress.entries)
-                ),
-                ScanStatus::Failed(reason) => {
-                    format!("The scan failed, so there is nothing to show. {reason}")
-                }
-                ScanStatus::Done { .. } => unreachable!("handled above"),
-            };
-            let block = Block::bordered()
-                .title(" Large Files ")
-                .padding(Padding::horizontal(1));
-            frame.render_widget(
-                Paragraph::new(message)
+        let scan = match context.scan {
+            ScanStatus::Done { scan, .. } => scan,
+            ScanStatus::Running(progress) => {
+                scanning(
+                    "Large Files",
+                    "Large files show here when the scan finishes.",
+                    *progress,
+                )
+                .draw(frame, area);
+                return;
+            }
+            ScanStatus::Failed(reason) => {
+                let block = Block::bordered()
+                    .title(" Large Files ")
+                    .padding(Padding::horizontal(1));
+                frame.render_widget(
+                    Paragraph::new(format!(
+                        "The scan failed, so there is nothing to show. {reason}"
+                    ))
+                    .red()
                     .wrap(Wrap { trim: true })
                     .block(block),
-                area,
-            );
-            return;
+                    area,
+                );
+                return;
+            }
         };
         let tree = &scan.tree;
         let found = self.found(tree).to_vec();
@@ -152,25 +193,52 @@ impl Screen for LargeFiles {
             );
             return;
         }
-        let mut rows: Vec<ListItem> = found
-            .iter()
-            .take(MAX_ROWS)
-            .map(|&id| row(tree, id, now))
-            .collect();
-        if found.len() > MAX_ROWS {
-            rows.push(ListItem::new(
+        let block = if found.len() > MAX_ROWS {
+            block.title_bottom(
                 Line::from(format!(
-                    "  and {} more. Choose a larger size with s to see fewer.",
+                    " and {} more. Press s for a larger size to see fewer. ",
                     format::count(u64::try_from(found.len() - MAX_ROWS).unwrap_or(u64::MAX))
                 ))
                 .dark_gray(),
-            ));
-        }
-        let list = List::new(rows)
-            .block(block)
-            .highlight_symbol("▸ ")
-            .highlight_style(Style::new().bold().cyan());
-        frame.render_stateful_widget(list, area, &mut self.list);
+            )
+        } else {
+            block
+        };
+
+        // The name and folder share what is left after the fixed columns,
+        // the border, the padding, and the selection arrow.
+        let fixed = 2 + 2 + 2 + SIZE_WIDTH + AGE_WIDTH + GAP * 3;
+        let rest = area.width.saturating_sub(fixed);
+        let name = rest * 2 / 5;
+        let folder = rest - name;
+        let rows: Vec<Row> = found
+            .iter()
+            .take(MAX_ROWS)
+            .map(|&id| row(tree, id, now, usize::from(name), usize::from(folder)))
+            .collect();
+        let header = Row::new([
+            Cell::from(Line::from("Size").right_aligned()),
+            Cell::from("Last Changed"),
+            Cell::from("Name"),
+            Cell::from("Folder"),
+        ])
+        .bold()
+        .bottom_margin(1);
+        let table = Table::new(
+            rows,
+            [
+                Constraint::Length(SIZE_WIDTH),
+                Constraint::Length(AGE_WIDTH),
+                Constraint::Length(name),
+                Constraint::Length(folder),
+            ],
+        )
+        .header(header)
+        .column_spacing(GAP)
+        .block(block)
+        .highlight_symbol("▸ ")
+        .row_highlight_style(Style::new().bold().cyan());
+        frame.render_stateful_widget(table, area, &mut self.table);
     }
 
     fn handle_key(&mut self, key: KeyEvent, context: &Context) -> Action {
@@ -180,12 +248,12 @@ impl Screen for LargeFiles {
         let tree = &scan.tree;
         let rows = self.found(tree).len().min(MAX_ROWS);
         let last = rows.saturating_sub(1);
-        let index = self.list.selected().unwrap_or(0);
+        let index = self.table.selected().unwrap_or(0);
         match key.code {
-            KeyCode::Up | KeyCode::Char('k') => self.list.select(Some(index.saturating_sub(1))),
-            KeyCode::Down | KeyCode::Char('j') => self.list.select(Some((index + 1).min(last))),
-            KeyCode::Char('g') | KeyCode::Home => self.list.select(Some(0)),
-            KeyCode::Char('G') | KeyCode::End => self.list.select(Some(last)),
+            KeyCode::Up | KeyCode::Char('k') => self.table.select(Some(index.saturating_sub(1))),
+            KeyCode::Down | KeyCode::Char('j') => self.table.select(Some((index + 1).min(last))),
+            KeyCode::Char('g') | KeyCode::Home => self.table.select(Some(0)),
+            KeyCode::Char('G') | KeyCode::End => self.table.select(Some(last)),
             KeyCode::Char('s') => {
                 self.size = (self.size + 1) % SIZES.len();
                 self.refilter();
@@ -235,6 +303,7 @@ mod tests {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::crossterm::event::KeyModifiers;
+    use ratatui::style::Color;
 
     fn done() -> ScanStatus {
         let now = SystemTime::now();
@@ -292,9 +361,11 @@ mod tests {
         let screen = render(&mut LargeFiles::new(), &scan);
 
         assert!(screen.contains("2 files of 100.0 MB or more"));
-        assert!(screen.contains("~/Movies/film.mov"));
+        assert!(screen.contains("Last Changed"));
+        assert!(screen.contains("film.mov"));
+        assert!(screen.contains("~/Movies"));
         assert!(screen.contains("1 year ago"));
-        assert!(screen.contains("~/backup.zip"));
+        assert!(screen.contains("backup.zip"));
         assert!(!screen.contains("notes.txt"));
         assert!(screen.find("film.mov") < screen.find("backup.zip"));
     }
@@ -306,7 +377,7 @@ mod tests {
 
         press(&mut large, &scan, KeyCode::Char('s'));
         let screen = render(&mut large, &scan);
-        assert!(screen.contains("1 files of 500.0 MB or more"));
+        assert!(screen.contains("1 file of 500.0 MB or more"));
 
         for _ in 0..4 {
             press(&mut large, &scan, KeyCode::Char('s'));
@@ -328,6 +399,46 @@ mod tests {
             press(&mut large, &scan, KeyCode::Enter),
             Action::Open(_)
         ));
+    }
+
+    /// The color of the first cell showing `text`
+    fn color_of(screen: &mut LargeFiles, scan: &ScanStatus, text: &str) -> Color {
+        let mut terminal = Terminal::new(TestBackend::new(110, 12)).unwrap();
+        let context = Context {
+            scan,
+            disk: None,
+            cleanable: None,
+        };
+        terminal
+            .draw(|frame| screen.draw(frame, frame.area(), &context))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let cells: Vec<&str> = buffer
+            .content()
+            .iter()
+            .map(ratatui::buffer::Cell::symbol)
+            .collect();
+        let index = cells
+            .windows(text.chars().count())
+            .position(|window| window.concat() == text)
+            .expect("text should be on screen");
+        buffer.content()[index].fg
+    }
+
+    #[test]
+    fn sizes_and_ages_are_colored() {
+        let scan = done();
+        let mut large = LargeFiles::new();
+
+        // The first file is selected, so the second shows its own colors.
+        assert_eq!(color_of(&mut large, &scan, "300.0 MB"), Color::Reset);
+        assert_eq!(color_of(&mut large, &scan, "2 days ago"), Color::DarkGray);
+
+        press(&mut large, &scan, KeyCode::Down);
+        assert_eq!(color_of(&mut large, &scan, "2.0 GB"), Color::Yellow);
+        assert_eq!(color_of(&mut large, &scan, "1 year ago"), Color::Magenta);
+        // The selected row is cyan all the way across.
+        assert_eq!(color_of(&mut large, &scan, "300.0 MB"), Color::Cyan);
     }
 
     #[test]
