@@ -147,6 +147,14 @@ impl ValidatedPath {
     }
 }
 
+/// Whether neet is running as root, such as under `sudo`. neet refuses to:
+/// it would find root's home folder instead of yours, and cleanup never needs
+/// admin rights.
+#[must_use]
+pub fn running_as_root() -> bool {
+    rustix::process::geteuid().is_root()
+}
+
 /// The cleanup roots and protected paths for one home folder
 #[derive(Debug, Clone)]
 pub struct CleanupRoots {
@@ -719,5 +727,10 @@ mod tests {
             roots.validate_again(&validated).expect("still passes"),
             validated
         );
+    }
+
+    #[test]
+    fn tests_do_not_run_as_root() {
+        assert!(!super::running_as_root());
     }
 }
