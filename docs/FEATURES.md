@@ -28,7 +28,7 @@
 ## Where Things Stand
 
 * Parts of the scanner exist in the `neet-core` library.
-* The `neet` program itself is still empty. It has no screens, no cleanup, and no Mac settings changes yet.
+* The `neet` program opens a Home menu. It has no working feature screens, no cleanup, and no Mac settings changes yet.
 * Nothing below is available to use until it is connected to the program.
 
 ## Status And Phases
@@ -232,9 +232,9 @@
 
 | Feature | What It Does | Phase | Status |
 | --- | --- | --- | --- |
-| Home menu | Opens on a Home screen with ASCII art and a menu of features, moved with the arrow keys. `Enter` opens a screen and `Esc` goes back. Works with Vim keys outside text fields. Features not built yet show dimmed. | P1 | Planned |
-| Help | Press `?` for help on the current screen and the selected rule. | P1 | Planned |
-| Command line | Run `neet` to open it. The only options are `--help` and `--version`. Cleanup happens only inside the interface. | P1 | Planned |
+| Home menu | Opens on a Home screen with ASCII art and a menu of features, moved with the arrow keys. `Enter` opens a screen and `Esc` goes back. Works with Vim keys outside text fields. Features not built yet show dimmed. The art is a placeholder, and the status panel does not show the disk or scan yet. | P1 | In Progress |
+| Help | Press `?` for help on the current screen and the selected rule. Screen help works. Rule help waits on Clean. | P1 | In Progress |
+| Command line | Run `neet` to open it. The only options are `--help` and `--version`. Cleanup happens only inside the interface. | P1 | Built |
 | Install with Homebrew or Cargo | Packages for both. Neither is published yet. | P1 | Planned |
 | macOS support | macOS 13 or later, on Apple silicon and Intel. CI checks that the code builds for both, but release builds still need testing on real Macs. | P1 | Planned |
 | One program | The disk and cleanup features ship as one program. Later features may call macOS tools or your editor. | P1 | Planned |
@@ -243,7 +243,7 @@
 ## Safety And Recovery
 
 * These rules apply to every feature above.
-* None of them are built yet, because the program is still empty.
+* None of them are built yet, because no feature screen that changes anything exists yet.
 
 | Safeguard | What It Does | Phase | Status |
 | --- | --- | --- | --- |

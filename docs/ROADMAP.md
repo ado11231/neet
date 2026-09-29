@@ -3,7 +3,7 @@
 * What neet does today, what comes next, and how each step is accepted.
 * For anyone tracking progress or picking the next piece of work.
 * A milestone is only marked complete after its checks pass.
-* Last updated September 28, 2026. The 15 library tests pass. The program's `main` is still empty.
+* Last updated September 28, 2026. The 15 library tests and 9 interface tests pass. The program opens the Home screen.
 * Features and their status live in [FEATURES.md](FEATURES.md). Screens live in [INTERFACE.md](INTERFACE.md).
 
 ## Contents
@@ -21,7 +21,7 @@
 | --- | --- | --- | --- | --- |
 | M0 | Workspace, licenses, formatting, linting, and CI | Foundation | P1 | Complete |
 | M1 | A full scan of the home folder | Disk analysis | P1 | In Progress |
-| M2 | Home screen, disk browser, and keyboard keys | Disk analysis, interface | P1 | Planned |
+| M2 | Home screen, disk browser, and keyboard keys | Disk analysis, interface | P1 | In Progress |
 | M3 | Rules, risk tiers, and dry run plans in Clean | Cleanup, interface | P1 | Planned |
 | M4 | Review, path checks, open app checks, and moving to the Trash | Cleanup, safety | P1 | Planned |
 | M5 | Packages, testing on real Macs, and the P1 release checks | Distribution | P1 | Planned |
@@ -61,13 +61,20 @@
   4. List any other disks it skipped, and mark incomplete scans.
 * **Done when** tests with temporary folders cover links, files with empty parts, nested folders, permissions, and other disks.
 
-## Planned
-
 ### M2: Home And Disk
 
-* The Home screen with its menu and status panel, the column browser, size bars, sorting, navigation, progress, warnings, disk gauge, and contextual help.
-* The program entry point and its `--help` and `--version` options.
+* **Built:**
+  1. `neet --help` and `neet --version`. Any other option is refused.
+  2. The interface loop, the screen stack, and `Esc`, `q`, and `?` on every screen.
+  3. The Home screen: art, menu, and info panel. Unbuilt features are dimmed and skipped.
+  4. Tests for the menu, the screen stack, and the Home layout at wide and narrow sizes.
+* **Remaining:**
+  1. The final ASCII art.
+  2. Disk and scan status in the Home panel.
+  3. The column browser, size bars, sorting, navigation, progress, warnings, and disk gauge.
 * **Done when** the screen keeps responding during a scan, and marks incomplete scans.
+
+## Planned
 
 ### M3: Rules
 

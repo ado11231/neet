@@ -2,7 +2,7 @@
 
 * How neet is built: its parts, how data moves between them, and what each file does.
 * For people working on the code. To learn what neet does, read [FEATURES.md](FEATURES.md).
-* Much of this is the planned design. Today only the walker, size helpers, and folder tree exist. The cleanup files are empty, and the program has an empty `main`.
+* Much of this is the planned design. Today only the walker, size helpers, and folder tree exist. The cleanup files are empty. The program opens the Home screen, but Disk and Clean are placeholders.
 * For progress, read [ROADMAP.md](ROADMAP.md). For the planned screens, read [INTERFACE.md](INTERFACE.md).
 
 ## Contents
@@ -191,7 +191,7 @@ selected rules
 | --- | --- | --- |
 | Walking folders | `walkdir` | In use |
 | Temporary folders in tests | `tempfile` | In use |
-| Terminal screens | `ratatui` with Crossterm | Candidate |
+| Terminal screens | `ratatui` with Crossterm | In use |
 | Faster walking | `ignore` and `rayon` | Candidate |
 | Reading TOML | `serde` and `toml` | Candidate |
 | Reading `SKILL.md` front matter | A small YAML reader, or a hand written parser | Candidate |
@@ -221,6 +221,12 @@ selected rules
 | `crates/neet-core/src/rules.rs` | Empty. Will read and check rules. |
 | `crates/neet-core/src/safety.rs` | Empty. Will hold `validate_deletable` and `ValidatedPath`. |
 | `crates/neet-core/src/clean.rs` | Empty. Will plan cleanups and move items to the Trash. |
-| `crates/neet/Cargo.toml` | The program's dependencies: `neet-core`. |
-| `crates/neet/src/main.rs` | The program's entry point. An empty `main` for now. Will open the terminal interface. |
+| `crates/neet/Cargo.toml` | The program's dependencies: `neet-core` and `ratatui`. |
+| `crates/neet/src/main.rs` | The program's entry point. Handles `--help` and `--version`, then opens the terminal interface. |
+| `crates/neet/src/ui/mod.rs` | The interface loop. Draws the screen, waits for a key, and passes it on. |
+| `crates/neet/src/ui/app.rs` | `App`, the `Screen` trait, `Action`, and the screen stack. Handles `Esc`, `q`, and `?` for every screen. Has tests. |
+| `crates/neet/src/ui/home.rs` | The Home screen: art, menu, and info panel. Has tests. |
+| `crates/neet/src/ui/art.rs` | The ASCII art. A placeholder wordmark for now. |
+| `crates/neet/src/ui/help.rs` | The help box opened by `?`, drawn over the current screen. |
+| `crates/neet/src/ui/placeholder.rs` | Stands in for Disk and Clean until they are built. |
 | `.github/workflows/ci.yml` | Checks formatting, runs Clippy and tests, and runs `cargo check` for Apple silicon and Intel targets. |

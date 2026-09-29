@@ -6,7 +6,7 @@
 
 * **Status:** early development. Nothing below works yet.
 * The library can walk folders, measure size on disk, count hard links once, and build a folder tree. These are not yet joined into a full scan.
-* The program itself is still empty. Progress is in the [roadmap](docs/ROADMAP.md).
+* The program opens a Home menu, but the Disk and Clean screens are not built yet. Progress is in the [roadmap](docs/ROADMAP.md).
 
 **1. Install neet (Planned)**
 

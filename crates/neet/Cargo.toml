@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 neet-core = { path = "../neet-core" }
+ratatui.workspace = true
 
 [lints]
 workspace = true
