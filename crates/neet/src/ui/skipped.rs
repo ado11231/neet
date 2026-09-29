@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use neet_core::scan::Scan;
+use neet_core::scan::{Scan, ScanError};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::Rect;
@@ -30,6 +30,10 @@ fn display_path(root: &Path, path: &Path) -> String {
         Ok(rest) => format!("~/{}", rest.display()),
         Err(_) => path.display().to_string(),
     }
+}
+
+fn count(value: usize) -> String {
+    format::count(u64::try_from(value).unwrap_or(u64::MAX))
 }
 
 /// The app neet runs in, which is what Full Disk Access is given to. Reads
@@ -94,19 +98,37 @@ fn lines(scan: &Scan) -> Vec<Line<'static>> {
         return lines;
     }
 
-    if !scan.errors.is_empty() {
-        let count = u64::try_from(scan.errors.len()).unwrap_or(u64::MAX);
+    let path_of = |error: &&ScanError| {
+        error.path.as_deref().map_or_else(
+            || "Unknown path".to_string(),
+            |path| display_path(&root, path),
+        )
+    };
+    let (blocked, unreadable): (Vec<&ScanError>, Vec<&ScanError>) = scan
+        .errors
+        .iter()
+        .partition(|error| error.permission_denied);
+
+    // The reason is the same for every blocked path, so it is only in the heading.
+    if !blocked.is_empty() {
+        lines.push(heading(format!(
+            "Blocked by macOS ({})",
+            count(blocked.len())
+        )));
+        let mut paths: Vec<String> = blocked.iter().map(path_of).collect();
+        paths.sort();
+        lines.extend(paths.into_iter().map(Line::from));
+        lines.push(Line::default());
+    }
+
+    if !unreadable.is_empty() {
         lines.push(heading(format!(
             "Could not read ({})",
-            format::count(count)
+            count(unreadable.len())
         )));
-        for error in &scan.errors {
-            let path = error.path.as_deref().map_or_else(
-                || "Unknown path".to_string(),
-                |path| display_path(&root, path),
-            );
+        for error in &unreadable {
             lines.push(Line::from(vec![
-                Span::raw(path),
+                Span::raw(path_of(error)),
                 Span::raw(format!("  {}", error.message)).dark_gray(),
             ]));
         }
@@ -185,7 +207,6 @@ impl Screen for Skipped {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neet_core::scan::ScanError;
     use neet_core::tree::Tree;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
@@ -224,20 +245,30 @@ mod tests {
     #[test]
     fn lists_unreadable_paths_with_a_full_disk_access_hint() {
         let scan = done(
-            vec![ScanError {
-                path: Some(PathBuf::from("/Users/test/Library/Mail")),
-                message: "Operation not permitted (os error 1)".to_string(),
-                permission_denied: true,
-            }],
+            vec![
+                ScanError {
+                    path: Some(PathBuf::from("/Users/test/Library/Mail")),
+                    message: "Operation not permitted (os error 1)".to_string(),
+                    permission_denied: true,
+                },
+                ScanError {
+                    path: Some(PathBuf::from("/Users/test/Library/Broken")),
+                    message: "Input/output error (os error 5)".to_string(),
+                    permission_denied: false,
+                },
+            ],
             vec![PathBuf::from("/Users/test/Volumes/USB")],
         );
 
         let screen = render(&scan);
 
         assert!(screen.contains("Full Disk Access"));
-        assert!(screen.contains("Could not read (1)"));
+        assert!(screen.contains("Blocked by macOS (1)"));
         assert!(screen.contains("~/Library/Mail"));
-        assert!(screen.contains("Operation not permitted"));
+        assert!(!screen.contains("Operation not permitted"));
+        assert!(screen.contains("Could not read (1)"));
+        assert!(screen.contains("~/Library/Broken"));
+        assert!(screen.contains("Input/output error"));
         assert!(screen.contains("On other disks, not scanned (1)"));
         assert!(screen.contains("~/Volumes/USB"));
     }

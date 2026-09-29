@@ -75,8 +75,9 @@
 
 * A single scrolling list:
   1. If macOS blocked some folders, numbered steps to turn on Full Disk Access for the terminal app neet runs in. The app is named when neet can tell which it is, such as Terminal, iTerm, kitty, Ghostty, or Visual Studio Code.
-  2. Each folder the scan could not read, with the reason.
-  3. Folders on other disks, which the scan does not enter.
+  2. Folders macOS blocked, sorted, under one heading with their count.
+  3. Any other folder the scan could not read, with the reason.
+  4. Folders on other disks, which the scan does not enter.
 * Says so when nothing was skipped.
 
 | Key | Action |
