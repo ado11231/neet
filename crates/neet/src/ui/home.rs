@@ -173,7 +173,7 @@ impl Home {
             Line::from(entry.about),
             Line::default(),
         ];
-        lines.push(disk_line(disk));
+        lines.extend(disk_lines(disk));
         lines.extend(scan_lines(scan));
         let text = Text::from(lines);
         let info = Paragraph::new(text)
@@ -200,10 +200,11 @@ fn summary(label: &str, context: &Context) -> Option<String> {
 /// How many characters wide the disk gauge is.
 const GAUGE_WIDTH: usize = 16;
 
-/// A gauge of how full the disk is, from the disk's own totals.
-fn disk_line(disk: Option<DiskSpace>) -> Line<'static> {
+/// A gauge of how full the disk is, from the disk's own totals, then the
+/// free space on its own line, so neither wraps in a narrow panel.
+fn disk_lines(disk: Option<DiskSpace>) -> Vec<Line<'static>> {
     let Some(disk) = disk else {
-        return Line::from("Disk space could not be read.").dark_gray();
+        return vec![Line::from("Disk space could not be read.").dark_gray()];
     };
     let used = format::percent(disk.used(), disk.total);
     let gauge = Span::raw(format::bar(disk.used(), disk.total, GAUGE_WIDTH));
@@ -212,16 +213,15 @@ fn disk_line(disk: Option<DiskSpace>) -> Line<'static> {
         75..90 => gauge.yellow(),
         _ => gauge.cyan(),
     };
-    Line::from(vec![
-        gauge,
-        Span::raw(format!(" {used}% used")).bold(),
-        Span::raw(format!(
-            " · {} free of {}",
+    vec![
+        Line::from(vec![gauge, Span::raw(format!(" {used}% used")).bold()]),
+        Line::from(format!(
+            "{} free of {}",
             format::size(disk.available),
             format::size(disk.total)
         ))
         .dark_gray(),
-    ])
+    ]
 }
 
 /// A count of paths, such as `1 path` or `147 paths`

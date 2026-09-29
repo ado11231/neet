@@ -47,7 +47,8 @@
 |                                |  +-------------------------------------+
 |                                |  | Disk                                |
 |                                |  | Browse your folders by size.        |
-|                                |  | [########......] 83% used, 82 GB free|
+|                                |  | [########......] 83% used           |
+|                                |  | 82.0 GB free of 494.4 GB            |
 |                                |  | Scanning your home folder...        |
 +--------------------------------+  +-------------------------------------+
  up/down move . enter open . s skipped . ? help . q quit
@@ -60,7 +61,7 @@
   3. Features not built yet are dimmed and marked `soon`. The selection skips them.
 * **Right, bottom:** details for the selected row:
   1. What the feature does.
-  2. A 16 character gauge of how full the disk is, with free and total space. It turns yellow at 75% and red at 90%.
+  2. A 16 character gauge of how full the disk is, then free and total space on the next line. The gauge turns yellow at 75% and red at 90%.
   3. Scan progress, then the home folder's total size. If some folders could not be read, the size is marked `at least`, and a yellow line says how many were blocked by macOS or could not be read, and to press `s`.
 
 | Key | Action |
