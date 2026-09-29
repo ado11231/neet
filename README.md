@@ -1,57 +1,59 @@
 <h1 align="center">neet</h1>
 
-<p align="center">See what is filling your Mac's disk, and safely clear files your apps can make again. All from one terminal program.</p>
+<p align="center">macOS terminal for cleaning, optimizing and managing your mac</p>
 
-<br>
+<p align="center">
+  <a href="https://github.com/ado11231/neet/actions/workflows/ci.yml"><img src="https://github.com/ado11231/neet/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/macOS-13%2B-black?logo=apple" alt="macOS 13 or later">
+  <img src="https://img.shields.io/badge/Rust-1.88%2B-orange?logo=rust" alt="Rust 1.88 or later">
+  <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20or%20Apache%202.0-blue" alt="License: MIT or Apache 2.0"></a>
+</p>
 
-* **Status:** early development. Disk and Clean work. There is no release to install yet.
-* The library can scan a folder into a tree of sizes, counting hard links once. The program runs it when it opens, and shows progress on the Home screen.
-* The program opens a Home menu, and the Disk screen browses your folders by size. Clean shows what each cleanup rule found, and moves what you review and confirm to the Trash, where Put Back restores it. Progress is in the [roadmap](docs/ROADMAP.md).
+<p align="center">
+  <img src="docs/images/home.svg" alt="The neet Home screen, with the feature menu, disk gauge, and scan progress" width="860">
+</p>
 
-**1. Install neet (Planned)**
+## Install
+
+neet is not published yet. To build it from source, install [Rust](https://rustup.rs), then run:
 
 ```sh
-brew install neet
+cargo install --git https://github.com/ado11231/neet neet
 ```
 
-or:
+Homebrew and crates.io packages are planned for the first release.
 
-```sh
-cargo install neet
-```
-
-**2. Open It**
+## Use
 
 ```sh
 neet
 ```
 
-**3. Pick From The Menu**
-
-* neet opens on a Home screen with a menu. Move with the arrow keys and press `Enter` to open a screen. `Esc` goes back.
-* Home also shows how full the disk is, and how the scan is going.
+* neet opens on a menu and starts scanning your home folder in the background.
+* Use the arrow keys to move, `Enter` to open a screen, `Esc` to go back, `?` for help, and `q` to quit.
 
 | Screen | What It Does |
 | --- | --- |
-| Disk | Browses your folders by size. |
-| Clean | Moves files your apps can make again to the Trash, after you review every path. |
+| Disk | Browse your folders, largest first. |
+| Clean | Move caches and other files your apps can make again to the Trash. |
+| Large Files | Find your largest and oldest files. |
+| Remove App | Remove an app along with the files it left in your Library folder. |
 
-* Everything happens inside the program. The only options are `--version` and `--help`.
-* Later screens are proposed for startup items, SSH, dotfiles, your shell `PATH`, build folders in code projects, a breakdown of where disk space goes, AI coding tool files, and power settings. See the [feature list](docs/FEATURES.md).
+## Notes
 
-<br>
+* Works on macOS 13 or later, on Apple silicon and Intel.
+* Files go to the Trash, never deleted, so you can put them back.
+* You review and confirm everything before it moves.
+* Your personal folders, iCloud files, keychains, and SSH keys are never touched.
+* For a full scan, give your terminal Full Disk Access in System Settings.
 
-* Needs macOS 13 or later, on Apple silicon or Intel.
-* Some folders need Full Disk Access, a macOS permission. Without it, neet lists the folders it skipped.
-* Cleanup will never delete files for good. Everything goes to the Trash.
-* Cleanup will never touch your own folders, such as Documents, Desktop, Downloads, iCloud Drive, Keychains, and `~/.ssh`.
-* Licensed under [MIT](LICENSE-MIT) or [Apache 2.0](LICENSE-APACHE), at your choice.
+## Learn More
 
-<p align="center">
-  <a href="docs/README.md">Docs guide</a> ·
-  <a href="docs/FEATURES.md">Feature catalog</a> ·
-  <a href="docs/INTERFACE.md">Interface</a> ·
-  <a href="docs/SAFETY.md">Safety</a> ·
-  <a href="docs/ARCHITECTURE.md">Architecture</a> ·
-  <a href="docs/ROADMAP.md">Roadmap</a>
-</p>
+* [Features](docs/FEATURES.md): what neet does now, and what is planned.
+* [Interface](docs/INTERFACE.md): every screen, its layout, and its keys.
+* [Safety](docs/SAFETY.md): what neet may and may not change.
+* [Roadmap](docs/ROADMAP.md): what is done and what comes next.
+
+## License
+
+Licensed under either [MIT](LICENSE-MIT) or [Apache 2.0](LICENSE-APACHE), at your choice.

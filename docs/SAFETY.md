@@ -1,136 +1,109 @@
 # Safety
 
-* The rules neet follows whenever it changes a file or a setting, or reads a private one.
-* For anyone writing code or rules that change things on the Mac.
-* They cover every screen: Disk, Clean, Projects, SSH, Dotfiles, PATH, Startup, AI Tools, Settings, and Space Breakdown. They also cover bundled rules, your own rules, and custom cleaners.
-* These are requirements. The path check, cleanup roots, and protected paths are built in `neet-core`. The other safeguards are not built yet. For progress, read [ROADMAP.md](ROADMAP.md). For open questions, read [FEATURES.md](FEATURES.md#design-questions).
+* The rules neet follows before it changes, moves, or reads anything private.
+* For anyone changing neet's code or writing cleanup rules.
+* These rules live in the code, not in settings. A rule file can never loosen them.
 
 ## Contents
 
-1. [Key Terms](#key-terms)
+1. [The Promises](#the-promises)
 2. [How A Cleanup Runs](#how-a-cleanup-runs)
-3. [The Path Check](#the-path-check)
-4. [Protected Paths](#protected-paths)
-5. [What The Path Check Does](#what-the-path-check-does)
-6. [Cleanup Rules](#cleanup-rules)
-7. [Risk Tiers And Running Apps](#risk-tiers-and-running-apps)
+3. [Allowed Folders](#allowed-folders)
+4. [Protected Folders](#protected-folders)
+5. [The Path Check](#the-path-check)
+6. [The Check Before Moving](#the-check-before-moving)
+7. [Cleanup Rules](#cleanup-rules)
 8. [App Removal](#app-removal)
-9. [SSH And Dotfile Changes](#ssh-and-dotfile-changes)
-10. [AI Coding Tool Files](#ai-coding-tool-files)
-11. [Admin Rights](#admin-rights)
-12. [Settings And Startup Changes](#settings-and-startup-changes)
-13. [Tests](#tests)
+9. [Planned Features](#planned-features)
+10. [Tests](#tests)
 
-## Key Terms
+## The Promises
 
-| Term | Meaning |
-| --- | --- |
-| **Cleanup root** | A folder that cleanup may remove items from. The list is fixed in the Rust code. |
-| **Protected path** | A folder neet never touches, including everything inside it. |
-| **Symbolic link** | A file that points to another path. |
-| **Real path** | A path after following every symbolic link and `..`. |
-| **Device and inode** | Two numbers that identify a file, even if it is renamed. |
-| **Allow list** | A fixed list, in the Rust code, of the only files or settings a feature may change. |
-| **`sudo`** | Runs one command with admin rights, after asking for your password. |
+1. Nothing is deleted for good, and neet never empties the Trash.
+2. You see every path, and confirm, before anything moves.
+3. Cleanup only removes items inside a short, fixed list of folders.
+4. Your own files, cloud files, passwords, and keys are never touched.
+5. Anything that changed since you reviewed it is skipped.
+6. Cleanup never uses admin rights.
 
 ## How A Cleanup Runs
 
-1. Make a plan without changing anything. This is a dry run.
-2. Show every path the plan found.
-3. Show how many items there are, how much space they use, and that they go to the Trash.
+1. Find every item the selected rules cover. Nothing changes yet.
+2. Show every path.
+3. Show the number of items, their total size, and that they go to the Trash.
 4. Ask you to confirm.
-5. Check each path again.
-6. Move the items to the Trash.
+5. Check each item again, right before it moves.
+6. Ask Finder to move it to the Trash, so Put Back can restore it.
 
-* P1 never deletes files for good and never empties the Trash.
-* Items go to the Trash through Finder, so Finder's Put Back can restore each one to where it was. The first cleanup makes macOS ask whether neet may control Finder. The faster way that skips Finder is not used, because it loses Put Back.
-* Cleanup only happens in the terminal interface. There is no command or option that skips the path list or the question.
-* After a cleanup, neet shows how much space the cleaned items now take up in the Trash, and that it is only freed once you empty the Trash.
+* There is no command or option that skips the review or the question.
+* The first cleanup makes macOS ask whether your terminal may control Finder.
+* Afterwards, neet shows how much space the items take in the Trash. That space is freed when you empty the Trash.
 
-## The Path Check
+## Allowed Folders
 
-* Safety lives in the Rust code. TOML rules cannot change it.
-* Every path must pass one function before it can be moved:
+* Cleanup may only move items inside these folders, never a folder itself.
+* Each one holds files that apps can make again. None holds installed software or your own work.
 
-  ```rust
-  impl CleanupRoots {
-      fn validate_deletable(&self, path: &Path) -> Result<ValidatedPath, SafetyError>
-  }
-  ```
-
-* `CleanupRoots` is made for one home folder, so tests can use a temporary folder instead of your real one.
-
-* Only this function can make a `ValidatedPath`, so no other code can skip the check.
-* A path must be inside a cleanup root, and never the root itself.
-* P1 has exactly these cleanup roots. Each one is a folder whose contents apps can make again. A root never includes installed software or your own data.
-
-| Cleanup Root | Holds |
+| Folder | Holds |
 | --- | --- |
-| `~/Library/Caches` | App caches, including Homebrew, pip, pnpm, and Yarn caches. Each rule still names the folder it cleans. |
-| `~/Library/Containers/*/Data/Library/Caches` | Caches of sandboxed apps. Only the `Caches` folder inside each app's container, never anything else in the container. |
+| `~/Library/Caches` | App caches, including Homebrew, pip, pnpm, and Yarn. |
+| `~/Library/Containers/<app>/Data/Library/Caches` | Caches of apps that run in a sandbox. Only this folder in each app's container, nothing else in it. |
 | `~/Library/Logs` | App logs. |
-| `~/Library/Saved Application State` | Window state apps save to reopen where you left off. |
-| `~/Library/Developer/Xcode/DerivedData` | Xcode build output. |
-| `~/Library/Developer/Xcode/iOS DeviceSupport` | Debug files Xcode copies from connected devices. |
+| `~/Library/Saved Application State` | Windows that apps reopen where you left off. |
+| `~/Library/Developer/Xcode/DerivedData` | Xcode build files. |
+| `~/Library/Developer/Xcode/iOS DeviceSupport` | Files Xcode copies from connected devices. |
 | `~/Library/Developer/CoreSimulator/Caches` | Simulator caches. Never the simulators themselves. |
 | `~/.npm/_cacache` | The npm download cache. |
-| `~/.cargo/registry/cache` | Downloaded Rust crate archives. |
-| `~/.cache/pip` | The pip cache, when pip is set to keep it here instead of `~/Library/Caches`. |
+| `~/.cargo/registry/cache` | Downloaded Rust packages. |
+| `~/.cache/pip` | The pip cache, when pip keeps it here. |
 
-* In the Containers root, `*` stands for exactly one folder, an app's container. The path check handles it. It is not a rule pattern.
-* Tool folders such as `~/.rustup`, `~/.pyenv`, `~/.m2`, and the rest of `~/.cargo` hold installed software or downloads you may need offline, so they are not roots.
-* Mail download caches live in `~/Library/Containers/com.apple.mail/Data/Library/Mail Downloads`, outside the Containers root. They are not a root until that exact folder is reviewed. See [Design Questions](FEATURES.md#design-questions).
-* System logs have no root. Their locations, and a way to clean them without admin rights, are not chosen yet.
-* Adding a root needs a change to this table and to the Rust code, in the same change.
-* A rule cannot add a cleanup root.
-* App removal does not add apps as a cleanup root. It has its own, narrower check. See [App Removal](#app-removal).
-* `~/.claude` and `~/.codex` are not cleanup roots, so cleanup cannot touch them.
-* Project build folders, such as `target/` and `node_modules/`, are not cleanup roots. The proposed Projects screen cannot remove anything until its [design question](FEATURES.md#design-questions) is settled and this doc says how. Any answer must keep refusing everything else in the protected paths, and must refuse any folder Git does not ignore.
+* Adding a folder needs a change to this table and to the code, together.
+* A rule can never add a folder.
+* App removal has its own, narrower list. See [App Removal](#app-removal).
 
-## Protected Paths
+## Protected Folders
 
-* Cleanup always refuses these, and everything inside them:
+* neet refuses these, and everything inside them:
 
 | Path | Why |
 | --- | --- |
-| `/System`, `/usr` | macOS system files. |
-| `/Library` itself | Shared by apps and services. |
+| `/System`, `/usr`, `/Library` | macOS and shared system files. |
 | Your home folder itself | Far too broad. |
 | `~/Documents`, `~/Desktop`, `~/Downloads` | Your own files. |
 | `~/Library/Mobile Documents`, `~/Library/CloudStorage` | iCloud and other cloud files. |
 | `~/Library/Keychains`, `~/.ssh` | Passwords and keys. |
-| Any `.git` folder | Repository history. |
-| `~/Library/Developer/Xcode/Archives` | Archived builds with the debug symbols of apps you shipped. They cannot be made again. |
+| Any `.git` folder | Project history. |
+| `~/Library/Developer/Xcode/Archives` | Builds of apps you shipped. They cannot be made again. |
 | The top folder of any disk | Far too broad. |
 
-* Folders inside `/Library` are not P1 targets. Adding one later needs a safety review and a change to the Rust code.
-* SSH and Dotfiles have separate, narrow allow lists for changing files where they are. They never give cleanup access to protected paths.
+## The Path Check
 
-## What The Path Check Does
+* Every item must pass this check before it can be shown for review. It:
+  1. Refuses empty and relative paths, and `..` parts.
+  2. Follows any links in the folders above the item, to find where it really is. The item itself is judged as it is, so a link is judged as a link.
+  3. Refuses anything protected.
+  4. Requires the item to be inside an allowed folder, and not the folder itself.
+  5. Refuses a link, unless it leads somewhere inside the same allowed folder that is not protected.
+  6. Records the item's real path and its identity on disk, which stays the same even if it is renamed.
+* Only this check, and the one for [App Removal](#app-removal), can approve an item. No other code can skip them.
+* Links are never moved. Finder might move what a link points to instead of the link.
 
-1. Refuses empty paths, relative paths, and the top folder of any disk.
-2. Refuses any path with a `..` part, or a name that is not valid `UTF-8`. APFS only allows `UTF-8` names, so real files are not affected.
-3. Uses your real home folder, after following any links to it.
-4. Follows every link in the folders above the item, on disk. The item itself is judged as it is, so a link is judged as a link.
-5. Refuses protected paths, and anything with a `.git` part.
-6. Confirms the path is inside a cleanup root, and is not the root itself.
-7. If the item is a symbolic link, refuses it unless it leads somewhere inside the same root that is not protected. A broken link is refused.
-8. Saves the real path, its root, and its device and inode.
+## The Check Before Moving
 
-* Right before moving an item, neet checks its real path, device, and inode again. If anything changed, it skips that item.
-* Right before moving an item, neet also checks again that the rule's apps are closed, and that nothing inside the item changed within the rule's minimum age.
-* Symbolic links are left in place, even ones that lead somewhere inside their root. Finder may act on what a link leads to rather than the link, so neet never hands it one.
-* If neet cannot tell whether an app is open, it treats the app as open.
-* If neet cannot be sure a file is the same one you reviewed, it skips it.
-* **Known gap:** moving to the Trash through Finder takes a path, not an open file. Between the last check and the move, a very short window remains in which a path could be swapped for a link. neet checks right before each move to keep that window as small as possible. Closing it fully would need a way of moving files that macOS does not offer for the Trash.
-* Any other case macOS cannot protect against must be written down here before M4 is done.
+* Right before each item moves, neet checks that:
+  1. The item still passes the same check that approved it.
+  2. Its real path and identity on disk are unchanged.
+  3. The apps its rule needs closed are still closed.
+  4. Nothing inside it changed more recently than its rule allows.
+* If any check fails, or neet cannot be sure, the item is skipped and listed with the reason.
+* If neet cannot tell whether an app is open, it treats it as open.
+* **Known gap:** Finder moves a path, not an open file. A very short moment remains between the last check and the move. Checking right before each move keeps it as short as possible.
 
 ## Cleanup Rules
 
-* Bundled rules live in `crates/neet-core/rules/` and are built into the program. They sit inside the crate so `cargo install` includes them.
-* Your own rules live in `~/.config/neet/rules/`, one or more `.toml` files. A missing folder is fine.
-* A rule with a problem is left out and reported. It never stops the other rules from loading.
-* Your rule can replace a bundled rule by using the same `id`. It still goes through the same Rust checks.
+* Built in rules ship inside neet. Your own rules go in `~/.config/neet/rules/`, as `.toml` files.
+* A rule with a mistake is left out and listed on the Clean screen. The other rules still load.
+* Your rule replaces a built in rule with the same `id`.
 
 ```toml
 [[rule]]
@@ -148,75 +121,43 @@ min_age_days = 0
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `id` | Yes | Lowercase letters, numbers, and hyphens. |
-| `name` | Yes | The name shown in the Clean screen. |
+| `name` | Yes | The name on the Clean screen. |
 | `category` | Yes | `developer`, `package`, `application`, `browser`, `logs`, or `system`. |
-| `tier` | Yes | `safe`, `caution`, or `expert`. |
-| `paths` | Yes | Full paths. `~` may only be used at the start. |
+| `tier` | Yes | The risk level: `safe`, `caution`, or `expert`. |
+| `paths` | Yes | Full paths. `~` only at the start. `*` matches any name within one folder, and only after the allowed folder part. |
 | `description` | Yes | What the files are, and what happens when they are removed. |
 | `regenerates` | No | Whether the app makes the files again. |
-| `requires_quit` | No | The IDs of apps that must be closed first. |
-| `min_age_days` | No | Skip files changed within this many days. |
+| `requires_quit` | No | Bundle IDs of apps that must be closed first. |
+| `min_age_days` | No | Skip anything changed within this many days. A folder counts as changed when anything inside it changed. |
 
-* neet refuses unknown fields, patterns it does not support, and fixed paths that are not safe.
-
-### Path Patterns
-
-* The only pattern is `*`. It matches any name within one folder level, such as `DerivedData/*` or `Caches/com.example.*`.
-* Not supported: `**`, `?`, `[...]`, and `{a,b}`.
-* A `*` may only appear after the cleanup root part of the path. `~/Library/Caches/*/data` is allowed, but `~/Library/*/Caches` is not.
-* Every path a pattern matches must pass the path check, like any other path.
-
-### Your Own Rules
-
-* Your rules may target anything inside the cleanup roots, and nothing outside them.
-* They are never selected from the start. A `safe` tier in your rule is treated as `caution`.
-* A rule with the same `id` as a bundled rule replaces it, under these same limits.
-
-### Minimum Age
-
-* `min_age_days` compares against the newest change anywhere inside an item. A folder counts as changed when any file inside it changed, not only when entries were added or removed.
-* If neet cannot read the times of everything inside, it skips the item.
-* Every path a pattern matches is checked again. Matching nothing is fine.
-* Never call files junk or useless without saying why they are safe to remove.
-* Before adding a rule:
-  1. Run the rule and safety tests.
-  2. Read every path its dry run finds.
-  3. Write down the macOS and app versions you tested with.
-
-## Risk Tiers And Running Apps
-
-| Tier | How It Is Selected | Why |
-| --- | --- | --- |
-| `safe` | Already selected. | The files come back, and the only cost is time. |
-| `caution` | You select it. | You may need to download, index, or sign in again. |
-| `expert` | You select it and type a confirmation. | The files may not exist anywhere else. |
-
-* A tier never skips a check or the question.
-* neet checks the apps in `requires_quit` when it makes the plan, and again before moving files. If one of them opened in between, its items are skipped.
-* Custom cleaners, such as Docker or simulator cleanup, may use the app's own tool. They still show a plan, and go through the same checks and question.
-* A cleaner whose tool cannot be undone the way the Trash can is not allowed. Its targets, and how to recover from it, must be settled first.
+* neet refuses unknown fields, any pattern other than `*`, and any path outside the allowed folders.
+* Your own rules never start selected. A `safe` level in your rule counts as `caution`.
+* Before adding a built in rule:
+  1. Run the tests.
+  2. Read every path it finds on a real Mac.
+  3. Write down the macOS and app versions you checked.
 
 ## App Removal
 
-* Settled September 29, 2026. App removal does not widen the cleanup roots. It has its own check, `validate_app_removal`, which is the only other way to make a `ValidatedPath`.
-* It follows the same steps as a cleanup: plan, show every path, ask, check each path again, then move it to the Trash through Finder.
+* App removal uses its own check, not the allowed folders. It follows the same review, question, check before moving, and Trash steps as a cleanup.
 
 ### Which Apps
 
-* Only a `.app` folder directly inside `/Applications` or `~/Applications`. Apps in subfolders, such as `/Applications/Utilities`, are refused.
+* Only an app directly inside `/Applications` or `~/Applications`.
 * Refused:
-  1. Apple's own apps, whose bundle ID starts with `com.apple.`.
-  2. Symbolic links, such as `/Applications/Safari.app`, which leads into the system.
-  3. An app without a readable bundle ID in its `Info.plist`.
-  4. An app that is open. neet checks when you open it, and again right before each move.
-* An app owned by another user, such as one from the App Store, makes Finder ask for your password, as it does when you drag it to the Trash. neet itself never uses `sudo`.
+  1. Apple's apps, whose bundle ID starts with `com.apple.`.
+  2. Links, such as `/Applications/Safari.app`.
+  3. Apps in subfolders, such as `/Applications/Utilities`.
+  4. Apps without a bundle ID neet can read.
+  5. Apps that are open, checked when you open one and again before each move.
+* An app owned by another user, such as one from the App Store, makes Finder ask for your password. neet never uses `sudo`.
 
-### Which Related Files
+### Which Files
 
-* Only direct children of these folders in `~/Library`, found by exact name. No partial or fuzzy matches.
-* `<id>` is the app's bundle ID, such as `com.hnc.Discord`. `<name>` is the app's file name without `.app`, or its `CFBundleName`.
+* Only items directly inside these folders in `~/Library`, found by exact name. Capital letters do not matter, as on the Mac's disk. Nothing partial.
+* `<id>` is the app's bundle ID, such as `com.hnc.Discord`. `<name>` is the app's name, such as `Discord`.
 
-| Folder In `~/Library` | Matches | Selected At The Start | Marked |
+| Folder | Name | Starts Selected | Note |
 | --- | --- | --- | --- |
 | The app itself | | Yes | |
 | `Caches` | `<id>` | Yes | |
@@ -224,107 +165,57 @@ min_age_days = 0
 | `Saved Application State` | `<id>.savedState` | Yes | |
 | `HTTPStorages` | `<id>`, `<id>.binarycookies` | Yes | |
 | `WebKit` | `<id>` | Yes | |
-| `Application Support` | `<id>` | No | May be your data |
-| `Containers` | `<id>` | No | May be your data |
-| `Preferences` | `<id>.plist` | No | Settings |
-| `Group Containers` | `group.<id>`, or a 10 character team ID then `.<id>` | No | Shared with other apps |
-| `LaunchAgents` | `<id>.plist` | No | Starts on its own |
-| `Application Support`, `Logs` | `<name>` | No | Matched by name |
+| `Application Support` | `<id>` | No | may be your data |
+| `Containers` | `<id>` | No | may be your data |
+| `Preferences` | `<id>.plist` | No | settings |
+| `Group Containers` | `group.<id>`, or a 10 character team ID then `.<id>` | No | shared with other apps |
+| `LaunchAgents` | `<id>.plist` | No | starts on its own |
+| `Application Support`, `Logs` | `<name>` | No | matched by name |
 
-* You can select anything listed before the review. Nothing outside this table is ever listed.
-* A related item that is a symbolic link is left in place.
-* The protected paths still apply. A match inside one is refused.
+* You can select anything listed. Nothing outside this table is ever listed.
+* Links are refused, whatever they point to.
+* Protected folders still apply.
 
-### The Check
+## Planned Features
 
-* `validate_app_removal` follows the same steps as the path check, with these changes:
-  1. The item must be a `.app` folder directly inside `/Applications` or `~/Applications`, or a direct child of one of the folders in the table above.
-  2. Symbolic links are refused, whatever they lead to.
-  3. It saves which check made the `ValidatedPath`, so the check right before the move is the same one.
-
-## SSH And Dotfile Changes
-
-* These change files where they are, so they do not use `ValidatedPath` or the Trash. They have their own allow list instead.
-
-| Feature | May Change |
-| --- | --- |
-| Dotfile editing | Only the files listed in the Dotfiles screen. |
-| SSH permissions | `~/.ssh` and the files directly inside it. |
-| Known hosts | `~/.ssh/known_hosts`, only through `ssh-keygen -R`. |
-| Agent keys | Nothing on disk. `ssh-add` only changes the running agent. |
-| PATH changes | Only the shell files in the Dotfiles screen's Shell group. Never `/etc/paths` or `/etc/paths.d`. |
-
-* Every change must:
-  1. Save the old content or permissions first, so it can be undone.
-  2. Refuse symbolic links that lead out of your home folder.
-  3. Write to a temporary file in the same folder, then swap it in, so a crash never leaves half a file.
-* Cleanup can still never touch `~/.ssh`.
-* PATH changes follow the same steps as a dotfile edit: backup, change list, syntax check, then keep or restore.
-* To show program versions, the PATH screen runs only programs on a fixed list, with a fixed version option. It never runs an unknown program.
-* neet never reads what is inside a private key. Key details come from `ssh-keygen`.
-* Exports:
-  1. Never include private keys, `~/.netrc`, `~/.aws/credentials`, `~/.npmrc`, or `~/.pypirc`.
-  2. Show you anything that looks like a token or password before writing the archive.
-* Detection can miss secrets. Exports must be called reviewed exports, never promised to be free of secrets.
-
-## AI Coding Tool Files
-
-* This view only reads files. It never edits, moves, or deletes anything.
-* It may read only:
-  1. The settings files `~/.claude/settings.json` and `~/.codex/config.toml`.
-  2. The instruction files `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`.
-  3. `SKILL.md` files, and the names of the other files beside them, in each tool's `skills` folder, its plugins, and project skill folders.
-* It never opens sign in files, such as `~/.codex/auth.json`.
-* It never opens chat history, session logs, or databases, such as `history.jsonl`, `sessions`, and `.sqlite` files.
-* It refuses symbolic links that lead out of the folder it is reading.
-
-## Admin Rights
-
-* neet never runs as root. If you start it with `sudo`, it stops and explains why: it would find root's home folder instead of yours.
-* A change that needs admin rights runs one command with `sudo`, after showing you that command.
-* The terminal screen pauses while `sudo` asks for your password, then comes back.
-* Cleanup never uses `sudo`.
-* The Space Breakdown screen only reads. It never deletes snapshots, and never uses `sudo`.
-
-## Settings And Startup Changes
+* Later features change files or settings in place, not through the Trash. Each has a fixed list of what it may change.
 
 | Feature | May Change | How |
 | --- | --- | --- |
-| Power mode | Low Power Mode and High Power Mode, for battery and charger | `sudo pmset` |
-| Graphics switching | `gpuswitch` | `sudo pmset` |
-| Wake settings | `womp`, `powernap`, `tcpkeepalive` | `sudo pmset` |
-| Refresh rate | Which mode a connected display uses | CoreGraphics |
-| Startup items | Whether a login item, launch agent, or launch daemon runs | `launchctl` or the login item list, with `sudo` for launch daemons |
+| Dotfiles | Only the listed settings files. | Edit with a backup |
+| Shell PATH | Only the shell files among the dotfiles. Never `/etc/paths`. | Edit with a backup |
+| SSH permissions | `~/.ssh` and the files directly inside it. | Change permissions |
+| SSH known hosts | `~/.ssh/known_hosts` | `ssh-keygen -R` |
+| SSH agent | Nothing on disk. | `ssh-add` |
+| Startup items | Whether an item runs. Never its file. Never items in `/System/Library`. | `launchctl`, with `sudo` when needed |
+| Power settings | Low and High Power Mode, graphics switching, and three wake settings. | `sudo pmset` |
+| Refresh rate | The mode of a connected display. It switches back after 15 seconds unless you keep it. | CoreGraphics |
 
-* neet refuses any `pmset` setting not in this table.
-* Before each change, neet saves the old value in `~/.local/state/neet/`. Undo puts it back.
-* A new refresh rate switches back after 15 seconds unless you keep it.
-* Items in `/System/Library` are never changed.
-* Launch agent and launch daemon files are never edited or deleted. neet only changes whether they run.
+* Every change:
+  1. Shows what it will do first.
+  2. Saves the old value, in `~/.local/state/neet/`, so it can be undone.
+  3. Writes files by writing a new copy and swapping it in, so a crash never leaves half a file.
+  4. Refuses links that lead out of your home folder.
+* A command that needs admin rights is shown first, then run once with `sudo`.
+* neet itself never runs as root.
+* neet never reads the inside of a private key.
+* Dotfile exports leave out private keys and known secret files, and show anything that looks like a password before writing. This is a review, not a promise that nothing secret remains.
+* The AI tools view only reads settings, instruction files, and skills. It never opens sign in files, chat history, or databases.
 
 ## Tests
 
-* Use temporary folders to test:
-  1. `..` parts, doubled slashes, and paths outside cleanup roots.
-  2. A path that is a cleanup root, the home folder, or the top folder of a disk.
-  3. Protected paths written in other ways.
-  4. Symbolic links that lead out, and links swapped in after the review.
-  5. A device or inode that changed after the review.
-  6. Names that are not valid `UTF-8`, or that neet does not support.
-  7. Your own rules that try to reach outside the cleanup roots, and a `safe` tier in your own rule being treated as `caution`.
-  8. Rule patterns with `**`, `?`, `[...]`, `{a,b}`, or a `*` before the end of the cleanup root.
-  9. Paths inside a container but outside its `Caches` folder, and paths inside `~/Library/Developer/Xcode/Archives`.
-  10. A folder whose own time is old but that holds a recently changed file, skipped by `min_age_days`.
-  11. Dotfile edits outside the allow list, or through a symbolic link that leads out.
-  12. Permission fixes and dotfile edits undone from their backups.
-  13. Exports that contain a private key or something that looks like a token.
-  14. Starting neet as root.
-  15. `pmset` settings outside the allow list.
-  16. Settings and startup items undone from their saved values.
-  17. A refresh rate that is not kept switching back.
-  18. The AI tools view refusing sign in files, chat history, and links that lead out.
-  19. PATH changes to a file outside the Shell group, or through a symbolic link that leads out, and PATH changes undone from their backups.
-  20. Project build folders that Git does not ignore, that have no project file beside them, or that changed within the minimum age, all refused.
-  21. App removal refusing Apple apps, links, apps in subfolders, open apps, related files outside the table, and partial name matches.
-* Automated tests never use a real home folder, and never change real Mac settings.
-* The M4 manual test moves a harmless temporary file to the Trash, then restores it with Finder's Put Back. It passed on macOS 26.5 on September 29, 2026.
+* Automated tests use temporary folders. They never use your real home folder, and never change real Mac settings.
+* They cover:
+  1. `..` parts, doubled slashes, and paths outside the allowed folders.
+  2. Allowed folders themselves, the home folder, and the top of a disk.
+  3. Protected folders written in other ways.
+  4. Links that lead out, and links swapped in after the review.
+  5. Files replaced after the review.
+  6. Names neet does not support.
+  7. Your own rules reaching outside the allowed folders, and a `safe` level in your rule counting as `caution`.
+  8. Unsupported patterns, and `*` too early in a path.
+  9. Paths in a container outside its `Caches` folder, and Xcode archives.
+  10. An old folder holding a recently changed file.
+  11. App removal refusing Apple's apps, links, apps in subfolders, open apps, files outside the table, and partial names.
+* Before release, a harmless test item is moved to the Trash by hand and restored with Put Back. This passed on macOS 26.5.
+* Planned features add their own tests, for changes outside their lists, links that lead out, and undoing each change.
