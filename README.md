@@ -15,13 +15,23 @@
 
 ## Install
 
-neet is not published yet. To build it from source, install [Rust](https://rustup.rs), then run:
+The install script downloads a ready made program for your Mac, Apple silicon or Intel, and puts it in `~/.cargo/bin`:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/ado11231/neet/releases/latest/download/neet-installer.sh | sh
+```
+
+If you have [Rust](https://rustup.rs), you can build the published version instead:
+
+```sh
+cargo install neet
+```
+
+Or build the newest code from source:
 
 ```sh
 cargo install --git https://github.com/ado11231/neet neet
 ```
-
-A ready made program, an install script, and `cargo install neet` are planned for the first release.
 
 ## Use
 
