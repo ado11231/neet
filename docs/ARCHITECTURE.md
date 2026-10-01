@@ -49,7 +49,7 @@ neet/
 | `scan.rs` | Scans a folder into a tree on several threads. Does not follow links or enter other disks. Records unreadable folders, and reports progress. |
 | `tree.rs` | The scanned tree: each file and folder, its size, item count, and when it last changed. |
 | `size.rs` | The space a file really takes on disk, and counting a file with several names only once. |
-| `disk.rs` | How big the disk is, and how much is free. |
+| `disk.rs` | How big the disk is, how much is free, and the free space Finder shows, which adds purgeable space. |
 | `large.rs` | Finds files in the tree above a size, and optionally unchanged for a while. |
 | `rules.rs` | Reads and checks the built in rules and your own. |
 | `safety.rs` | The allowed folders, the protected folders, and the two path checks: one for cleanup, one for app removal. Only these checks can approve an item. |
@@ -125,6 +125,7 @@ selected rules, a picked item, or an app
 | --- | --- |
 | Walking folders on several threads | `jwalk` |
 | Disk size and free space | `rustix` |
+| The free space Finder shows | `osascript` asking macOS, part of macOS |
 | Terminal screens | `ratatui` |
 | Reading rules | `serde` and `toml` |
 | Temporary folders in tests | `tempfile` |

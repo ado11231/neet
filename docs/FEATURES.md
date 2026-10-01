@@ -31,7 +31,7 @@
 | --- | --- | --- |
 | Home folder scan | Scans your home folder in the background as soon as neet opens. It does not follow links, and does not enter other disks. | Done |
 | Real sizes | Measures the space each file really takes on disk, and counts a file with several names only once. | Done |
-| Disk gauge | Shows how full the disk is, from the disk's own totals, updated every 5 seconds. | Done |
+| Disk gauge | Shows how full the disk is, from the disk's own totals, updated every 5 seconds. Also says how much more free space Finder shows, and why. | Done |
 | Skipped folders | Lists the folders the scan could not read, with the reason, and explains how to turn on Full Disk Access. | Done |
 | Disk browser | Browses folders largest first, with a bar for each item's share of its folder. | Done |
 | Large Files | Lists files above a size you choose, optionally only ones unchanged for a while, and shows them in Disk. | Done |
@@ -169,6 +169,7 @@
 | **Risk level** | `safe`, `caution`, or `expert`. |
 | **Put Back** | The Finder command that returns a Trash item to where it was. |
 | **Full Disk Access** | A macOS permission that lets an app read protected folders. |
+| **Purgeable space** | Space macOS clears on its own when the disk runs low, such as iCloud files kept offline and old caches. Finder counts it as free. |
 | **APFS** | The file system macOS uses. Copied files can share space on it. |
 | **Dotfile** | A settings file in your home folder, such as `~/.zshrc`. |
 | **`PATH`** | The ordered list of folders your shell searches when you type a program name. |
