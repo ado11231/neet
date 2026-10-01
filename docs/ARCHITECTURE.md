@@ -142,7 +142,7 @@ selected rules, a picked item, or an app
 * CI runs on every pull request, and on `master` after each merge:
   1. Formatting, Clippy, and tests.
   2. A build with Rust 1.88.
-  3. A build for Apple silicon and for Intel.
+  3. The tests for Apple silicon and for Intel. The CI Macs are Apple silicon, so the Intel tests run under Rosetta, Apple's tool for running Intel programs.
 
 ## Branches And Releases
 
@@ -162,3 +162,5 @@ selected rules, a picked item, or an app
 | --- | --- |
 | `CARGO_REGISTRY_TOKEN` | Publishing to crates.io. |
 | `RELEASE_PLZ_TOKEN` | A GitHub token, so CI runs on the release pull request, and the tag starts the build. |
+
+* crates.io only accepts a release from an account with a verified email address. If publishing fails, verify it, then run the failed job again.

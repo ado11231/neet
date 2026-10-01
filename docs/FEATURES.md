@@ -21,7 +21,6 @@
 | Status | Meaning |
 | --- | --- |
 | **Done** | Works in the program, and is tested. |
-| **Planned** | Part of the first release, not finished yet. |
 | **Proposed** | An idea for after the first release. The design may still change. |
 
 ## Disk
@@ -108,7 +107,7 @@
 | Help | `?` lists the keys for the current screen. | Done |
 | Command line | `neet` opens the app. The only options are `--help` and `--version`. | Done |
 | Refuse to run as root | Stops with an explanation if started with `sudo`. | Done |
-| Install | Ready made programs for Apple silicon and Intel, an install script, and `cargo install neet`. | Planned |
+| Install | Ready made programs for Apple silicon and Intel, an install script, and `cargo install neet`. | Done |
 | Homebrew | `brew install neet`. | Proposed |
 
 ## Planned Features

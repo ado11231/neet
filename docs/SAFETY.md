@@ -218,4 +218,5 @@ min_age_days = 0
   10. An old folder holding a recently changed file.
   11. App removal refusing Apple's apps, links, apps in subfolders, open apps, files outside the table, and partial names.
 * Before release, a harmless test item is moved to the Trash by hand and restored with Put Back. This passed on macOS 26.5.
+* Removing an app owned by root was tried the same way, and Put Back restored it.
 * Planned features add their own tests, for changes outside their lists, links that lead out, and undoing each change.
