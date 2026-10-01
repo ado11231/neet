@@ -102,12 +102,13 @@
 
 * Make it easy to see how your disk space is used, and why neet's numbers can differ from Finder's.
 * Done before any later feature.
+* **Done:**
+  1. Free space and Finder. Home says how much free space Finder shows, and that it adds space macOS clears on its own, called purgeable space.
+  2. A wireless networks file in user logs. It is a copy macOS wrote once for diagnostics. your Mac connects without it, so the rule keeps offering it, and FEATURES explains it.
 
 | Item | Done When |
 | --- | --- |
-| Free space and Finder | Someone comparing neet with Finder can see why the free space differs. Finder adds space macOS can clear on its own, called purgeable space. |
 | Space breakdown | The parts add up to the disk's used space, with anything left shown as unexplained. Each part says what it is, in plain words. |
-| A wireless networks file in user logs | It is confirmed what writes `com.apple.wifi.syncable-networks.plist` in `~/Library/Logs`, and whether the user logs rule should skip it. |
 
 ## Later
 
