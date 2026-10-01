@@ -189,7 +189,7 @@ impl Screen for Notice {
     }
 
     fn hints(&self) -> &'static str {
-        "any key close"
+        "any key to close"
     }
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
