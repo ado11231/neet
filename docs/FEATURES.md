@@ -90,6 +90,7 @@
 | Saved window state | `~/Library/Saved Application State` | `caution` | | 30 days |
 
 * Playwright browsers do not come back on their own. Run `npx playwright install` to get them back.
+* User logs can include old copies of your wireless networks, which macOS once wrote to `~/Library/Logs` for diagnostics. Your saved networks are kept elsewhere, in a folder neet never touches, so moving these copies does not change how your Mac connects.
 
 ## Apps
 
