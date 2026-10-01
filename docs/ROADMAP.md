@@ -21,8 +21,9 @@
 | 4 | Cleanup Rules | Done |
 | 5 | Cleanup | Done |
 | 6 | Large Files And Remove App | Done |
-| 7 | First Release | Next |
-| 8 | Later Features | Later |
+| 7 | First Release | Done |
+| 8 | Clarity Pass | Next |
+| 9 | Later Features | Later |
 
 ## Done
 
@@ -78,35 +79,39 @@
   3. Apple's apps, links, and open apps are refused.
   4. An app owned by root, RunCat, moved to the Trash and came back with Put Back.
 
-## Next
-
 ### 7. First Release
 
-* **Ready:** release-plz keeps an open release pull request, and publishes to crates.io when it is merged. It stays open until this milestone is done.
-* **To do:** publish v0.1.0 by merging the release pull request.
-* **Done:**
-  1. neet refuses to run as root, and explains why.
-  2. dist builds ready made programs for Apple silicon and Intel on each release, with an install script.
-  3. Steps for turning on Full Disk Access, in the README.
-  4. Install steps in the README: the install script, `cargo install neet`, and building from source.
+* Published as v0.1.0, on crates.io and as a GitHub release.
+* neet refuses to run as root, and explains why.
+* dist builds ready made programs for Apple silicon and Intel on each release, with an install script.
+* The README explains how to install neet and turn on Full Disk Access.
+* release-plz publishes to crates.io when its release pull request is merged.
 * Homebrew is left for later. It needs its own tap repository until neet is known enough for Homebrew's main list.
-* **Done when** the tests and these checks pass on both kinds of Mac:
-  1. A known scan matches the sizes macOS reports.
-  2. Missing Full Disk Access gives clear warnings.
-  3. Every path the built in rules find has been read.
-  4. A test item moves to the Trash and comes back with Put Back.
-  5. neet shows every path and asks before changing anything.
 * **Checked** on Apple silicon with macOS 26.5:
   1. The scan matches `du` to within 0.0003% over 115.65 GB, and the disk gauge matches `diskutil`.
   2. With Full Disk Access off, Home says macOS blocked 147 paths and shows the home folder as at least 105.0 GB. Skipped names the terminal and lists the steps.
-  3. All 63 items and 189 skips the built in rules found were read. One question is left for the Clarity Pass: user logs offers a Wi-Fi network file.
+  3. All 63 items and 189 skips the built in rules found were read. One question moved to the Clarity Pass: user logs offers a file of wireless networks.
   4. Put Back passed in milestone 5.
   5. Clean, Disk, and Remove App all list every path in the review and ask before anything moves. `n` and `Esc` go back, and `d` refuses items outside the cleanup folders with a reason.
+  6. The install script, `cargo install neet`, and the Intel download were tried from the published release.
 * **Intel:** there is no Intel Mac to test on. CI runs every test as Intel code under Rosetta, and the Intel release build starts and opens Home under Rosetta. Rosetta is not a real Intel Mac, so a report from an Intel user is welcome.
+
+## Next
+
+### 8. Clarity Pass
+
+* Make it easy to see how your disk space is used, and why neet's numbers can differ from Finder's.
+* Done before any later feature.
+
+| Item | Done When |
+| --- | --- |
+| Free space and Finder | Someone comparing neet with Finder can see why the free space differs. Finder adds space macOS can clear on its own, called purgeable space. |
+| Space breakdown | The parts add up to the disk's used space, with anything left shown as unexplained. Each part says what it is, in plain words. |
+| A wireless networks file in user logs | It is confirmed what writes `com.apple.wifi.syncable-networks.plist` in `~/Library/Logs`, and whether the user logs rule should skip it. |
 
 ## Later
 
-### 8. Later Features
+### 9. Later Features
 
 * Each of these needs its [open question](FEATURES.md#open-questions) answered first.
 
@@ -117,6 +122,5 @@
 | Shell PATH | Changes stay within the shell files, and can be undone from their backups. |
 | AI tool files | Only the allowed files are read. Sign in files and chat history are never opened. |
 | Power and display | Setting names are checked on real Macs. A refresh rate you do not keep switches back. Every change can be undone. |
-| Space breakdown | The parts add up to the disk's used space, with anything left shown as unexplained. |
 | Project build folders | Only listed build folders that Git ignores are offered. |
 | Treemap and preferences | The treemap shows the scan without changing files, and preferences keep your choices. |
