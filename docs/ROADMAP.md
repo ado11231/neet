@@ -76,20 +76,19 @@
   1. The filters use the existing scan, and take about 4 ms on 1.4 million items.
   2. Anything that may be your data, settings, or shared starts unselected.
   3. Apple's apps, links, and open apps are refused.
-* **Not yet tried:** removing an app owned by another user, which makes Finder ask for a password.
+  4. An app owned by root, RunCat, moved to the Trash and came back with Put Back.
 
 ## Next
 
 ### 7. First Release
 
 * **Ready:** release-plz keeps an open release pull request, and publishes to crates.io when it is merged. It stays open until this milestone is done.
-* **To do:**
-  1. Try removing an app owned by another user.
-  2. The release checks below.
+* **To do:** publish v0.1.0 by merging the release pull request.
 * **Done:**
   1. neet refuses to run as root, and explains why.
   2. dist builds ready made programs for Apple silicon and Intel on each release, with an install script.
   3. Steps for turning on Full Disk Access, in the README.
+  4. Install steps in the README: the install script, `cargo install neet`, and building from source.
 * Homebrew is left for later. It needs its own tap repository until neet is known enough for Homebrew's main list.
 * **Done when** the tests and these checks pass on both kinds of Mac:
   1. A known scan matches the sizes macOS reports.
@@ -97,6 +96,13 @@
   3. Every path the built in rules find has been read.
   4. A test item moves to the Trash and comes back with Put Back.
   5. neet shows every path and asks before changing anything.
+* **Checked** on Apple silicon with macOS 26.5:
+  1. The scan matches `du` to within 0.0003% over 115.65 GB, and the disk gauge matches `diskutil`.
+  2. With Full Disk Access off, Home says macOS blocked 147 paths and shows the home folder as at least 105.0 GB. Skipped names the terminal and lists the steps.
+  3. All 63 items and 189 skips the built in rules found were read. One question is left for the Clarity Pass: user logs offers a Wi-Fi network file.
+  4. Put Back passed in milestone 5.
+  5. Clean, Disk, and Remove App all list every path in the review and ask before anything moves. `n` and `Esc` go back, and `d` refuses items outside the cleanup folders with a reason.
+* **Intel:** there is no Intel Mac to test on. CI runs every test as Intel code under Rosetta, and the Intel release build starts and opens Home under Rosetta. Rosetta is not a real Intel Mac, so a report from an Intel user is welcome.
 
 ## Later
 
