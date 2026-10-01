@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.0](https://github.com/ado11231/neet/releases/tag/neet-core-v0.1.0) - 2026-10-01
+## [0.1.0](https://github.com/ado11231/neet/releases/tag/neet-core-v0.1.0)
 
 ### Added
 
@@ -38,3 +38,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(core)* scan folders on several threads
 - cache builds, cancel replaced runs, and check the minimum Rust version
 - rename crates to neet
+
+Released 2026-10-01
