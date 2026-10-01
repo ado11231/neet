@@ -17,7 +17,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Gauge, Padding, Paragraph, Wrap};
 
 use super::app::{Action, Context, Screen};
-use super::clean::{Planned, count, display_path, skip_reason};
+use super::clean::{Planned, count, display_path, items, skip_reason};
 use super::format;
 
 /// A scrolling position that stops at the last line once drawn.
@@ -84,22 +84,27 @@ impl Review {
         }
     }
 
+    /// One group per name, so the files app removal finds in the same
+    /// folder are listed together.
     fn lines(&self) -> Vec<Line<'static>> {
         let home = &self.planned.home;
-        let mut lines = Vec::new();
+        let mut groups: Vec<(&str, Vec<&clean::PlanItem>)> = Vec::new();
         for rule in self.planned.plan.rules.iter().filter(|rule| rule.selected) {
+            match groups.iter_mut().find(|(name, _)| *name == rule.rule.name) {
+                Some((_, found)) => found.extend(&rule.items),
+                None => groups.push((&rule.rule.name, rule.items.iter().collect())),
+            }
+        }
+        let mut lines = Vec::new();
+        for (name, found) in groups {
+            let size = found.iter().map(|item| item.size).sum();
             lines.push(Line::from(vec![
-                Span::raw(rule.rule.name.clone()).bold(),
-                Span::raw(format!(
-                    "  {} items · {}",
-                    count(rule.items.len()),
-                    format::size(rule.size())
-                ))
-                .dark_gray(),
+                Span::raw(name.to_string()).bold().cyan(),
+                Span::raw(format!("  {} · {}", items(found.len()), format::size(size))).dark_gray(),
             ]));
-            for item in &rule.items {
+            for item in found {
                 lines.push(Line::from(vec![
-                    Span::raw(format!("{:>10}  ", format::size(item.size))),
+                    Span::raw(format!("{:>10}  ", format::size(item.size))).dark_gray(),
                     Span::raw(display_path(home, item.path.path())),
                 ]));
             }
@@ -113,8 +118,8 @@ impl Screen for Review {
     fn draw(&mut self, frame: &mut Frame, area: Rect, _context: &Context) {
         let plan = &self.planned.plan;
         let title = format!(
-            " Review: {} items, {} ",
-            count(plan.selected_count()),
+            " Review: {}, {} ",
+            items(plan.selected_count()),
             format::size(plan.selected_size())
         );
         let lines = self.lines();
@@ -212,8 +217,8 @@ impl Screen for Confirm {
         let plan = &self.planned.plan;
         let lines = vec![
             Line::from(format!(
-                "Move {} items, {}, to the Trash?",
-                count(plan.selected_count()),
+                "Move {}, {}, to the Trash?",
+                items(plan.selected_count()),
                 format::size(plan.selected_size())
             ))
             .bold(),
@@ -256,7 +261,7 @@ impl Screen for Confirm {
     }
 
     fn hints(&self) -> &'static str {
-        "y move · n back"
+        "y move to the Trash · n or esc back"
     }
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
@@ -365,8 +370,8 @@ impl Cleanup {
         let home = &self.planned.home;
         let mut lines = vec![
             Line::from(format!(
-                "Moved {} items to the Trash.",
-                count(outcome.moved.len())
+                "Moved {} to the Trash.",
+                items(outcome.moved.len())
             ))
             .bold()
             .green(),
@@ -381,8 +386,8 @@ impl Cleanup {
             lines.push(Line::default());
             lines.push(
                 Line::from(format!(
-                    "Skipped {} items, left where they were:",
-                    count(outcome.skipped.len())
+                    "Skipped {}, left where they were:",
+                    items(outcome.skipped.len())
                 ))
                 .yellow()
                 .bold(),
@@ -583,7 +588,7 @@ mod tests {
         let (_dir, planned) = planned();
         let screen = render(&mut Review::new(planned));
 
-        assert!(screen.contains("Review: 1 items"));
+        assert!(screen.contains("Review: 1 item,"));
         assert!(screen.contains("Xcode DerivedData"));
         assert!(screen.contains("~/Library/Developer/Xcode/DerivedData/App-abc"));
         assert!(!screen.contains("npm cache"));
@@ -599,7 +604,7 @@ mod tests {
             Action::Open(_)
         ));
         let mut confirm = Confirm::new(planned);
-        assert!(render(&mut confirm).contains("Move 1 items"));
+        assert!(render(&mut confirm).contains("Move 1 item,"));
         assert!(matches!(
             press(&mut confirm, KeyCode::Char('n')),
             Action::Back
@@ -617,7 +622,7 @@ mod tests {
         finish(&mut cleanup);
 
         let screen = render(&mut cleanup);
-        assert!(screen.contains("Moved 1 items to the Trash."));
+        assert!(screen.contains("Moved 1 item to the Trash."));
         assert!(screen.contains("Emptying the Trash frees that space"));
         assert!(matches!(cleanup.back(), Action::Home));
         assert!(!cleanup.is_dialog());
@@ -632,7 +637,7 @@ mod tests {
 
         let screen = render(&mut cleanup);
         assert!(screen.contains("Moved 0 items"));
-        assert!(screen.contains("Skipped 1 items"));
+        assert!(screen.contains("Skipped 1 item,"));
         assert!(screen.contains("com.apple.dt.Xcode is open"));
     }
 
@@ -650,5 +655,22 @@ mod tests {
 
         assert!(screen.contains("Review: 2 items"));
         assert!(screen.contains("npm cache"));
+    }
+
+    #[test]
+    fn rules_with_the_same_name_are_one_group() {
+        let (_dir, mut planned) = planned();
+        let planned_mut = Arc::get_mut(&mut planned).expect("only owner");
+        for rule in &mut planned_mut.plan.rules {
+            if !rule.items.is_empty() {
+                rule.selected = true;
+                rule.rule.name = "HTTPStorages".to_string();
+            }
+        }
+
+        let screen = render(&mut Review::new(planned));
+
+        assert_eq!(screen.matches("HTTPStorages").count(), 1);
+        assert!(screen.contains("HTTPStorages  2 items"));
     }
 }
