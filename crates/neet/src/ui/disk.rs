@@ -3,8 +3,8 @@ use std::cmp::Reverse;
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use neet_core::clean;
-use neet_core::safety::CleanupRoots;
+use neet_core::clean::{self, SkipReason};
+use neet_core::safety::{CleanupRoots, SafetyError};
 use neet_core::tree::{NodeId, NodeKind, Tree};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
@@ -360,11 +360,11 @@ pub(super) fn plan_cleanup(tree: &Tree, id: NodeId) -> Action {
     let home = tree.path(tree.root());
     let path = tree.path(id);
     let result = CleanupRoots::new(&home)
-        .map_err(|error| format!("the home folder could not be read: {error}"))
+        .map_err(|error| vec![format!("The home folder could not be read: {error}.")])
         .and_then(|roots| {
             clean::plan_path(&path, &roots, SystemTime::now())
                 .map(|plan| (plan, roots.home().to_path_buf()))
-                .map_err(|reason| skip_reason(&reason, None))
+                .map_err(|reason| refusal(&reason))
         });
     match result {
         Ok((plan, home)) => Action::Open(Box::new(Review::new(Arc::new(Planned {
@@ -372,19 +372,41 @@ pub(super) fn plan_cleanup(tree: &Tree, id: NodeId) -> Action {
             errors: Vec::new(),
             home,
         })))),
-        Err(reason) => Action::Open(Box::new(Notice::new(
-            "Cannot clean this",
-            vec![
-                Line::from(display_path(tree, id)).bold(),
-                Line::from(reason),
-                Line::default(),
-                Line::from(
-                    "Cleanup only moves items inside the cache, log, and build folders \
-                     listed in SAFETY.md.",
-                )
-                .dark_gray(),
-            ],
-        ))),
+        Err(why) => {
+            let mut lines = vec![Line::from(display_path(tree, id)).bold(), Line::default()];
+            lines.extend(why.into_iter().map(Line::from));
+            Action::Open(Box::new(Notice::new("neet will not move this", lines)))
+        }
+    }
+}
+
+/// Why an item picked in Disk cannot be cleaned, in plain sentences.
+fn refusal(reason: &SkipReason) -> Vec<String> {
+    match reason {
+        SkipReason::Refused(SafetyError::OutsideRoots) => vec![
+            "It is outside the folders neet cleans.".to_string(),
+            "neet only moves items inside cache, log, and build folders, such as \
+             ~/Library/Caches, ~/Library/Logs, and ~/.npm/_cacache."
+                .to_string(),
+        ],
+        SkipReason::Refused(SafetyError::IsRoot) => vec![
+            "It is a whole cleanup folder.".to_string(),
+            "Open it with → and pick an item inside it instead.".to_string(),
+        ],
+        SkipReason::Refused(SafetyError::Protected) => {
+            vec!["It holds your own files or keys, so neet never moves anything in it.".to_string()]
+        }
+        SkipReason::Refused(error) => vec![sentence(&error.to_string())],
+        other => vec![sentence(&skip_reason(other, None))],
+    }
+}
+
+/// `text` with a capital first letter and a full stop.
+fn sentence(text: &str) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => format!("{}{}.", first.to_uppercase(), chars.as_str()),
+        None => String::new(),
     }
 }
 
@@ -602,8 +624,22 @@ mod tests {
             let Action::Open(screen) = plan_cleanup(&tree, refused) else {
                 panic!("a refused item should open a notice");
             };
-            assert!(screen.hints().contains("any key close"));
+            assert!(screen.hints().contains("any key to close"));
         }
         assert!(dir.path().join("Library/Caches/app/file").exists());
+    }
+
+    #[test]
+    fn a_refusal_says_why_in_plain_sentences() {
+        let outside = refusal(&SkipReason::Refused(SafetyError::OutsideRoots));
+        assert_eq!(outside[0], "It is outside the folders neet cleans.");
+        assert!(outside[1].contains("~/Library/Caches"));
+        let root = refusal(&SkipReason::Refused(SafetyError::IsRoot));
+        assert!(root[1].contains("pick an item inside it"));
+        assert_eq!(
+            refusal(&SkipReason::Refused(SafetyError::Link)),
+            ["The path is a link."]
+        );
+        assert_eq!(refusal(&SkipReason::Link), ["A link, left in place."]);
     }
 }
