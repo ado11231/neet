@@ -86,5 +86,6 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      - name: Check target
-        run: cargo check --workspace --all-features --target ${{ matrix.target }}
+      # The runner is Apple silicon, so the Intel tests run under Rosetta.
+      - name: Test target
+        run: cargo test --workspace --all-features --target ${{ matrix.target }}
