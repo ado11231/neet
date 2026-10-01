@@ -468,7 +468,8 @@ mod tests {
             found,
             [roots.home().join("Library/Caches/com.example.one/data")]
         );
-        assert!(expand(&roots.home().join("Library/Caches/missing/*")).is_empty());
+        let found = expand(&roots.home().join("Library/Caches/missing/*"));
+        assert!(found.is_empty(), "{found:?}");
     }
 
     #[test]
