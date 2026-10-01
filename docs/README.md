@@ -19,6 +19,7 @@
 | [SAFETY.md](SAFETY.md) | What neet may change, what it must refuse, and how it checks. |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | How the code is organized, and how a scan and a cleanup run. |
 | [ROADMAP.md](ROADMAP.md) | What is done, what comes next, and when each step counts as finished. |
+| [Wiki](https://github.com/ado11231/neet/wiki) | Where to find each doc and section. It only links here, so the docs stay in one place. |
 
 ## Where Changes Go
 
@@ -29,6 +30,7 @@
 | Let neet change something new | [SAFETY.md](SAFETY.md), before writing the code |
 | Add or move a file | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Finish a piece of work | [ROADMAP.md](ROADMAP.md), and the status in [FEATURES.md](FEATURES.md) |
+| Add, rename, or remove a doc or a heading | The wiki sidebar and Home page, so their links still work |
 
 ## How To Write
 
