@@ -10,11 +10,12 @@
 2. [Home](#home)
 3. [Skipped](#skipped)
 4. [Disk](#disk)
-5. [Clean](#clean)
-6. [Review, Confirm, And Move](#review-confirm-and-move)
-7. [Large Files](#large-files)
-8. [Remove App](#remove-app)
-9. [Planned Screens](#planned-screens)
+5. [Quick Clean](#quick-clean)
+6. [Clean](#clean)
+7. [Review, Confirm, And Move](#review-confirm-and-move)
+8. [Large Files](#large-files)
+9. [Remove App](#remove-app)
+10. [Planned Screens](#planned-screens)
 
 ## Every Screen
 
@@ -37,10 +38,10 @@
 ```text
 +--------------------------------+  +- neet ------------------------------+
 |                                |  | > 1 Disk          412.2 GB used     |
-|                                |  |   2 Clean         ~8.8 GB found     |
-|                                |  |   3 Large Files                     |
-|              Art               |  |   4 Remove App                      |
-|                                |  |   5 Startup       soon              |
+|                                |  |   2 Quick Clean                     |
+|                                |  |   3 Clean         ~8.8 GB found     |
+|              Art               |  |   4 Large Files                     |
+|                                |  |   5 Remove App                      |
 |                                |  |     ...                             |
 |                                |  |     Quit                            |
 |                                |  +-------------------------------------+
@@ -69,7 +70,7 @@
 | --- | --- |
 | `Up` / `Down` | Move the selection. |
 | `Enter` or `Right` | Open the selected screen. |
-| `1` to `9` | Open that row. |
+| `1` to `9` | Open that row. Rows after the ninth have no number. |
 | `s` | Open Skipped. |
 
 ## Skipped
@@ -118,6 +119,41 @@
 | `g` / `G` | Jump to the first or last row. |
 | `d` | Clean the selected item. Opens [Review](#review-confirm-and-move), or a box that says in plain sentences why neet will not move it. Any key closes the box. |
 
+## Quick Clean
+
+```text
++ Quick Clean -------------------------------------------------------------------------+
+|   Item                        Size   Found  Cleared by  How                            |
+|                                                                                       |
+| > Caches and logs          ~7.2 GB          neet        Enter, then review in Clean    |
+|   Trash                    20.5 KB      1   you         Empty the Trash                |
+|   Project build folders    28.4 GB     26   you         cargo clean, or rm -rf ...     |
+|   Simulator runtimes       17.3 GB      2   you         Xcode, Settings, Components    |
+|   Temporary files          11.7 GB  20,484  macOS       Restart the Mac                |
++--------------------------------- neet can clean ~7.2 GB . you can free 56.7 GB more -+
++---------------------------------------------------------------------------------------+
+| Project build folders                                                                 |
+| node_modules folders, and Rust target folders, in your projects. ...                  |
++---------------------------------------------------------------------------------------+
+```
+
+* One table of everything taking space that can be cleared, so you can start with the biggest wins.
+* **Rows,** always in this order:
+  1. Caches and logs: what every Clean rule found. neet cleans these.
+  2. Trash, installers in Downloads, project build folders, and the Docker disk image, from the scan.
+  3. Simulator runtimes, asked of `xcrun simctl` when there are simulators on the Mac, and temporary files, measured in `/private/var/folders`. Both are worked out in the background and show `looking…` until done.
+* **Columns:** the size, red from 5 GB and yellow from 1 GB, how many items, who clears it, and how. `neet` is green, `you` yellow, and `macOS` gray. Temporary files are left to macOS, since deleting them by hand can break running apps.
+* The bottom edge adds up what neet can clean and what you can free yourself.
+* The box below explains the selected row, and how to remove it.
+* Until the scan finishes, the screen shows the loading box.
+* Nothing on this screen changes a file.
+
+| Key | Action |
+| --- | --- |
+| `Up` / `Down` | Move the selection. |
+| `g` / `G` | Jump to the first or last row. |
+| `Enter`, `Right`, or `l` | On Caches and logs, open [Clean](#clean). On a row from the scan, show the largest item in [Disk](#disk). |
+
 ## Clean
 
 ```text
@@ -165,7 +201,7 @@
 
 ## Review, Confirm, And Move
 
-* Clean, Disk, Large Files, and Remove App all end in these same four steps.
+* Clean, Disk, Large Files, and Remove App all end in these same four steps. Quick Clean leads to them through Clean.
 
 | Step | Layout | Keys |
 | --- | --- | --- |
