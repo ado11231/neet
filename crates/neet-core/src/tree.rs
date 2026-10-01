@@ -142,7 +142,7 @@ mod tests {
         assert_eq!(tree.node_count(), 1);
         assert_eq!(root.kind, NodeKind::Directory);
         assert_eq!(root.parent, None);
-        assert!(root.children.is_empty());
+        assert!(root.children.is_empty(), "{:?}", root.children);
         assert_eq!(root.own_size, 0);
         assert_eq!(root.total_size, 0);
         assert_eq!(tree.path(tree.root()), PathBuf::from("/scan/root"));

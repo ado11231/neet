@@ -521,7 +521,7 @@ mod tests {
 
         let set = load(&roots, Some(&dir.path().join("missing")));
 
-        assert!(set.errors.is_empty());
+        assert!(set.errors.is_empty(), "{:?}", set.errors);
     }
 
     #[test]
