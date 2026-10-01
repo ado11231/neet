@@ -86,17 +86,23 @@ impl Review {
 
     /// One group per name, so the files app removal finds in the same
     /// folder are listed together.
-    fn lines(&self) -> Vec<Line<'static>> {
-        let home = &self.planned.home;
+    fn groups(&self) -> Vec<(&str, Vec<&clean::PlanItem>)> {
         let mut groups: Vec<(&str, Vec<&clean::PlanItem>)> = Vec::new();
-        for rule in self.planned.plan.rules.iter().filter(|rule| rule.selected) {
+        // A selected rule that found nothing has nothing to review.
+        let rules = self.planned.plan.rules.iter();
+        for rule in rules.filter(|rule| rule.selected && !rule.items.is_empty()) {
             match groups.iter_mut().find(|(name, _)| *name == rule.rule.name) {
                 Some((_, found)) => found.extend(&rule.items),
                 None => groups.push((&rule.rule.name, rule.items.iter().collect())),
             }
         }
+        groups
+    }
+
+    fn lines(&self) -> Vec<Line<'static>> {
+        let home = &self.planned.home;
         let mut lines = Vec::new();
-        for (name, found) in groups {
+        for (name, found) in self.groups() {
             let size = found.iter().map(|item| item.size).sum();
             lines.push(Line::from(vec![
                 Span::raw(name.to_string()).bold().cyan(),
@@ -104,7 +110,8 @@ impl Review {
             ]));
             for item in found {
                 lines.push(Line::from(vec![
-                    Span::raw(format!("{:>10}  ", format::size(item.size))).dark_gray(),
+                    format::size_span(item.size, format!("{:>10}", format::size(item.size))),
+                    Span::raw("  "),
                     Span::raw(display_path(home, item.path.path())),
                 ]));
             }
@@ -112,7 +119,59 @@ impl Review {
         }
         lines
     }
+
+    /// The totals, each group's share, and what happens next.
+    fn summary(&self) -> Vec<Line<'static>> {
+        let plan = &self.planned.plan;
+        let total = plan.selected_size();
+        let mut lines = vec![
+            Line::from(format::size(total)).bold().green(),
+            Line::from(format!("in {}", items(plan.selected_count()))).dark_gray(),
+            Line::default(),
+        ];
+        let mut groups: Vec<(&str, u64)> = self
+            .groups()
+            .into_iter()
+            .map(|(name, found)| (name, found.iter().map(|item| item.size).sum()))
+            .collect();
+        groups.sort_by_key(|&(_, size)| std::cmp::Reverse(size));
+        for (name, size) in groups {
+            lines.push(Line::from(vec![
+                Span::raw(format::bar(size, total, SUMMARY_BAR)).cyan(),
+                Span::raw(" "),
+                format::size_span(size, format!("{:>9}", format::size(size))),
+                Span::raw(format!("  {name}")),
+            ]));
+        }
+        lines.extend([
+            Line::default(),
+            Line::from("What happens next").bold(),
+            Line::from(vec![
+                Span::raw("1. ").dark_gray(),
+                Span::raw("Enter asks you once more."),
+            ]),
+            Line::from(vec![
+                Span::raw("2. ").dark_gray(),
+                Span::raw("Each item is checked again, then moved to the Trash."),
+            ]),
+            Line::from(vec![
+                Span::raw("3. ").dark_gray(),
+                Span::raw("Put Back restores any item."),
+            ]),
+            Line::from(vec![
+                Span::raw("4. ").dark_gray(),
+                Span::raw("Empty the Trash to free the space."),
+            ]),
+        ]);
+        lines
+    }
 }
+
+/// How wide the bars in the review summary are.
+const SUMMARY_BAR: usize = 10;
+
+/// Below this width the summary goes away and the paths take the screen.
+const MIN_SUMMARY_WIDTH: u16 = 100;
 
 impl Screen for Review {
     fn draw(&mut self, frame: &mut Frame, area: Rect, _context: &Context) {
@@ -123,7 +182,26 @@ impl Screen for Review {
             format::size(plan.selected_size())
         );
         let lines = self.lines();
-        scrolling(frame, area, title, lines, &mut self.scroll);
+        if area.width < MIN_SUMMARY_WIDTH {
+            scrolling(frame, area, title, lines, &mut self.scroll);
+            return;
+        }
+        let [paths, side] =
+            Layout::horizontal([Constraint::Percentage(62), Constraint::Fill(1)]).areas(area);
+        scrolling(frame, paths, title, lines, &mut self.scroll);
+        frame.render_widget(
+            Paragraph::new(self.summary())
+                .wrap(Wrap { trim: false })
+                .block(
+                    Block::bordered()
+                        .title(" Summary ")
+                        .title_bottom(
+                            Line::from(" Nothing moves until you answer ").right_aligned(),
+                        )
+                        .padding(Padding::horizontal(1)),
+                ),
+            side,
+        );
     }
 
     fn handle_key(&mut self, key: KeyEvent, _context: &Context) -> Action {
@@ -658,6 +736,32 @@ mod tests {
     }
 
     #[test]
+    fn selected_rules_that_found_nothing_are_left_out() {
+        let (_dir, mut planned) = planned();
+        let planned_mut = Arc::get_mut(&mut planned).expect("only owner");
+        for rule in &mut planned_mut.plan.rules {
+            if rule.items.is_empty() {
+                rule.selected = true;
+            }
+        }
+
+        let screen = render(&mut Review::new(planned));
+
+        assert!(!screen.contains("0 items"));
+        assert!(!screen.contains("Yarn cache"));
+    }
+
+    #[test]
+    fn a_wide_review_has_a_summary_beside_the_paths() {
+        let (_dir, planned) = planned();
+        let screen = render(&mut Review::new(planned));
+
+        assert!(screen.contains("Summary"));
+        assert!(screen.contains("What happens next"));
+        assert!(screen.contains("Nothing moves until you answer"));
+    }
+
+    #[test]
     fn rules_with_the_same_name_are_one_group() {
         let (_dir, mut planned) = planned();
         let planned_mut = Arc::get_mut(&mut planned).expect("only owner");
@@ -670,7 +774,8 @@ mod tests {
 
         let screen = render(&mut Review::new(planned));
 
-        assert_eq!(screen.matches("HTTPStorages").count(), 1);
+        // Once in the list, once in the summary
+        assert_eq!(screen.matches("HTTPStorages").count(), 2);
         assert!(screen.contains("HTTPStorages  2 items"));
     }
 }

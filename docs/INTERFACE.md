@@ -169,7 +169,7 @@
 
 | Step | Layout | Keys |
 | --- | --- | --- |
-| Review | A full screen, scrolling list of every selected path, with sizes. Paths are grouped by rule, or by folder for Remove App. The title shows the item count and total size. | Scroll with `Up` / `Down`, `PgUp` / `PgDn`, `g` / `G`. `Enter` goes on. `Esc` goes back. |
+| Review | A scrolling list of every selected path, with sizes. Paths are grouped by rule, or by folder for Remove App, and rules that found nothing are left out. The title shows the item count and total size. From 100 columns, a Summary box beside it shows the total, a bar for each group, and what happens next. | Scroll with `Up` / `Down`, `PgUp` / `PgDn`, `g` / `G`. `Enter` goes on. `Esc` goes back. |
 | Confirm | A box, 60 columns wide, in the middle of the review. It shows the item count and total size, and that Finder moves them to the Trash. | `y` moves them. `n` or `Esc` goes back. |
 | Move | A progress bar. The first time, macOS asks whether your terminal may control Finder. | No key works until every item is done. |
 | Result | How many items moved, the space they take in the Trash, how to use Put Back, and every skipped item with its reason. | `Enter` or `Esc` goes back to Home. |
