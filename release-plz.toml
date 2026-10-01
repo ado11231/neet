@@ -9,6 +9,28 @@ changelog_update = true
 semver_check = true
 pr_labels = ["release"]
 
+# The default changelog, with the date moved from the heading to the last
+# line. dist names the GitHub release after the heading, so releases are
+# titled with the version only.
+[changelog]
+body = """
+
+## [{{ version }}]{%- if release_link -%}({{ release_link }}){% endif %}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | upper_first }}
+
+{% for commit in commits %}
+{%- if commit.scope -%}
+- *({{commit.scope}})* {% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message }}{%- if commit.links %} ({% for link in commit.links %}[{{link.text}}]({{link.href}}) {% endfor -%}){% endif %}
+{% else -%}
+- {% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message }}
+{% endif -%}
+{% endfor -%}
+{% endfor %}
+Released {{ timestamp | date(format="%Y-%m-%d") }}
+
+"""
+
 [[package]]
 name = "neet"
 # release-plz only tags the program. The tag starts dist, in release.yml,
