@@ -1,4 +1,6 @@
 use std::path::PathBuf;
+use std::sync::mpsc::{self, Receiver};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use neet_core::disk::{self, DiskSpace};
@@ -15,6 +17,9 @@ use super::scan::{ScanStatus, ScanTask};
 
 /// How often to reread the disk's free space.
 const DISK_REFRESH: Duration = Duration::from_secs(5);
+
+/// How often to ask macOS for purgeable space, which takes longer to read.
+const PURGEABLE_REFRESH: Duration = Duration::from_secs(60);
 
 /// What a screen asks the app to do after handling a key.
 pub enum Action {
@@ -70,23 +75,72 @@ pub trait Screen {
 }
 
 /// The disk's free space, reread every few seconds so the gauge stays current.
+/// Purgeable space is asked for less often, on its own thread.
 struct DiskWatch {
     root: Option<PathBuf>,
     space: Option<DiskSpace>,
     checked: Instant,
+    purgeable: Option<u64>,
+    asked: Option<Instant>,
+    answer: Option<Receiver<Option<u64>>>,
 }
 
 impl DiskWatch {
     fn new(root: Option<PathBuf>) -> Self {
         let space = root.as_deref().and_then(|root| disk::disk_space(root).ok());
-        Self {
+        let mut watch = Self {
             root,
             space,
             checked: Instant::now(),
-        }
+            purgeable: None,
+            asked: None,
+            answer: None,
+        };
+        watch.ask_purgeable();
+        watch
+    }
+
+    /// The disk space, with the latest purgeable space.
+    fn space(&self) -> Option<DiskSpace> {
+        self.space.map(|space| DiskSpace {
+            purgeable: self.purgeable,
+            ..space
+        })
+    }
+
+    /// Purgeable space is Finder's free space minus the free space now, both
+    /// read on the same thread so they match.
+    fn ask_purgeable(&mut self) {
+        let Some(root) = self.root.clone() else {
+            return;
+        };
+        let (sender, answer) = mpsc::channel();
+        thread::spawn(move || {
+            let purgeable = disk::disk_space(&root).ok().and_then(|space| {
+                disk::finder_free(&root)
+                    .ok()
+                    .map(|free| free.saturating_sub(space.available))
+            });
+            let _ = sender.send(purgeable);
+        });
+        self.asked = Some(Instant::now());
+        self.answer = Some(answer);
     }
 
     fn poll(&mut self) {
+        if let Some(answer) = &self.answer
+            && let Ok(purgeable) = answer.try_recv()
+        {
+            self.purgeable = purgeable;
+            self.answer = None;
+        }
+        if self.answer.is_none()
+            && self
+                .asked
+                .is_some_and(|asked| asked.elapsed() >= PURGEABLE_REFRESH)
+        {
+            self.ask_purgeable();
+        }
         if self.checked.elapsed() < DISK_REFRESH {
             return;
         }
@@ -150,7 +204,7 @@ impl App {
             .unwrap_or(0);
         let context = Context {
             scan: self.scan.status(),
-            disk: self.disk.space,
+            disk: self.disk.space(),
             cleanable: self.estimate.size(),
         };
         for screen in &mut self.stack[base..] {
@@ -164,7 +218,7 @@ impl App {
     pub fn handle_key(&mut self, key: KeyEvent) {
         let context = Context {
             scan: self.scan.status(),
-            disk: self.disk.space,
+            disk: self.disk.space(),
             cleanable: self.estimate.size(),
         };
         let screen = self.stack.last_mut().expect("Home is never popped");

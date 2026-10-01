@@ -200,8 +200,12 @@ fn summary(label: &str, context: &Context) -> Option<String> {
 /// How many characters wide the disk gauge is.
 const GAUGE_WIDTH: usize = 16;
 
+/// Purgeable space smaller than this is not worth a line.
+const MIN_PURGEABLE: u64 = 100_000_000;
+
 /// A gauge of how full the disk is, from the disk's own totals, then the
-/// free space on its own line, so neither wraps in a narrow panel.
+/// free space on its own line, so neither wraps in a narrow panel. When macOS
+/// can clear space on its own, a last line says why Finder shows more free.
 fn disk_lines(disk: Option<DiskSpace>) -> Vec<Line<'static>> {
     let Some(disk) = disk else {
         return vec![Line::from("Disk space could not be read.").dark_gray()];
@@ -213,7 +217,7 @@ fn disk_lines(disk: Option<DiskSpace>) -> Vec<Line<'static>> {
         75..90 => gauge.yellow(),
         _ => gauge.cyan(),
     };
-    vec![
+    let mut lines = vec![
         Line::from(vec![gauge, Span::raw(format!(" {used}% used")).bold()]),
         Line::from(format!(
             "{} free of {}",
@@ -221,7 +225,18 @@ fn disk_lines(disk: Option<DiskSpace>) -> Vec<Line<'static>> {
             format::size(disk.total)
         ))
         .dark_gray(),
-    ]
+    ];
+    if let Some(purgeable) = disk.purgeable.filter(|size| *size >= MIN_PURGEABLE) {
+        lines.push(
+            Line::from(format!(
+                "Finder shows {} free. It adds {} that macOS clears on its own when space runs low.",
+                format::size(disk.available.saturating_add(purgeable)),
+                format::size(purgeable)
+            ))
+            .dark_gray(),
+        );
+    }
+    lines
 }
 
 /// A count of paths, such as `1 path` or `147 paths`
@@ -383,6 +398,7 @@ mod tests {
             disk: Some(neet_core::disk::DiskSpace {
                 total: 500_000_000_000,
                 available: 100_000_000_000,
+                purgeable: Some(7_400_000_000),
             }),
             cleanable: Some(18_400_000_000),
         };
@@ -437,8 +453,28 @@ mod tests {
         assert!(screen.contains("1,234 items · 5.0 MB"));
         assert!(screen.contains("80% used"));
         assert!(screen.contains("100.0 GB free of 500.0 GB"));
+        assert!(screen.contains("Finder shows 107.4 GB free."));
         assert!(screen.contains("400.0 GB used"));
         assert!(screen.contains("~18.4 GB found"));
+    }
+
+    #[test]
+    fn purgeable_space_is_explained_only_when_it_matters() {
+        let text = |purgeable| {
+            disk_lines(Some(DiskSpace {
+                total: 500_000_000_000,
+                available: 100_000_000_000,
+                purgeable,
+            }))
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n")
+        };
+
+        assert!(text(Some(7_400_000_000)).contains("It adds 7.4 GB that macOS clears"));
+        assert!(!text(Some(50_000_000)).contains("Finder"));
+        assert!(!text(None).contains("Finder"));
     }
 
     #[test]
