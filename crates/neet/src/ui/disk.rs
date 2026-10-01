@@ -9,9 +9,10 @@ use neet_core::tree::{NodeId, NodeKind, Tree};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::style::Color;
 use ratatui::style::{Style, Stylize};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, List, ListItem, ListState, Padding, Paragraph};
+use ratatui::widgets::{Block, List, ListItem, ListState, Padding, Paragraph, Wrap};
 
 use super::app::{Action, Context, Screen};
 use super::clean::{Planned, skip_reason};
@@ -57,6 +58,8 @@ struct Browser {
     rows: Vec<NodeId>,
     list: ListState,
     sort: Sort,
+    /// For saying whether the selected item can be cleaned
+    roots: Option<CleanupRoots>,
 }
 
 impl Browser {
@@ -66,6 +69,7 @@ impl Browser {
             rows: Vec::new(),
             list: ListState::default(),
             sort: Sort::Size,
+            roots: CleanupRoots::new(&tree.path(tree.root())).ok(),
         };
         browser.show(tree, tree.root(), None);
         browser
@@ -169,8 +173,14 @@ fn row(tree: &Tree, id: NodeId, parent_total: u64) -> ListItem<'static> {
         name
     };
     ListItem::new(Line::from(vec![
-        Span::raw(format::bar(node.total_size, parent_total, BAR_WIDTH)).cyan(),
-        Span::raw(format!(" {:>9} ", format::size(node.total_size))),
+        Span::raw(format::bar(node.total_size, parent_total, BAR_WIDTH))
+            .fg(bar_color(node.total_size)),
+        Span::raw(" "),
+        format::size_span(
+            node.total_size,
+            format!("{:>9}", format::size(node.total_size)),
+        ),
+        Span::raw(" "),
         Span::raw(format!(
             "{:>3}%  ",
             format::percent(node.total_size, parent_total)
@@ -219,33 +229,220 @@ fn draw_preview(frame: &mut Frame, area: Rect, tree: &Tree, browser: &Browser) {
         return;
     };
     let node = tree.get(id);
-    if node.kind == NodeKind::Directory {
-        let rows = sorted_children(tree, id, browser.sort);
-        let block = block.title(format!(" {} ", display_name(tree, id)));
-        if rows.is_empty() {
-            frame.render_widget(
-                Paragraph::new("Empty folder.").dark_gray().block(block),
-                area,
-            );
-            return;
-        }
-        let items = rows.iter().map(|&child| row(tree, child, node.total_size));
-        frame.render_widget(List::new(items).block(block), area);
-    } else {
-        let kind = match node.kind {
-            NodeKind::File => "File",
-            NodeKind::Symlink => "Symbolic link, not followed",
-            NodeKind::Directory | NodeKind::Other => "Other",
-        };
-        let lines = vec![
-            Line::from(display_name(tree, id)).bold(),
-            Line::default(),
-            Line::from(format!("Size on disk: {}", format::size(node.total_size))),
-            Line::from(format!("Kind: {kind}")),
-            Line::from(tree.path(id).display().to_string()).dark_gray(),
-        ];
-        frame.render_widget(Paragraph::new(lines).block(block), area);
+    let block = block.title(
+        Line::from(format!(" {} ", display_name(tree, id)))
+            .bold()
+            .cyan(),
+    );
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let header = about(tree, id, browser);
+    // Each header line wraps, so count how many rows it takes.
+    let width = usize::from(inner.width.max(1));
+    let height: usize = header
+        .iter()
+        .map(|line| line.width().max(1).div_ceil(width))
+        .sum();
+    let [top, rest] = Layout::vertical([
+        Constraint::Length(u16::try_from(height).unwrap_or(u16::MAX)),
+        Constraint::Fill(1),
+    ])
+    .areas(inner);
+    frame.render_widget(Paragraph::new(header).wrap(Wrap { trim: false }), top);
+
+    if node.kind != NodeKind::Directory || rest.height < 3 {
+        return;
     }
+    let rows = sorted_children(tree, id, browser.sort);
+    let [heading, list] =
+        Layout::vertical([Constraint::Length(2), Constraint::Fill(1)]).areas(rest);
+    let title = if rows.is_empty() {
+        "Empty folder.".to_string()
+    } else {
+        format!("Inside, by {}", browser.sort.label())
+    };
+    frame.render_widget(
+        Paragraph::new(vec![Line::default(), Line::from(title).dark_gray()]),
+        heading,
+    );
+    let items = rows.iter().map(|&child| row(tree, child, node.total_size));
+    frame.render_widget(List::new(items), list);
+}
+
+/// The bar color for an item of `bytes`, matching the size colors.
+fn bar_color(bytes: u64) -> Color {
+    if bytes >= format::HUGE {
+        Color::Red
+    } else if bytes >= format::HUGE / 5 {
+        Color::Yellow
+    } else {
+        Color::Cyan
+    }
+}
+
+/// What the selected item is, how big, and whether neet can clean it.
+fn about(tree: &Tree, id: NodeId, browser: &Browser) -> Vec<Line<'static>> {
+    let node = tree.get(id);
+    let parent_total = tree.get(browser.current).total_size;
+    let mut lines = vec![Line::from(display_path(tree, id)).dark_gray()];
+    if let Some(meaning) = meaning(tree, id) {
+        lines.push(Line::default());
+        lines.push(Line::from(meaning));
+    }
+    lines.push(Line::default());
+
+    let label = |text: &str| Span::raw(format!("{text:<9}")).dark_gray();
+    lines.push(Line::from(vec![
+        label("Size"),
+        format::size_span(node.total_size, format::size(node.total_size)),
+        Span::raw(format!(
+            "  {}% of {}",
+            format::percent(node.total_size, parent_total),
+            display_path(tree, browser.current)
+        ))
+        .dark_gray(),
+    ]));
+    match node.kind {
+        NodeKind::Directory => lines.push(Line::from(vec![
+            label("Items"),
+            Span::raw(format::count(node.total_items)),
+        ])),
+        NodeKind::Symlink => lines.push(Line::from(vec![
+            label("Kind"),
+            Span::raw("Link, not followed"),
+        ])),
+        NodeKind::File | NodeKind::Other => {}
+    }
+    if let Some(changed) = node
+        .modified
+        .and_then(|modified| SystemTime::now().duration_since(modified).ok())
+    {
+        lines.push(Line::from(vec![
+            label("Changed"),
+            Span::raw(format::age(changed)),
+        ]));
+    }
+    lines.push(Line::default());
+    lines.push(cleanable(&tree.path(id), browser.roots.as_ref()));
+    lines
+}
+
+/// Whether `d` can clean an item, in one colored line.
+fn cleanable(path: &std::path::Path, roots: Option<&CleanupRoots>) -> Line<'static> {
+    let Some(roots) = roots else {
+        return Line::from("neet could not read the home folder, so nothing can be cleaned.")
+            .dark_gray();
+    };
+    match roots.validate_deletable(path) {
+        Ok(_) => Line::from(vec![
+            Span::raw("✓ ").green().bold(),
+            Span::raw("Can be cleaned. Press d to review it.").green(),
+        ]),
+        Err(SafetyError::IsRoot) => Line::from(vec![
+            Span::raw("◆ ").yellow(),
+            Span::raw("A cleanup folder. Open it and clean the items inside.").yellow(),
+        ]),
+        Err(SafetyError::Protected) => Line::from(vec![
+            Span::raw("✗ ").red().bold(),
+            Span::raw("Protected. neet never moves anything in it.").red(),
+        ]),
+        Err(_) => Line::from(vec![
+            Span::raw("· ").dark_gray(),
+            Span::raw("Outside the folders neet cleans.").dark_gray(),
+        ]),
+    }
+}
+
+/// What well known folders in the home folder hold, in plain words.
+const MEANINGS: &[(&str, &str)] = &[
+    (
+        "Library",
+        "Settings, caches, and data that apps keep for you.",
+    ),
+    (
+        "Library/Caches",
+        "Files apps can make again. Clean empties these.",
+    ),
+    (
+        "Library/Application Support",
+        "Data apps keep, such as saved work, downloads, and settings.",
+    ),
+    (
+        "Library/Containers",
+        "Data of apps that run in a sandbox, such as App Store apps and Docker.",
+    ),
+    (
+        "Library/Group Containers",
+        "Data shared between apps from the same maker.",
+    ),
+    (
+        "Library/Developer",
+        "Xcode builds, simulators, and device support files.",
+    ),
+    ("Library/Logs", "Logs apps write. Clean can empty old ones."),
+    ("Library/Messages", "Your Messages history and attachments."),
+    ("Library/Mail", "Your Mail messages and attachments."),
+    (
+        "Library/Mobile Documents",
+        "iCloud Drive files kept on this Mac.",
+    ),
+    (
+        "Library/CloudStorage",
+        "Files from cloud services, such as Dropbox or Google Drive.",
+    ),
+    (
+        "Library/Saved Application State",
+        "Windows apps reopen where you left off.",
+    ),
+    ("Documents", "Your own files. neet never touches them."),
+    ("Desktop", "Your own files. neet never touches them."),
+    (
+        "Downloads",
+        "Files you downloaded. neet never touches them.",
+    ),
+    ("Pictures", "Your photos, including the Photos library."),
+    ("Music", "Your music and the Music library."),
+    ("Movies", "Your videos."),
+    (".Trash", "Your Trash. Emptying it frees this space."),
+    (
+        ".npm",
+        "npm, the Node.js package manager. Mostly its download cache.",
+    ),
+    (
+        ".cargo",
+        "Rust's package manager: downloaded packages and installed programs.",
+    ),
+    (".rustup", "Rust versions installed by rustup."),
+    (".pyenv", "Python versions installed by pyenv."),
+    (".cache", "Caches some command line tools keep."),
+    (".config", "Settings for command line tools."),
+    (
+        ".local",
+        "Programs and data some command line tools install.",
+    ),
+    (
+        ".docker",
+        "Docker settings. Its disk image is in Library/Containers.",
+    ),
+    (".vscode", "Visual Studio Code extensions."),
+    (
+        ".gradle",
+        "Gradle, a Java build tool: downloaded packages and caches.",
+    ),
+    (".m2", "Maven, a Java build tool: downloaded packages."),
+    (".ssh", "Your SSH keys. neet never touches them."),
+];
+
+/// What a well known folder holds, if `id` is one.
+fn meaning(tree: &Tree, id: NodeId) -> Option<&'static str> {
+    let path = tree.path(id);
+    let rest = path.strip_prefix(tree.path(tree.root())).ok()?;
+    let rest = rest.to_str()?;
+    MEANINGS
+        .iter()
+        .find(|(name, _)| *name == rest)
+        .map(|(_, meaning)| *meaning)
 }
 
 /// Browses the home folder scan by size.
@@ -627,6 +824,34 @@ mod tests {
             assert!(screen.hints().contains("any key to close"));
         }
         assert!(dir.path().join("Library/Caches/app/file").exists());
+    }
+
+    #[test]
+    fn the_preview_says_whether_an_item_can_be_cleaned() {
+        let dir = tempfile::tempdir().expect("temporary directory should be created");
+        for folder in ["Library/Caches/app", "Documents", "notes"] {
+            std::fs::create_dir_all(dir.path().join(folder)).expect("folder should be created");
+        }
+        let roots = CleanupRoots::new(dir.path()).expect("roots should be made");
+        let status = |path: &str| cleanable(&dir.path().join(path), Some(&roots)).to_string();
+
+        assert!(status("Library/Caches/app").contains("Can be cleaned"));
+        assert!(status("Library/Caches").contains("A cleanup folder"));
+        assert!(status("Documents").contains("Protected"));
+        assert!(status("notes").contains("Outside the folders neet cleans"));
+    }
+
+    #[test]
+    fn well_known_folders_are_explained() {
+        let mut tree = Tree::new("/Users/someone");
+        let root = tree.root();
+        let library = tree.add(root, "Library", NodeKind::Directory, 0);
+        let caches = tree.add(library, "Caches", NodeKind::Directory, 0);
+        let other = tree.add(root, "project", NodeKind::Directory, 0);
+
+        assert!(meaning(&tree, caches).is_some_and(|text| text.contains("make again")));
+        assert!(meaning(&tree, library).is_some());
+        assert_eq!(meaning(&tree, other), None);
     }
 
     #[test]

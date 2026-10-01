@@ -98,8 +98,13 @@
 ```
 
 * **Left, 55% of the width:** the current folder, largest first. Each row shows a 12 character bar and a percent for its share of the folder, its size, and its name. Folders end in `/`, links in `@`.
+* Sizes and bars of 5 GB or more are red, and of 1 GB or more yellow, as in Large Files.
 * The title shows the folder's path on the left, and its size, item count, and sort order on the right.
-* **Right:** a preview of the selected row. A folder shows its contents. A file shows its size, kind, and full path. The preview is hidden when the terminal is narrower than 100 columns.
+* **Right:** the selected row, titled with its name in cyan. The preview is hidden when the terminal is narrower than 100 columns.
+  1. Its path, and for well known folders, such as `~/Library/Caches` or `.npm`, what they hold in plain words.
+  2. Its size and share of the current folder, its item count, and when it last changed.
+  3. Whether `d` can clean it: a green `✓` when it can, a yellow `◆` for a cleanup folder whose items can be cleaned, a red `✗` for a protected folder, and a gray `·` for anywhere else.
+  4. For a folder, what is inside, in the same order and colors as the left.
 * Until the scan finishes, the screen shows the loading box, with how many items and how much space the scan has counted.
 * The selected row is bold cyan, with an arrow in front.
 * The screen shows the scan as it was. An item moved to the Trash stays listed until the next scan.
