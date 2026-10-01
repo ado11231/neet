@@ -1,5 +1,24 @@
 use std::time::Duration;
 
+use ratatui::style::Stylize;
+use ratatui::text::Span;
+
+/// Sizes from here are red, and from a fifth of it yellow.
+pub const HUGE: u64 = 5_000_000_000;
+
+/// `text`, red and bold when `bytes` is 5 GB or more, yellow from 1 GB, so
+/// big items stand out.
+pub fn size_span(bytes: u64, text: String) -> Span<'static> {
+    let span = Span::raw(text);
+    if bytes >= HUGE {
+        span.red().bold()
+    } else if bytes >= HUGE / 5 {
+        span.yellow()
+    } else {
+        span
+    }
+}
+
 /// Formats bytes the way Finder does, in powers of 1000.
 #[allow(clippy::cast_precision_loss)] // One decimal place is all that is shown.
 pub fn size(bytes: u64) -> String {

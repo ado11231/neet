@@ -50,9 +50,6 @@ const AGE_WIDTH: u16 = 13;
 /// Space between columns
 const GAP: u16 = 2;
 
-/// Files this big are shown in red, and in yellow above a fifth of it
-const HUGE: u64 = 5_000_000_000;
-
 /// Lists files above a size, and optionally unchanged for a while, from the
 /// home folder scan. Finding a file does not make it a cleanup target.
 pub struct LargeFiles {
@@ -117,14 +114,7 @@ impl LargeFiles {
 /// columns, so long text is shortened at its least useful end.
 fn row(tree: &Tree, id: NodeId, now: SystemTime, name: usize, folder: usize) -> Row<'static> {
     let node = tree.get(id);
-    let size = Span::raw(format::size(node.own_size));
-    let size = if node.own_size >= HUGE {
-        size.red().bold()
-    } else if node.own_size >= HUGE / 5 {
-        size.yellow()
-    } else {
-        size
-    };
+    let size = format::size_span(node.own_size, format::size(node.own_size));
 
     let elapsed = node
         .modified
