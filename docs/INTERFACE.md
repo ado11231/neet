@@ -62,7 +62,7 @@
 * **Right, bottom:** details for the selected row:
   1. What the feature does.
   2. A 16 character gauge of how full the disk is, then free and total space on the next line. The gauge turns yellow at 75% and red at 90%.
-  3. When macOS can clear 100 MB or more on its own, a line says how much free space Finder shows, and that it adds that purgeable space. It is read about once a minute.
+  3. When macOS can clear 100 MB or more on its own, a line says how much free space Finder shows, counting that purgeable space. It is read about once a minute.
   4. Scan progress, then the home folder's total size. If some folders could not be read, the size is marked `at least`, and a yellow line says how many were blocked by macOS or could not be read, and to press `s`.
 
 | Key | Action |

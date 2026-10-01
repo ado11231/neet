@@ -174,6 +174,7 @@ impl Home {
             Line::default(),
         ];
         lines.extend(disk_lines(disk));
+        lines.push(Line::default());
         lines.extend(scan_lines(scan));
         let text = Text::from(lines);
         let info = Paragraph::new(text)
@@ -229,7 +230,7 @@ fn disk_lines(disk: Option<DiskSpace>) -> Vec<Line<'static>> {
     if let Some(purgeable) = disk.purgeable.filter(|size| *size >= MIN_PURGEABLE) {
         lines.push(
             Line::from(format!(
-                "Finder shows {} free. It adds {} that macOS clears on its own when space runs low.",
+                "Finder shows {} free, counting {} macOS clears when needed.",
                 format::size(disk.available.saturating_add(purgeable)),
                 format::size(purgeable)
             ))
@@ -453,7 +454,7 @@ mod tests {
         assert!(screen.contains("1,234 items · 5.0 MB"));
         assert!(screen.contains("80% used"));
         assert!(screen.contains("100.0 GB free of 500.0 GB"));
-        assert!(screen.contains("Finder shows 107.4 GB free."));
+        assert!(screen.contains("Finder shows 107.4 GB free, counting 7.4 GB"));
         assert!(screen.contains("400.0 GB used"));
         assert!(screen.contains("~18.4 GB found"));
     }
@@ -472,7 +473,7 @@ mod tests {
             .join("\n")
         };
 
-        assert!(text(Some(7_400_000_000)).contains("It adds 7.4 GB that macOS clears"));
+        assert!(text(Some(7_400_000_000)).contains("counting 7.4 GB macOS clears when needed"));
         assert!(!text(Some(50_000_000)).contains("Finder"));
         assert!(!text(None).contains("Finder"));
     }
