@@ -51,6 +51,7 @@ neet/
 | `size.rs` | The space a file really takes on disk, and counting a file with several names only once. |
 | `disk.rs` | How big the disk is, how much is free, and the free space Finder shows, which adds purgeable space. |
 | `large.rs` | Finds files in the tree above a size, and optionally unchanged for a while. |
+| `clutter.rs` | Measures what neet does not clean itself: the Trash, installers, build folders, and the Docker image from the tree, simulator runtimes from `xcrun simctl`, and temporary files from a scan of `/private/var/folders`. |
 | `rules.rs` | Reads and checks the built in rules and your own. |
 | `safety.rs` | The allowed folders, the protected folders, and the two path checks: one for cleanup, one for app removal. Only these checks can approve an item. |
 | `clean.rs` | Plans a cleanup from the rules, or from one picked item, then moves the selected items, checking each one again first. |
@@ -73,6 +74,7 @@ neet/
 | `ui/clean.rs` | Clean: rules, selection, and details. Also works out the Home total in the background. |
 | `ui/review.rs` | Review, Confirm, Move, and Result, shared by every cleanup, plus the notice box. |
 | `ui/large.rs` | Large Files. |
+| `ui/quick.rs` | Quick Clean: everything that can be cleared, in one table. |
 | `ui/apps.rs` | Remove App: the app list and the app's files. |
 | `ui/help.rs` | The help box opened with `?`. |
 | `ui/loading.rs` | The loading box a screen shows while slow work runs. |
@@ -128,6 +130,8 @@ selected rules, a picked item, or an app
 | The free space Finder shows | `osascript` asking macOS, part of macOS |
 | Terminal screens | `ratatui` |
 | Reading rules | `serde` and `toml` |
+| Reading simulator runtimes | `xcrun simctl`, part of Xcode, read with `serde_json` |
+| Finding the temporary folder | `getconf`, part of macOS |
 | Temporary folders in tests | `tempfile` |
 | Whether an app is open | `lsappinfo`, part of macOS |
 | Reading an app's details | `plutil`, part of macOS |
