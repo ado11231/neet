@@ -4,6 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/ado11231/neet/actions/workflows/ci.yml"><img src="https://github.com/ado11231/neet/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://crates.io/crates/neet"><img src="https://img.shields.io/crates/v/neet?logo=rust" alt="neet on crates.io"></a>
   <img src="https://img.shields.io/badge/macOS-13%2B-black?logo=apple" alt="macOS 13 or later">
   <img src="https://img.shields.io/badge/Rust-1.88%2B-orange?logo=rust" alt="Rust 1.88 or later">
   <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20or%20Apache%202.0-blue" alt="License: MIT or Apache 2.0"></a>
@@ -62,10 +63,12 @@ neet
 
 ## Learn More
 
+* The [wiki](https://github.com/ado11231/neet/wiki) links every doc and section in one place.
 * [Features](docs/FEATURES.md): what neet does now, and what is planned.
 * [Interface](docs/INTERFACE.md): every screen, its layout, and its keys.
 * [Safety](docs/SAFETY.md): what neet may and may not change.
 * [Roadmap](docs/ROADMAP.md): what is done and what comes next.
+* [Architecture](docs/ARCHITECTURE.md): how the code is organized, for contributors.
 
 ## License
 
