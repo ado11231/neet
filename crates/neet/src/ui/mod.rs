@@ -8,6 +8,7 @@ mod help;
 mod home;
 mod large;
 mod loading;
+mod quick;
 mod review;
 mod scan;
 mod skipped;
