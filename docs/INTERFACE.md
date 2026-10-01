@@ -110,7 +110,7 @@
 | `Left` or `h` | Go up to the parent folder, keeping your place. |
 | `s` | Sort by size, then name, then item count. |
 | `g` / `G` | Jump to the first or last row. |
-| `d` | Clean the selected item. Opens [Review](#review-confirm-and-move), or a box that says why it cannot be cleaned. |
+| `d` | Clean the selected item. Opens [Review](#review-confirm-and-move), or a box that says in plain sentences why neet will not move it. Any key closes the box. |
 
 ## Clean
 
@@ -163,7 +163,7 @@
 
 | Step | Layout | Keys |
 | --- | --- | --- |
-| Review | A full screen, scrolling list of every selected path, grouped by rule, with sizes. The title shows the item count and total size. | Scroll with `Up` / `Down`, `PgUp` / `PgDn`, `g` / `G`. `Enter` goes on. `Esc` goes back. |
+| Review | A full screen, scrolling list of every selected path, with sizes. Paths are grouped by rule, or by folder for Remove App. The title shows the item count and total size. | Scroll with `Up` / `Down`, `PgUp` / `PgDn`, `g` / `G`. `Enter` goes on. `Esc` goes back. |
 | Confirm | A box, 60 columns wide, in the middle of the review. It shows the item count and total size, and that Finder moves them to the Trash. | `y` moves them. `n` or `Esc` goes back. |
 | Move | A progress bar. The first time, macOS asks whether your terminal may control Finder. | No key works until every item is done. |
 | Result | How many items moved, the space they take in the Trash, how to use Put Back, and every skipped item with its reason. | `Enter` or `Esc` goes back to Home. |
