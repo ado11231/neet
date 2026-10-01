@@ -12,6 +12,7 @@ use super::clean::Clean;
 use super::disk::Disk;
 use super::format;
 use super::large::LargeFiles;
+use super::quick::QuickClean;
 use super::scan::ScanStatus;
 use super::skipped::Skipped;
 use neet_core::disk::DiskSpace;
@@ -45,6 +46,11 @@ const ENTRIES: &[Entry] = &[
         label: "Disk",
         about: "Browse your folders by size.",
         target: Target::Screen(|| Box::new(Disk::new())),
+    },
+    Entry {
+        label: "Quick Clean",
+        about: "See everything taking space that can be cleared, and how, before cleaning.",
+        target: Target::Screen(|| Box::new(QuickClean::new())),
     },
     Entry {
         label: "Clean",
@@ -135,8 +141,10 @@ impl Home {
 
     fn draw_menu(&mut self, frame: &mut Frame, area: Rect, context: &Context) {
         let items = ENTRIES.iter().enumerate().map(|(index, entry)| {
+            // Only rows 1 to 9 have a number key.
             let number = match entry.target {
                 Target::Quit => "  ".to_string(),
+                _ if index >= 9 => "  ".to_string(),
                 _ => format!("{} ", index + 1),
             };
             let mut spans = vec![
@@ -418,6 +426,8 @@ mod tests {
     fn down_skips_rows_that_are_not_built() {
         let mut home = Home::new();
         press(&mut home, KeyCode::Down);
+        assert_eq!(ENTRIES[home.selected()].label, "Quick Clean");
+        press(&mut home, KeyCode::Down);
         assert_eq!(ENTRIES[home.selected()].label, "Clean");
         press(&mut home, KeyCode::Down);
         assert_eq!(ENTRIES[home.selected()].label, "Large Files");
@@ -441,7 +451,7 @@ mod tests {
             press(&mut home, KeyCode::Char('1')),
             Action::Open(_)
         ));
-        assert!(matches!(press(&mut home, KeyCode::Char('5')), Action::None));
+        assert!(matches!(press(&mut home, KeyCode::Char('6')), Action::None));
     }
 
     #[test]
