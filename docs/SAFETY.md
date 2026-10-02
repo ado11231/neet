@@ -102,7 +102,7 @@
 ## Cleanup Rules
 
 * Built in rules ship inside neet. Your own rules go in `~/.config/neet/rules/`, as `.toml` files.
-* A rule with a mistake is left out and listed on the Clean screen. The other rules still load.
+* A rule with a mistake is left out and listed on the Deep Clean screen. The other rules still load.
 * Your rule replaces a built in rule with the same `id`.
 
 ```toml
@@ -121,7 +121,7 @@ min_age_days = 0
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `id` | Yes | Lowercase letters, numbers, and hyphens. |
-| `name` | Yes | The name on the Clean screen. |
+| `name` | Yes | The name on the Deep Clean screen. |
 | `category` | Yes | `developer`, `package`, `application`, `browser`, `logs`, or `system`. |
 | `tier` | Yes | The risk level: `safe`, `caution`, or `expert`. |
 | `paths` | Yes | Full paths. `~` only at the start. `*` matches any name within one folder, and only after the allowed folder part. |

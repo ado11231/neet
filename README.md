@@ -46,10 +46,10 @@ neet
 | Screen | What It Does |
 | --- | --- |
 | Quick Clean | Start here: see everything taking space that can be cleared, and how. |
-| Disk | Browse your folders, largest first. |
-| Clean | Move caches and other files your apps can make again to the Trash. |
-| Large Files | Find your largest and oldest files. |
+| Deep Clean | Go through every cache and log rule, and move what your apps can make again to the Trash. |
 | Remove App | Remove an app along with the files it left in your Library folder. |
+| Large Files | Find your largest and oldest files. |
+| Disk | Browse your folders, largest first. |
 
 ## Notes
 
