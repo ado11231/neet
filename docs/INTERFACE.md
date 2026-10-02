@@ -125,29 +125,38 @@
 ## Quick Clean
 
 ```text
-+ Quick Clean -------------------------------------------------------------------------+
-|   Item                        Size   Found  Cleared by  How                            |
-|                                                                                       |
-| > Caches and logs          ~7.2 GB          neet        Enter, then review in Deep Clean|
-|   Trash                    20.5 KB      1   you         Empty the Trash                |
-|   Project build folders    28.4 GB     26   you         cargo clean, or rm -rf ...     |
-|   Simulator runtimes       17.3 GB      2   you         Xcode, Settings, Components    |
-|   Temporary files          11.7 GB  20,484  macOS       Restart the Mac                |
-+--------------------------------- neet can clean ~7.2 GB . you can free 56.7 GB more -+
-+---------------------------------------------------------------------------------------+
-| Project build folders                                                                 |
-| node_modules folders, and Rust target folders, in your projects. ...                  |
-+---------------------------------------------------------------------------------------+
++ Quick Clean -------------------------------------------+  + Largest ------------------------------------+
+|   Item                        Size              Found  |  |   20.8 GB  ~/Documents/rust/slingshot/target |
+|                                                Cleared |  |    5.4 GB  ~/Documents/rust/neet/target      |
+|   Caches and logs          ~193 MB  ......        neet |  |    2.1 GB  ~/Documents/app/node_modules      |
+| > Project build folders    31.5 GB  ######   26   neet |  |  956.2 MB  ~/Documents/web/node_modules      |
+|   Installers in Downloads     none                neet |  |       ...                                    |
+|   Trash                     4.4 MB  ......  2,195  you |  |                                              |
+|   Docker disk image        11.0 GB  ###...     1   you |  |                                              |
+|   Simulator runtimes       17.3 GB  ####..     2   you |  |                                              |
+|   Temporary files           3.1 GB  #.....  6,033 macOS|  |                                              |
++------- neet can clear ~31.7 GB . you can free 28.3 GB -+  |                                              |
++ Project build folders ---------------------------------+  |                                              |
+| Cleared by neet                                        |  |                                              |
+| node_modules folders, and Rust target folders, ...     |  |                                              |
+| How                                                    |  |                                              |
+| 1. Press Enter to list every build folder.             |  |                                              |
+| 2. All start selected. Clear any you are working in.   |  |                                              |
+| 3. Review, confirm, and they go to the Trash.          |  |                                              |
++--------------------------------------------------------+  +----------------------------------------------+
 ```
 
 * One table of everything taking space that can be cleared, so you can start with the biggest wins.
-* **Rows,** always in this order:
-  1. Caches and logs: what every Deep Clean rule found. neet cleans these.
-  2. Trash, installers in Downloads, project build folders, and the Docker disk image, from the scan.
-  3. Simulator runtimes, asked of `xcrun simctl` when there are simulators on the Mac, and temporary files, measured in `/private/var/folders`. Both are worked out in the background and show `looking…` until done.
-* **Columns:** the size, red from 5 GB and yellow from 1 GB, how many items, who clears it, and how. `neet` is green, `you` yellow, and `macOS` gray. Temporary files are left to macOS, since deleting them by hand can break running apps.
-* The bottom edge adds up what neet can clean and what you can free yourself.
-* The box below explains the selected row, and how to remove it.
+* **Rows,** always in this order, what neet clears first:
+  1. Caches and logs: what every Deep Clean rule found.
+  2. Project build folders and installers in Downloads, from the scan. neet moves these to the Trash after you pick and review them.
+  3. The Trash and the Docker disk image, from the scan, which you clear yourself.
+  4. Simulator runtimes, asked of `xcrun simctl` when there are simulators on the Mac, and temporary files, measured in `/private/var/folders`. Both are worked out in the background and show `looking…` until done.
+* **Columns:** the size and a bar of it against the largest row, both red from 5 GB and yellow from 1 GB, how many items, and who clears it: `neet` in green, `you` in yellow, or `macOS` in blue. Temporary files are left to macOS, since deleting them by hand can break running apps.
+* The bottom edge adds up what neet can clear and what you can free yourself.
+* **Below the table:** what the selected row is, and numbered steps to clear it.
+* **Right:** the largest items of the selected row, as many as fit: rules for Caches and logs, folders and installers by path, and the largest item for the Trash and Docker. It is hidden when the terminal is narrower than 130 columns.
+* Build folders and installers that are empty, or already gone since the scan, are left out.
 * Until the scan finishes, the screen shows the loading box.
 * Nothing on this screen changes a file.
 
@@ -155,7 +164,30 @@
 | --- | --- |
 | `Up` / `Down` | Move the selection. |
 | `g` / `G` | Jump to the first or last row. |
-| `Enter`, `Right`, or `l` | On Caches and logs, open [Deep Clean](#deep-clean). On a row from the scan, show the largest item in [Disk](#disk). |
+| `Enter`, `Right`, or `l` | On Caches and logs, open [Deep Clean](#deep-clean). On build folders or installers, open [Pick](#pick). On the Trash or Docker, show it in [Disk](#disk). |
+| `d` | Show the largest item of the row in [Disk](#disk). |
+
+### Pick
+
+```text
++ Project build folders ----------------------------------------------------------------+
+|             Size  Path                                                     Changed      |
+|                                                                                         |
+| > [✓]    20.8 GB  ~/Documents/rust/slingshot/target                       today        |
+|   [✓]     2.1 GB  ~/Documents/app/node_modules                            14 days ago  |
+|   [ ]   956.2 MB  ~/Documents/web/node_modules                            2 months ago |
++ Selected: 2 items . 22.9 GB --------------- Everything goes to the Trash, where Put Back works +
+```
+
+* Lists every build folder, or every installer, largest first, each with a checkbox, its size, its path with the folder in blue, and when anything inside last changed. A change in the last 7 days is yellow, since you may be working in it.
+* Everything starts selected. Measuring and checking each item shows the loading box first.
+* An item the check refuses is dimmed, with the reason. What is allowed is in [SAFETY.md](SAFETY.md#build-folders-and-installers).
+
+| Key | Action |
+| --- | --- |
+| `Space` | Select or clear an item. |
+| `a` | Select all, or clear all when all are selected. |
+| `Enter` | Go to [Review](#review-confirm-and-move). |
 
 ## Deep Clean
 
@@ -206,7 +238,7 @@
 
 ## Review, Confirm, And Move
 
-* Deep Clean, Disk, Large Files, and Remove App all end in these same four steps. Quick Clean leads to them through Deep Clean.
+* Deep Clean, Pick, Disk, Large Files, and Remove App all end in these same four steps.
 
 | Step | Layout | Keys |
 | --- | --- | --- |

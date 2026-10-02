@@ -52,7 +52,7 @@ fn make_plan(home: &Path, user_rules: Option<&Path>) -> Outcome {
 pub struct Estimate {
     result: Option<Receiver<Outcome>>,
     started: Instant,
-    planned: Option<Arc<Planned>>,
+    pub(super) planned: Option<Arc<Planned>>,
     failed: Option<String>,
 }
 
