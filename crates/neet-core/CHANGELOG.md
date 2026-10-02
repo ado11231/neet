@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/ado11231/neet/compare/neet-core-v0.1.0...neet-core-v0.2.0)
+
+### Added
+
+- *(core)* list simulator devices and unused Docker volumes, and reset Docker to the Trash
+- *(tui)* keep row colors when selected, say permanently, and center Quick Clean's empty list
+- *(core)* read and remove simulator runtimes and Docker data through their own tools
+- *(core)* let neet move project build folders and Downloads installers to the Trash
+- show each app's size in Remove App, color the list, and sort by size with s
+- *(core)* let a cleanup plan be copied
+- *(core)* measure clutter neet does not clean itself
+- *(core)* read the free space Finder shows, purgeable space included
+
+### Fixed
+
+- *(core)* reset Docker by moving its disk image into the Trash directly, once nothing has it open
+- *(core)* stop Docker Desktop with docker desktop stop, and know newer Docker's not running error
+- *(core)* skip Finder's .DS_Store when rule paths expand
+
+### Other
+
+- move the 0.1.0 date to the end of each changelog entry
+
+Released 2026-10-02
+
 ## [0.1.0](https://github.com/ado11231/neet/releases/tag/neet-core-v0.1.0)
 
 ### Added
