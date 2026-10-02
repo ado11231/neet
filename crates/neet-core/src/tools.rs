@@ -1,20 +1,30 @@
-//! Space only its own tool can free: simulator runtimes, through
-//! `xcrun simctl`, and Docker's images and containers, through `docker`.
-//! Neither can go to the Trash, so removing them is permanent. See Tools
-//! neet Runs in `docs/SAFETY.md`.
+//! Space only its own tool can free: simulator runtimes and devices,
+//! through `xcrun simctl`, and Docker's images, containers, and volumes,
+//! through `docker`. None of it can go to the Trash, so removing it is
+//! permanent. Resetting Docker is the one exception: its disk image goes to
+//! the Trash. See Tools neet Runs in `docs/SAFETY.md`.
 
 use std::collections::HashMap;
 use std::io;
 use std::path::Path;
 use std::process::{Command, Output};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use serde::Deserialize;
+
+use crate::safety::{CleanupRoots, DOCKER_IMAGE};
+use crate::size::allocated_size;
+use crate::trash;
 
 /// One simulator runtime Xcode downloaded
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Runtime {
     /// The ID `simctl` knows it by
     pub identifier: String,
+    /// The ID its simulators name it by, such as
+    /// `com.apple.CoreSimulator.SimRuntime.iOS-18-6`
+    pub runtime_identifier: String,
     /// The platform and version, such as `iOS 18.6`
     pub name: String,
     pub build: String,
@@ -29,6 +39,8 @@ pub struct Runtime {
 #[serde(rename_all = "camelCase")]
 struct RawRuntime {
     identifier: String,
+    #[serde(default)]
+    runtime_identifier: String,
     #[serde(default)]
     version: String,
     #[serde(default)]
@@ -66,6 +78,7 @@ fn parse_runtimes(json: &[u8]) -> io::Result<Vec<Runtime>> {
                 runtime.version
             ),
             identifier: runtime.identifier,
+            runtime_identifier: runtime.runtime_identifier,
             build: runtime.build,
             size: runtime.size_bytes,
             last_used: runtime.last_used_at,
@@ -138,6 +151,101 @@ pub fn delete_runtime(identifier: &str) -> io::Result<()> {
     }
 }
 
+/// One simulator, such as an iPhone 16 Pro, and the runtime it runs on
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Device {
+    /// The ID `simctl` knows it by
+    pub udid: String,
+    pub name: String,
+    /// The runtime it runs on, such as
+    /// `com.apple.CoreSimulator.SimRuntime.iOS-18-6`
+    pub runtime: String,
+    /// False once its runtime is gone, when it can never start again
+    pub available: bool,
+    /// Its apps, data, and logs
+    pub size: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawDevice {
+    udid: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    is_available: bool,
+    #[serde(default)]
+    data_path_size: u64,
+    #[serde(default)]
+    log_path_size: u64,
+}
+
+#[derive(Deserialize)]
+struct RawDevices {
+    devices: HashMap<String, Vec<RawDevice>>,
+}
+
+fn parse_devices(json: &[u8]) -> io::Result<Vec<Device>> {
+    let raw: RawDevices = serde_json::from_slice(json)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    let mut devices: Vec<Device> = raw
+        .devices
+        .into_iter()
+        .flat_map(|(runtime, devices)| {
+            devices.into_iter().map(move |device| Device {
+                udid: device.udid,
+                name: device.name,
+                runtime: runtime.clone(),
+                available: device.is_available,
+                size: device.data_path_size + device.log_path_size,
+            })
+        })
+        .collect();
+    devices.sort_by(|a, b| b.size.cmp(&a.size).then_with(|| a.name.cmp(&b.name)));
+    Ok(devices)
+}
+
+/// Every simulator device, largest first. Empty when there are no
+/// simulators on this Mac.
+///
+/// # Errors
+///
+/// Returns an error if `simctl` could not run or gave output neet cannot read.
+pub fn devices() -> io::Result<Vec<Device>> {
+    if !Path::new("/Library/Developer/CoreSimulator").exists() {
+        return Ok(Vec::new());
+    }
+    let output = Command::new("/usr/bin/xcrun")
+        .args(["simctl", "list", "devices", "-j"])
+        .output()?;
+    if !output.status.success() {
+        return Err(failed(&output));
+    }
+    parse_devices(&output.stdout)
+}
+
+/// Asks `simctl` to delete one simulator device and its data, permanently.
+///
+/// # Errors
+///
+/// Returns an error if the ID is not a device ID, or `simctl` failed.
+pub fn delete_device(udid: &str) -> io::Result<()> {
+    if !is_runtime_id(udid) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "not a simulator device ID",
+        ));
+    }
+    let output = Command::new("/usr/bin/xcrun")
+        .args(["simctl", "delete", udid])
+        .output()?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(failed(&output))
+    }
+}
+
 /// One line of `docker system df`, such as images or the build cache.
 /// Docker gives the sizes as text, such as `1.808GB`.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
@@ -158,6 +266,56 @@ pub enum Docker {
     /// Installed, but Docker Desktop is not running
     NotRunning,
     Usage(Vec<DockerUsage>),
+}
+
+/// A Docker volume no container uses, which `docker system prune` keeps
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DockerVolume {
+    pub name: String,
+    /// As Docker gives it, such as `2.812GB`
+    pub size: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct RawVolume {
+    name: String,
+    #[serde(default)]
+    links: String,
+    #[serde(default)]
+    size: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct RawSpace {
+    #[serde(default)]
+    volumes: Vec<RawVolume>,
+}
+
+fn parse_unused_volumes(json: &[u8]) -> io::Result<Vec<DockerVolume>> {
+    let raw: RawSpace = serde_json::from_slice(json)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    Ok(raw
+        .volumes
+        .into_iter()
+        .filter(|volume| volume.links == "0")
+        .map(|volume| DockerVolume {
+            name: volume.name,
+            size: volume.size,
+        })
+        .collect())
+}
+
+/// Whether `name` looks like a Docker volume name, so it can never be an
+/// option
+fn is_volume_name(name: &str) -> bool {
+    name.chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphanumeric())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
 }
 
 /// The `docker` program, found where Docker Desktop and Homebrew put it
@@ -205,6 +363,109 @@ pub fn docker_usage() -> io::Result<Docker> {
     parse_docker_usage(&output.stdout).map(Docker::Usage)
 }
 
+/// The volumes no container uses, asked of `docker system df -v`. Nothing
+/// changes.
+///
+/// # Errors
+///
+/// Returns an error if Docker is not installed or running, or gave output
+/// neet cannot read.
+pub fn unused_volumes() -> io::Result<Vec<DockerVolume>> {
+    let docker = docker_program()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Docker is not installed"))?;
+    let output = Command::new(docker)
+        .args(["system", "df", "--verbose", "--format", "json"])
+        .output()?;
+    if !output.status.success() {
+        return Err(failed(&output));
+    }
+    parse_unused_volumes(&output.stdout)
+}
+
+/// Asks Docker to remove one volume and the data in it, permanently. Docker
+/// refuses if a container uses it.
+///
+/// # Errors
+///
+/// Returns an error if the name is not a volume name, or Docker failed.
+pub fn remove_volume(name: &str) -> io::Result<()> {
+    if !is_volume_name(name) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "not a Docker volume name",
+        ));
+    }
+    let docker = docker_program()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Docker is not installed"))?;
+    let output = Command::new(docker)
+        .args(["volume", "rm", "--", name])
+        .output()?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(failed(&output))
+    }
+}
+
+/// Where Docker Desktop keeps its disk image, and the space it takes. `None`
+/// when there is none.
+#[must_use]
+pub fn docker_image(roots: &CleanupRoots) -> Option<(std::path::PathBuf, u64)> {
+    let path = DOCKER_IMAGE
+        .iter()
+        .fold(roots.home().to_path_buf(), |path, name| path.join(name));
+    let metadata = std::fs::symlink_metadata(&path).ok()?;
+    metadata
+        .is_file()
+        .then(|| (path, allocated_size(&metadata)))
+}
+
+/// Whether any part of Docker Desktop is still running
+fn docker_is_running() -> bool {
+    Command::new("/usr/bin/pgrep")
+        .args(["-f", "/Applications/Docker.app/Contents/"])
+        .output()
+        .map_or(true, |output| output.status.success())
+}
+
+/// How long Docker Desktop gets to quit
+const QUIT_WAIT: Duration = Duration::from_secs(60);
+
+/// Quits Docker Desktop, then moves its disk image to the Trash, where Put
+/// Back can restore it while Docker Desktop is quit. Docker Desktop makes a
+/// new, empty one when it opens. Every image, container, and volume goes
+/// with it. Returns the space it took.
+///
+/// # Errors
+///
+/// Returns an error if Docker Desktop did not quit in time, the image fails
+/// the path check, or Finder could not move it.
+pub fn reset_docker(roots: &CleanupRoots) -> io::Result<u64> {
+    let (path, size) = docker_image(roots)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Docker has no disk image"))?;
+    if docker_is_running() {
+        let output = Command::new("/usr/bin/osascript")
+            .args(["-e", "tell application id \"com.docker.docker\" to quit"])
+            .output()?;
+        if !output.status.success() {
+            return Err(failed(&output));
+        }
+        let started = Instant::now();
+        while docker_is_running() {
+            if started.elapsed() > QUIT_WAIT {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "Docker Desktop did not quit within a minute. Quit it from its menu, then try again.",
+                ));
+            }
+            thread::sleep(Duration::from_millis(500));
+        }
+    }
+    let validated = roots.validate_clutter(&path).map_err(io::Error::other)?;
+    trash::move_to_trash(validated.path())?;
+    Ok(size)
+}
+
 /// Opens Docker Desktop, which starts Docker in the background.
 ///
 /// # Errors
@@ -246,7 +507,10 @@ pub fn docker_prune() -> io::Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_runtime_id, parse_docker_usage, parse_runtimes};
+    use super::{
+        is_runtime_id, is_volume_name, parse_devices, parse_docker_usage, parse_runtimes,
+        parse_unused_volumes,
+    };
 
     #[test]
     fn reads_runtimes_largest_first() {
@@ -289,5 +553,53 @@ mod tests {
         assert_eq!(usage.len(), 2);
         assert_eq!(usage[0].kind, "Images");
         assert_eq!(usage[0].reclaimable, "1.105GB (61%)");
+    }
+
+    #[test]
+    fn reads_devices_with_their_runtime() {
+        let json = br#"{"devices": {
+            "com.apple.CoreSimulator.SimRuntime.iOS-18-6": [
+                {"udid": "89B174CA-DC9E-4D90", "name": "iPhone 16 Pro", "isAvailable": false,
+                 "dataPathSize": 2000, "logPathSize": 100}
+            ],
+            "com.apple.CoreSimulator.SimRuntime.iOS-26-5": [
+                {"udid": "E6AA1A70-FBA6-4BB5", "name": "iPhone 17 Pro", "isAvailable": true,
+                 "dataPathSize": 500}
+            ]
+        }}"#;
+
+        let devices = parse_devices(json).expect("devices should parse");
+
+        assert_eq!(devices[0].name, "iPhone 16 Pro");
+        assert_eq!(devices[0].size, 2100);
+        assert!(!devices[0].available);
+        assert_eq!(
+            devices[0].runtime,
+            "com.apple.CoreSimulator.SimRuntime.iOS-18-6"
+        );
+        assert!(devices[1].available);
+    }
+
+    #[test]
+    fn reads_only_volumes_no_container_uses() {
+        let json = br#"{"Images": [], "Volumes": [
+            {"Name": "influxdb-storage", "Links": "0", "Size": "2.812GB"},
+            {"Name": "supabase_db_JrnymanApp", "Links": "1", "Size": "167.8MB"}
+        ]}"#;
+
+        let volumes = parse_unused_volumes(json).expect("volumes should parse");
+
+        assert_eq!(volumes.len(), 1);
+        assert_eq!(volumes[0].name, "influxdb-storage");
+        assert_eq!(volumes[0].size, "2.812GB");
+    }
+
+    #[test]
+    fn only_volume_names_are_passed_to_docker() {
+        assert!(is_volume_name("influxdb-storage"));
+        assert!(is_volume_name("supabase_edge_runtime_"));
+        assert!(!is_volume_name("--all"));
+        assert!(!is_volume_name("a b"));
+        assert!(!is_volume_name(""));
     }
 }

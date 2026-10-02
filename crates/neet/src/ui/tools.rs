@@ -818,6 +818,10 @@ mod tests {
     fn runtime(name: &str, size: u64) -> Runtime {
         Runtime {
             identifier: "AAAA-1111".to_string(),
+            runtime_identifier: format!(
+                "com.apple.CoreSimulator.SimRuntime.{}",
+                name.replace([' ', '.'], "-")
+            ),
             name: name.to_string(),
             build: "22G86".to_string(),
             size,
