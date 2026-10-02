@@ -1,9 +1,7 @@
 use std::cmp::Reverse;
 
-use std::sync::Arc;
 use std::time::SystemTime;
 
-use neet_core::clean::{self, SkipReason};
 use neet_core::safety::{CleanupRoots, SafetyError};
 use neet_core::tree::{NodeId, NodeKind, Tree};
 use ratatui::Frame;
@@ -15,10 +13,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState, Padding, Paragraph, Wrap};
 
 use super::app::{Action, Context, Screen};
-use super::clean::{Planned, skip_reason};
 use super::format;
 use super::loading::scanning;
-use super::review::{Notice, Review};
 use super::scan::ScanStatus;
 
 /// How many characters wide each size bar is.
@@ -214,7 +210,7 @@ fn draw_folder(frame: &mut Frame, area: Rect, tree: &Tree, browser: &mut Browser
     let list = List::new(items)
         .block(block)
         .highlight_symbol("▸ ")
-        .highlight_style(Style::new().bold().white());
+        .highlight_style(Style::new().bold());
     frame.render_stateful_widget(list, area, &mut browser.list);
 }
 
@@ -323,7 +319,7 @@ fn about(tree: &Tree, id: NodeId, browser: &Browser) -> Vec<Line<'static>> {
     lines
 }
 
-/// Whether `d` can clean an item, in one colored line.
+/// Whether neet cleans an item, in one colored line.
 fn cleanable(path: &std::path::Path, roots: Option<&CleanupRoots>) -> Line<'static> {
     let Some(roots) = roots else {
         return Line::from("neet could not read the home folder, so nothing can be cleaned.");
@@ -331,11 +327,11 @@ fn cleanable(path: &std::path::Path, roots: Option<&CleanupRoots>) -> Line<'stat
     match roots.validate_deletable(path) {
         Ok(_) => Line::from(vec![
             Span::raw("✓ ").green().bold(),
-            Span::raw("Can be cleaned. Press d to review it.").green(),
+            Span::raw("In a folder neet cleans.").green(),
         ]),
         Err(SafetyError::IsRoot) => Line::from(vec![
             Span::raw("◆ ").yellow(),
-            Span::raw("A cleanup folder. Open it and clean the items inside.").yellow(),
+            Span::raw("A cleanup folder. neet cleans the items inside.").yellow(),
         ]),
         Err(SafetyError::Protected) => Line::from(vec![
             Span::raw("✗ ").red().bold(),
@@ -517,18 +513,13 @@ impl Screen for Disk {
             KeyCode::Char('s') => browser.cycle_sort(tree),
             KeyCode::Char('g') | KeyCode::Home => browser.move_to(0),
             KeyCode::Char('G') | KeyCode::End => browser.move_to(usize::MAX),
-            KeyCode::Char('d') => {
-                if let Some(id) = browser.selected() {
-                    return plan_cleanup(tree, id);
-                }
-            }
             _ => {}
         }
         Action::None
     }
 
     fn hints(&self) -> &'static str {
-        "↑↓ move · → open · ← up · s sort · d clean · esc home · ? help"
+        "↑↓ move · → open · ← up · s sort · esc home · ? help"
     }
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
@@ -538,66 +529,9 @@ impl Screen for Disk {
             ("←  h", "Go up to the parent folder"),
             ("s", "Sort by size, name, or items"),
             ("g  G", "Jump to the first or last row"),
-            ("d", "Review moving the selected item to the Trash"),
             ("Esc", "Go back to Home"),
             ("q", "Quit"),
         ]
-    }
-}
-
-/// Plans a cleanup of one item, with the same checks as any rule, and opens
-/// the review. If the item cannot be cleaned, says why.
-pub(super) fn plan_cleanup(tree: &Tree, id: NodeId) -> Action {
-    let home = tree.path(tree.root());
-    let path = tree.path(id);
-    let result = CleanupRoots::new(&home)
-        .map_err(|error| vec![format!("The home folder could not be read: {error}.")])
-        .and_then(|roots| {
-            clean::plan_path(&path, &roots, SystemTime::now())
-                .map(|plan| (plan, roots.home().to_path_buf()))
-                .map_err(|reason| refusal(&reason))
-        });
-    match result {
-        Ok((plan, home)) => Action::Open(Box::new(Review::new(Arc::new(Planned {
-            plan,
-            errors: Vec::new(),
-            home,
-        })))),
-        Err(why) => {
-            let mut lines = vec![Line::from(display_path(tree, id)).bold(), Line::default()];
-            lines.extend(why.into_iter().map(Line::from));
-            Action::Open(Box::new(Notice::new("neet will not move this", lines)))
-        }
-    }
-}
-
-/// Why an item picked in Disk cannot be cleaned, in plain sentences.
-fn refusal(reason: &SkipReason) -> Vec<String> {
-    match reason {
-        SkipReason::Refused(SafetyError::OutsideRoots) => vec![
-            "It is outside the folders neet cleans.".to_string(),
-            "neet only moves items inside cache, log, and build folders, such as \
-             ~/Library/Caches, ~/Library/Logs, and ~/.npm/_cacache."
-                .to_string(),
-        ],
-        SkipReason::Refused(SafetyError::IsRoot) => vec![
-            "It is a whole cleanup folder.".to_string(),
-            "Open it with → and pick an item inside it instead.".to_string(),
-        ],
-        SkipReason::Refused(SafetyError::Protected) => {
-            vec!["It holds your own files or keys, so neet never moves anything in it.".to_string()]
-        }
-        SkipReason::Refused(error) => vec![sentence(&error.to_string())],
-        other => vec![sentence(&skip_reason(other, None))],
-    }
-}
-
-/// `text` with a capital first letter and a full stop.
-fn sentence(text: &str) -> String {
-    let mut chars = text.chars();
-    match chars.next() {
-        Some(first) => format!("{}{}.", first.to_uppercase(), chars.as_str()),
-        None => String::new(),
     }
 }
 
@@ -764,7 +698,7 @@ mod tests {
     }
 
     #[test]
-    fn the_selected_row_is_white_without_a_filled_background() {
+    fn the_selected_row_is_bold_without_a_filled_background() {
         let scan = ScanStatus::Done {
             scan: Scan {
                 tree: sample(),
@@ -788,39 +722,9 @@ mod tests {
         // The first row sits below the top border, after the padding.
         let arrow = &buffer[(2, 1)];
         assert_eq!(arrow.symbol(), "▸");
-        assert_eq!(arrow.fg, ratatui::style::Color::White);
+        assert!(arrow.modifier.contains(ratatui::style::Modifier::BOLD));
         assert!(!arrow.modifier.contains(ratatui::style::Modifier::REVERSED));
         assert_eq!(arrow.bg, ratatui::style::Color::Reset);
-    }
-
-    #[test]
-    fn d_reviews_an_item_in_a_cleanup_folder_and_explains_any_other() {
-        let dir = tempfile::tempdir().expect("temporary directory should be created");
-        for file in ["Library/Caches/app/file", "Documents/keep.txt"] {
-            let path = dir.path().join(file);
-            std::fs::create_dir_all(path.parent().expect("path should have a parent"))
-                .expect("folder should be created");
-            std::fs::write(path, "x").expect("file should be written");
-        }
-        let mut tree = Tree::new(dir.path());
-        let root = tree.root();
-        let library = tree.add(root, "Library", NodeKind::Directory, 0);
-        let caches = tree.add(library, "Caches", NodeKind::Directory, 0);
-        let app = tree.add(caches, "app", NodeKind::Directory, 0);
-        let documents = tree.add(root, "Documents", NodeKind::Directory, 0);
-
-        let Action::Open(screen) = plan_cleanup(&tree, app) else {
-            panic!("a cache folder should open the review");
-        };
-        assert!(screen.hints().contains("enter continue"));
-
-        for refused in [documents, caches, library] {
-            let Action::Open(screen) = plan_cleanup(&tree, refused) else {
-                panic!("a refused item should open a notice");
-            };
-            assert!(screen.hints().contains("any key to close"));
-        }
-        assert!(dir.path().join("Library/Caches/app/file").exists());
     }
 
     #[test]
@@ -832,7 +736,7 @@ mod tests {
         let roots = CleanupRoots::new(dir.path()).expect("roots should be made");
         let status = |path: &str| cleanable(&dir.path().join(path), Some(&roots)).to_string();
 
-        assert!(status("Library/Caches/app").contains("Can be cleaned"));
+        assert!(status("Library/Caches/app").contains("In a folder neet cleans"));
         assert!(status("Library/Caches").contains("A cleanup folder"));
         assert!(status("Documents").contains("Protected"));
         assert!(status("notes").contains("Outside the folders neet cleans"));
@@ -849,19 +753,5 @@ mod tests {
         assert!(meaning(&tree, caches).is_some_and(|text| text.contains("make again")));
         assert!(meaning(&tree, library).is_some());
         assert_eq!(meaning(&tree, other), None);
-    }
-
-    #[test]
-    fn a_refusal_says_why_in_plain_sentences() {
-        let outside = refusal(&SkipReason::Refused(SafetyError::OutsideRoots));
-        assert_eq!(outside[0], "It is outside the folders neet cleans.");
-        assert!(outside[1].contains("~/Library/Caches"));
-        let root = refusal(&SkipReason::Refused(SafetyError::IsRoot));
-        assert!(root[1].contains("pick an item inside it"));
-        assert_eq!(
-            refusal(&SkipReason::Refused(SafetyError::Link)),
-            ["The path is a link."]
-        );
-        assert_eq!(refusal(&SkipReason::Link), ["A link, left in place."]);
     }
 }

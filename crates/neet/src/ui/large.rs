@@ -10,7 +10,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Cell, Padding, Paragraph, Row, Table, TableState, Wrap};
 
 use super::app::{Action, Context, Screen};
-use super::disk::{Disk, display_path, plan_cleanup};
+use super::disk::{Disk, display_path};
 use super::format;
 use super::loading::scanning;
 use super::scan::ScanStatus;
@@ -223,7 +223,7 @@ impl Screen for LargeFiles {
         .column_spacing(GAP)
         .block(block)
         .highlight_symbol("▸ ")
-        .row_highlight_style(Style::new().bold().white());
+        .row_highlight_style(Style::new().bold());
         frame.render_stateful_widget(table, area, &mut self.table);
     }
 
@@ -253,18 +253,13 @@ impl Screen for LargeFiles {
                     return Action::Open(Box::new(Disk::showing(tree, id)));
                 }
             }
-            KeyCode::Char('d') => {
-                if let Some(id) = self.selected() {
-                    return plan_cleanup(tree, id);
-                }
-            }
             _ => {}
         }
         Action::None
     }
 
     fn hints(&self) -> &'static str {
-        "↑↓ move · s size · a age · enter show in Disk · d clean · esc home · ? help"
+        "↑↓ move · s size · a age · enter show in Disk · esc home · ? help"
     }
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
@@ -274,7 +269,6 @@ impl Screen for LargeFiles {
             ("s", "Change the smallest size: 10 MB to 5 GB"),
             ("a", "Change how long files must be unchanged"),
             ("Enter  →  l", "Show the file in Disk"),
-            ("d", "Review moving the file to the Trash"),
             ("Esc", "Go back"),
             ("q", "Quit"),
         ]
@@ -419,15 +413,15 @@ mod tests {
         let scan = done();
         let mut large = LargeFiles::new();
 
-        // The first file is selected, so the second shows its own colors.
         assert_eq!(color_of(&mut large, &scan, "300.0 MB"), Color::Reset);
         assert_eq!(color_of(&mut large, &scan, "2 days ago"), Color::Reset);
+        // The selected row is bold, and keeps its colors.
+        assert_eq!(color_of(&mut large, &scan, "2.0 GB"), Color::Yellow);
+        assert_eq!(color_of(&mut large, &scan, "1 year ago"), Color::Magenta);
 
         press(&mut large, &scan, KeyCode::Down);
         assert_eq!(color_of(&mut large, &scan, "2.0 GB"), Color::Yellow);
-        assert_eq!(color_of(&mut large, &scan, "1 year ago"), Color::Magenta);
-        // The selected row is white all the way across.
-        assert_eq!(color_of(&mut large, &scan, "300.0 MB"), Color::White);
+        assert_eq!(color_of(&mut large, &scan, "300.0 MB"), Color::Reset);
     }
 
     #[test]

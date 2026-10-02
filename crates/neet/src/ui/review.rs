@@ -229,57 +229,6 @@ impl Screen for Review {
     }
 }
 
-/// A short message in a box, closed with any key.
-pub struct Notice {
-    title: &'static str,
-    lines: Vec<Line<'static>>,
-}
-
-impl Notice {
-    pub fn new(title: &'static str, lines: Vec<Line<'static>>) -> Self {
-        Self { title, lines }
-    }
-}
-
-impl Screen for Notice {
-    fn draw(&mut self, frame: &mut Frame, area: Rect, _context: &Context) {
-        let height = u16::try_from(self.lines.len() + 4).unwrap_or(u16::MAX);
-        let [area] = Layout::vertical([Constraint::Length(height)])
-            .flex(Flex::Center)
-            .areas(area);
-        let [area] = Layout::horizontal([Constraint::Length(72)])
-            .flex(Flex::Center)
-            .areas(area);
-        frame.render_widget(Clear, area);
-        frame.render_widget(
-            Paragraph::new(self.lines.clone())
-                .wrap(Wrap { trim: false })
-                .block(
-                    Block::bordered()
-                        .title(format!(" {} ", self.title))
-                        .padding(Padding::horizontal(1)),
-                ),
-            area,
-        );
-    }
-
-    fn handle_key(&mut self, _key: KeyEvent, _context: &Context) -> Action {
-        Action::Back
-    }
-
-    fn hints(&self) -> &'static str {
-        "any key to close"
-    }
-
-    fn help(&self) -> &'static [(&'static str, &'static str)] {
-        &[("Any key", "Close")]
-    }
-
-    fn is_overlay(&self) -> bool {
-        true
-    }
-}
-
 /// The question before anything moves.
 pub struct Confirm {
     planned: Arc<Planned>,
