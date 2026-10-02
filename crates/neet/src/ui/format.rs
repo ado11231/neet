@@ -60,6 +60,19 @@ pub fn bar(part: u64, total: u64, width: usize) -> String {
     format!("{}{}", "█".repeat(filled), "░".repeat(width - filled))
 }
 
+/// A bar of `size` against `largest`, colored like the size: red from 5 GB,
+/// yellow from 1 GB, and green below.
+pub fn size_bar(size: u64, largest: u64, width: usize) -> Span<'static> {
+    let bar = Span::raw(bar(size, largest, width));
+    if size >= HUGE {
+        bar.red()
+    } else if size >= HUGE / 5 {
+        bar.yellow()
+    } else {
+        bar.green()
+    }
+}
+
 /// How long ago something was, in the largest whole unit, such as `3 days`.
 pub fn age(elapsed: Duration) -> String {
     const DAY: u64 = 24 * 60 * 60;
