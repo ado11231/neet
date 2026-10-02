@@ -450,6 +450,7 @@ mod tests {
             scan,
             disk: None,
             cleanable: Some(8_600_000_000),
+            plan: None,
         };
         terminal
             .draw(|frame| screen.draw(frame, frame.area(), &context))
@@ -489,6 +490,7 @@ mod tests {
             scan: &scan,
             disk: None,
             cleanable: None,
+            plan: None,
         };
         let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
         let down = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);

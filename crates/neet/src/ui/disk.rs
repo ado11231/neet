@@ -712,6 +712,7 @@ mod tests {
             scan,
             disk: None,
             cleanable: None,
+            plan: None,
         };
         terminal
             .draw(|frame| disk.draw(frame, frame.area(), &context))
@@ -748,6 +749,7 @@ mod tests {
                 scan: &scan,
                 disk: None,
                 cleanable: None,
+                plan: None,
             },
         );
         let screen = render(&mut disk, &scan, 120);
@@ -782,6 +784,7 @@ mod tests {
             scan: &scan,
             disk: None,
             cleanable: None,
+            plan: None,
         };
         terminal
             .draw(|frame| Disk::new().draw(frame, frame.area(), &context))
