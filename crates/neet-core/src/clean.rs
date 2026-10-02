@@ -151,10 +151,12 @@ fn expand(pattern: &Path) -> Vec<PathBuf> {
                 continue;
             };
             for entry in entries.flatten() {
+                // Finder's view settings, left in folders it has shown. Not
+                // cache, and alone they made empty caches look found.
                 if entry
                     .file_name()
                     .to_str()
-                    .is_some_and(|name| matches(part, name))
+                    .is_some_and(|name| name != ".DS_Store" && matches(part, name))
                 {
                     next.push(entry.path());
                 }
@@ -485,6 +487,20 @@ mod tests {
         );
         let found = expand(&roots.home().join("Library/Caches/missing/*"));
         assert!(found.is_empty(), "{found:?}");
+    }
+
+    #[test]
+    fn stars_skip_finder_view_settings() {
+        let (dir, roots) = home();
+        let caches = dir.path().join("Library/Caches/pip");
+        write(&caches.join(".DS_Store"), 10);
+
+        let found = expand(&roots.home().join("Library/Caches/pip/*"));
+        assert!(found.is_empty(), "{found:?}");
+
+        write(&caches.join("http/file"), 10);
+        let found = expand(&roots.home().join("Library/Caches/pip/*"));
+        assert_eq!(found, [roots.home().join("Library/Caches/pip/http")]);
     }
 
     #[test]
