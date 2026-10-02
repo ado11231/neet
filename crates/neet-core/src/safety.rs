@@ -36,6 +36,15 @@ const PROTECTED_IN_HOME: &[&str] = &[
     "Library/Developer/Xcode/Archives",
 ];
 
+/// Folders in the home folder that hold your own files. Cleanup never
+/// touches them, but the clutter check may take build folders and
+/// installers from them.
+const YOUR_FILES: &[&str] = &["Documents", "Desktop", "Downloads"];
+
+/// File name endings of disk images and installers the clutter check may
+/// take from Downloads. Keep in step with SAFETY.md.
+pub const INSTALLER_ENDINGS: &[&str] = &["dmg", "pkg", "iso", "xip"];
+
 /// System folders that are never touched, with everything inside.
 const PROTECTED_SYSTEM: &[&str] = &["/System", "/usr", "/Library"];
 
@@ -62,6 +71,8 @@ pub enum Check {
     Cleanup,
     /// An app, or one of its related files
     AppRemoval,
+    /// A project build folder, or an installer in Downloads
+    Clutter,
 }
 
 /// Why a path cannot be cleaned
@@ -85,6 +96,8 @@ pub enum SafetyError {
     /// Not a `.app` folder in an Applications folder, nor a related file app
     /// removal may take
     NotAppItem,
+    /// Not a project build folder, nor an installer in Downloads
+    NotClutter,
 }
 
 /// An `io::Error` cannot be copied, so a copy keeps its kind and message.
@@ -106,6 +119,7 @@ impl Clone for SafetyError {
             Self::LinkLeadsOut => Self::LinkLeadsOut,
             Self::Link => Self::Link,
             Self::NotAppItem => Self::NotAppItem,
+            Self::NotClutter => Self::NotClutter,
         }
     }
 }
@@ -124,6 +138,10 @@ impl fmt::Display for SafetyError {
             Self::LinkLeadsOut => write!(f, "the path is a link that leads out of its folder"),
             Self::Link => write!(f, "the path is a link"),
             Self::NotAppItem => write!(f, "the path is not an app or a file app removal may take"),
+            Self::NotClutter => write!(
+                f,
+                "the path is not a project build folder or an installer in Downloads"
+            ),
         }
     }
 }
@@ -265,10 +283,19 @@ impl CleanupRoots {
     }
 
     fn is_protected(&self, path: &[&str]) -> bool {
+        self.is_protected_for(path, Check::Cleanup)
+    }
+
+    /// Whether `path` is protected for `check`. Only the clutter check may
+    /// reach into Documents, Desktop, and Downloads.
+    fn is_protected_for(&self, path: &[&str], check: Check) -> bool {
         let home = self.home_names();
         let in_home = starts_with_pattern(path, &home);
         let protected_in_home = in_home
             && PROTECTED_IN_HOME.iter().any(|protected| {
+                if check == Check::Clutter && YOUR_FILES.contains(protected) {
+                    return false;
+                }
                 let protected: Vec<&str> = protected.split('/').collect();
                 starts_with_pattern(&path[home.len()..], &protected)
             });
@@ -312,6 +339,15 @@ impl CleanupRoots {
     /// itself, and refuses protected paths. Returns the real path and its
     /// details.
     fn resolve(&self, path: &Path) -> Result<(PathBuf, fs::Metadata), SafetyError> {
+        self.resolve_for(path, Check::Cleanup)
+    }
+
+    /// [`Self::resolve`], with the protected folders of `check`
+    fn resolve_for(
+        &self,
+        path: &Path,
+        check: Check,
+    ) -> Result<(PathBuf, fs::Metadata), SafetyError> {
         if path.as_os_str().is_empty() {
             return Err(SafetyError::Empty);
         }
@@ -336,7 +372,7 @@ impl CleanupRoots {
         if is_top_of_disk(&real_names) {
             return Err(SafetyError::TopOfDisk);
         }
-        if self.is_protected(&real_names) {
+        if self.is_protected_for(&real_names, check) {
             return Err(SafetyError::Protected);
         }
         Ok((real, metadata))
@@ -380,6 +416,59 @@ impl CleanupRoots {
         })
     }
 
+    /// Checks that a project build folder, or an installer in Downloads, may
+    /// be moved to the Trash. See Clutter Removal in SAFETY.md.
+    ///
+    /// # Errors
+    ///
+    /// Returns why the path is refused.
+    pub fn validate_clutter(&self, path: &Path) -> Result<ValidatedPath, SafetyError> {
+        let (real, metadata) = self.resolve_for(path, Check::Clutter)?;
+        if metadata.file_type().is_symlink() {
+            return Err(SafetyError::Link);
+        }
+        let real_names = names(&real).ok_or(SafetyError::Unsupported)?;
+        let home = self.home_names();
+        if !starts_with_pattern(&real_names, &home) {
+            return Err(SafetyError::NotClutter);
+        }
+        let rest = &real_names[home.len()..];
+        let (Some(first), Some(name)) = (rest.first(), rest.last()) else {
+            return Err(SafetyError::NotClutter);
+        };
+        let parent = real.parent().ok_or(SafetyError::Unsupported)?;
+        let allowed = if *first == "Downloads" && rest.len() > 1 && is_installer(name) {
+            true
+        } else {
+            // Tools keep their own copies in ~/Library and hidden folders,
+            // and a build folder inside another is part of it.
+            let inside_build = rest[..rest.len() - 1]
+                .iter()
+                .any(|part| *part == "node_modules" || *part == "target");
+            let is_build = metadata.is_dir()
+                && match *name {
+                    "node_modules" => true,
+                    "target" => parent.join("Cargo.toml").is_file(),
+                    _ => false,
+                };
+            is_build
+                && rest.len() > 1
+                && *first != "Library"
+                && !first.starts_with('.')
+                && !inside_build
+        };
+        if !allowed {
+            return Err(SafetyError::NotClutter);
+        }
+        Ok(ValidatedPath {
+            root: parent.to_path_buf(),
+            device: metadata.dev(),
+            inode: metadata.ino(),
+            path: real,
+            check: Check::Clutter,
+        })
+    }
+
     /// Runs the same check that made `validated` again, on its path.
     ///
     /// # Errors
@@ -389,6 +478,7 @@ impl CleanupRoots {
         match validated.check {
             Check::Cleanup => self.validate_deletable(validated.path()),
             Check::AppRemoval => self.validate_app_removal(validated.path()),
+            Check::Clutter => self.validate_clutter(validated.path()),
         }
     }
 
@@ -426,6 +516,18 @@ impl CleanupRoots {
                     .all(|(want, got)| *want == "*" || (want == got && *got != "*"))
         }) && !self.is_protected(&pattern)
     }
+}
+
+/// Whether `name` ends in one of the installer endings, in any case
+fn is_installer(name: &str) -> bool {
+    Path::new(name)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            INSTALLER_ENDINGS
+                .iter()
+                .any(|ending| extension.eq_ignore_ascii_case(ending))
+        })
 }
 
 /// `/`, or the top folder of a disk under `/Volumes`.
@@ -755,5 +857,95 @@ mod tests {
     #[test]
     fn tests_do_not_run_as_root() {
         assert!(!super::running_as_root());
+    }
+
+    #[test]
+    fn clutter_takes_build_folders_and_installers_from_your_folders() {
+        let (_dir, roots, home) = home();
+        for folder in [
+            "Documents/web/node_modules/dep/node_modules",
+            "Documents/tool/target/debug",
+            "Desktop/loose/target",
+            "Downloads/apps/Big.DMG",
+            "code/app/node_modules",
+        ] {
+            fs::create_dir_all(home.join(folder)).expect("folder should be created");
+        }
+        fs::write(home.join("Documents/tool/Cargo.toml"), "").expect("file should be written");
+        fs::write(home.join("Downloads/Tool.pkg"), "").expect("file should be written");
+        fs::write(home.join("Downloads/notes.pdf"), "").expect("file should be written");
+
+        for ok in [
+            "Documents/web/node_modules",
+            "Documents/tool/target",
+            "code/app/node_modules",
+            "Downloads/Tool.pkg",
+            "Downloads/apps/Big.DMG",
+        ] {
+            let validated = roots
+                .validate_clutter(&home.join(ok))
+                .unwrap_or_else(|error| panic!("{ok} should be accepted: {error}"));
+            assert_eq!(validated.check(), Check::Clutter);
+            assert!(roots.validate_again(&validated).is_ok());
+        }
+        for refused in [
+            // A build folder inside another, and a target with no Cargo.toml
+            "Documents/web/node_modules/dep/node_modules",
+            "Desktop/loose/target",
+            // Not an installer, and Downloads itself
+            "Downloads/notes.pdf",
+            "Downloads",
+            "Documents",
+        ] {
+            assert!(
+                matches!(
+                    roots.validate_clutter(&home.join(refused)),
+                    Err(SafetyError::NotClutter)
+                ),
+                "{refused} should be refused"
+            );
+        }
+        // Cleanup still refuses your own folders.
+        assert!(matches!(
+            refused(&roots, &home.join("Documents/web/node_modules")),
+            SafetyError::Protected
+        ));
+    }
+
+    #[test]
+    fn clutter_refuses_tool_folders_links_git_and_keys() {
+        let (_dir, roots, home) = home();
+        for folder in [
+            "Library/App/node_modules",
+            ".vscode/extension/node_modules",
+            "code/repo/.git/node_modules",
+            ".ssh/node_modules",
+            "code/real/node_modules",
+        ] {
+            fs::create_dir_all(home.join(folder)).expect("folder should be created");
+        }
+        fs::create_dir_all(home.join("code/linked")).expect("folder should be created");
+        symlink(
+            home.join("code/real/node_modules"),
+            home.join("code/linked/node_modules"),
+        )
+        .expect("link should be made");
+
+        for path in ["Library/App/node_modules", ".vscode/extension/node_modules"] {
+            assert!(matches!(
+                roots.validate_clutter(&home.join(path)),
+                Err(SafetyError::NotClutter)
+            ));
+        }
+        for path in ["code/repo/.git/node_modules", ".ssh/node_modules"] {
+            assert!(matches!(
+                roots.validate_clutter(&home.join(path)),
+                Err(SafetyError::Protected)
+            ));
+        }
+        assert!(matches!(
+            roots.validate_clutter(&home.join("code/linked/node_modules")),
+            Err(SafetyError::Link)
+        ));
     }
 }

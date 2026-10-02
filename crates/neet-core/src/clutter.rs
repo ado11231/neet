@@ -1,6 +1,7 @@
-//! Things that take space but neet does not clean itself, so you can remove
-//! them with the right tool. Measured from the scan or asked of macOS.
-//! Nothing here changes a file.
+//! Things that take space outside the cleanup rules, measured from the scan
+//! or asked of macOS. Project build folders and installers in Downloads can
+//! be planned for the Trash, through their own check. The rest you remove
+//! with the right tool. Nothing here changes a file.
 
 use std::collections::HashMap;
 use std::ffi::OsStr;
@@ -10,7 +11,11 @@ use std::process::Command;
 
 use serde::Deserialize;
 
+use crate::clean::{Plan, PlanItem, RulePlan, SkipReason, Skipped, measure};
+use crate::rules::{Category, Rule, Source, Tier};
+use crate::safety::{CleanupRoots, INSTALLER_ENDINGS};
 use crate::scan;
+use crate::size::HardLinkTracker;
 use crate::tree::{NodeId, NodeKind, Tree};
 
 /// What kind of clutter a finding is
@@ -42,9 +47,6 @@ pub struct Finding {
     pub node: Option<NodeId>,
 }
 
-/// File name endings of disk images and installers
-const INSTALLERS: &[&str] = &["dmg", "pkg", "iso", "xip"];
-
 /// Where Docker Desktop keeps its disk image, from the home folder
 const DOCKER_IMAGE: &[&str] = &[
     "Library",
@@ -74,23 +76,120 @@ pub fn from_tree(tree: &Tree) -> Vec<Finding> {
     if let Some(image) = child_path(tree, root, DOCKER_IMAGE) {
         found.push(single(tree, Kind::DockerImage, image, 1));
     }
-    if let Some(downloads) = child_path(tree, root, &["Downloads"]) {
-        let installers: Vec<NodeId> = tree
-            .iter()
-            .filter(|(_, node)| node.kind == NodeKind::File && is_installer(&node.name))
-            .map(|(id, _)| id)
-            .filter(|&id| is_inside(tree, id, downloads))
-            .collect();
-        found.push(group(tree, Kind::Installers, &installers));
-    }
-    let builds: Vec<NodeId> = tree
-        .iter()
-        .filter(|(id, node)| node.kind == NodeKind::Directory && is_build_folder(tree, *id))
-        .map(|(id, _)| id)
-        .collect();
-    found.push(group(tree, Kind::BuildFolders, &builds));
+    found.push(group(tree, Kind::Installers, &installers(tree)));
+    found.push(group(tree, Kind::BuildFolders, &build_folders(tree)));
     found.retain(|finding| finding.size > 0);
     found
+}
+
+/// Installers anywhere in Downloads
+fn installers(tree: &Tree) -> Vec<NodeId> {
+    let Some(downloads) = child_path(tree, tree.root(), &["Downloads"]) else {
+        return Vec::new();
+    };
+    tree.iter()
+        .filter(|(_, node)| node.kind == NodeKind::File && is_installer(&node.name))
+        .map(|(id, _)| id)
+        .filter(|&id| is_inside(tree, id, downloads))
+        .collect()
+}
+
+fn build_folders(tree: &Tree) -> Vec<NodeId> {
+    tree.iter()
+        .filter(|(id, node)| node.kind == NodeKind::Directory && is_build_folder(tree, *id))
+        .map(|(id, _)| id)
+        .collect()
+}
+
+/// Whether neet can move a kind of clutter to the Trash itself, after you
+/// review it
+#[must_use]
+pub fn neet_removes(kind: Kind) -> bool {
+    matches!(kind, Kind::BuildFolders | Kind::Installers)
+}
+
+/// The items of `kind` the scan found, largest first. Only kinds neet
+/// removes itself have items.
+#[must_use]
+pub fn items(tree: &Tree, kind: Kind) -> Vec<NodeId> {
+    let mut ids = match kind {
+        Kind::BuildFolders => build_folders(tree),
+        Kind::Installers => installers(tree),
+        _ => Vec::new(),
+    };
+    ids.sort_by_key(|&id| std::cmp::Reverse(tree.get(id).total_size));
+    ids
+}
+
+/// The rule each item of `kind` is planned under, so the review shows what
+/// it is
+fn item_rule(index: usize, kind: Kind, path: &Path) -> Rule {
+    let (name, category, tier, description, regenerates) = match kind {
+        Kind::Installers => (
+            "Installers in Downloads",
+            Category::Application,
+            Tier::Caution,
+            "A disk image or installer. Once its app is installed, it is rarely needed.",
+            false,
+        ),
+        _ => (
+            "Project build folders",
+            Category::Developer,
+            Tier::Safe,
+            "Packages or build output. They come back when you install or build again.",
+            true,
+        ),
+    };
+    Rule {
+        id: format!("clutter-item-{index}"),
+        name: name.to_string(),
+        category,
+        tier,
+        paths: vec![path.to_path_buf()],
+        description: description.to_string(),
+        regenerates,
+        requires_quit: Vec::new(),
+        min_age_days: 0,
+        source: Source::Clutter,
+    }
+}
+
+/// A plan to move `paths`, each a build folder or an installer, to the
+/// Trash, one entry per item, all selected. Every item passes the clutter
+/// check, and nothing changes on disk.
+#[must_use]
+pub fn plan(roots: &CleanupRoots, kind: Kind, paths: &[PathBuf]) -> Plan {
+    let mut tracker = HardLinkTracker::new();
+    let mut plan = Plan::default();
+    for (index, path) in paths.iter().enumerate() {
+        let rule = item_rule(index, kind, path);
+        let mut items = Vec::new();
+        let mut skipped = Vec::new();
+        match roots.validate_clutter(path) {
+            Err(error) => skipped.push(Skipped {
+                path: path.clone(),
+                reason: SkipReason::Refused(error),
+            }),
+            Ok(validated) => match measure(validated.path(), &mut tracker) {
+                Err(error) => skipped.push(Skipped {
+                    path: path.clone(),
+                    reason: SkipReason::Unreadable(error),
+                }),
+                Ok((size, changed)) => items.push(PlanItem {
+                    path: validated,
+                    size,
+                    changed,
+                }),
+            },
+        }
+        plan.rules.push(RulePlan {
+            selected: !items.is_empty(),
+            rule,
+            items,
+            skipped,
+        });
+    }
+    plan
 }
 
 fn single(tree: &Tree, kind: Kind, id: NodeId, count: u64) -> Finding {
@@ -130,7 +229,7 @@ fn is_installer(name: &OsStr) -> bool {
         .extension()
         .and_then(OsStr::to_str)
         .is_some_and(|extension| {
-            INSTALLERS
+            INSTALLER_ENDINGS
                 .iter()
                 .any(|installer| extension.eq_ignore_ascii_case(installer))
         })
@@ -263,8 +362,10 @@ pub fn temp_files() -> io::Result<Finding> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Kind, from_tree, temp_folder};
+    use super::{Kind, from_tree, items, plan, temp_folder};
+    use crate::safety::CleanupRoots;
     use crate::tree::{NodeKind, Tree};
+    use std::fs;
 
     fn kinds(tree: &Tree) -> Vec<(Kind, u64, usize)> {
         from_tree(tree)
@@ -338,5 +439,55 @@ mod tests {
         let folder = temp_folder().expect("macOS should give a temporary folder");
 
         assert!(folder.starts_with("/var/folders") || folder.starts_with("/private/var/folders"));
+    }
+
+    #[test]
+    fn items_are_largest_first() {
+        let mut tree = Tree::new("/Users/someone");
+        let root = tree.root();
+        let code = tree.add(root, "code", NodeKind::Directory, 0);
+        for (project, size) in [("small", 10), ("big", 500)] {
+            let folder = tree.add(code, project, NodeKind::Directory, 0);
+            let modules = tree.add(folder, "node_modules", NodeKind::Directory, 0);
+            let _ = tree.add(modules, "x.js", NodeKind::File, size);
+        }
+
+        let found = items(&tree, Kind::BuildFolders);
+
+        assert_eq!(found.len(), 2);
+        assert_eq!(tree.get(found[0]).total_size, 500);
+        assert_eq!(items(&tree, Kind::Trash).len(), 0);
+    }
+
+    #[test]
+    fn plans_each_item_selected_and_skips_what_the_check_refuses() {
+        let dir = tempfile::tempdir().expect("temporary directory should be created");
+        let home = fs::canonicalize(dir.path()).expect("home should resolve");
+        fs::create_dir_all(home.join("code/web/node_modules/pkg")).expect("folder should be made");
+        fs::write(
+            home.join("code/web/node_modules/pkg/index.js"),
+            "x".repeat(5000),
+        )
+        .expect("file should be written");
+        fs::create_dir_all(home.join("code/other/target")).expect("folder should be made");
+        let roots = CleanupRoots::new(&home).expect("roots should be made");
+
+        let plan = plan(
+            &roots,
+            Kind::BuildFolders,
+            &[
+                home.join("code/web/node_modules"),
+                // No Cargo.toml beside it
+                home.join("code/other/target"),
+            ],
+        );
+
+        assert_eq!(plan.rules.len(), 2);
+        assert!(plan.rules[0].selected);
+        assert_eq!(plan.rules[0].items.len(), 1);
+        assert!(plan.rules[0].size() > 0);
+        assert!(!plan.rules[1].selected);
+        assert_eq!(plan.rules[1].skipped.len(), 1);
+        assert_eq!(plan.selected_count(), 1);
     }
 }

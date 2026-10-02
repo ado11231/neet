@@ -54,6 +54,8 @@ pub enum Source {
     Disk,
     /// An app, or one of its related files, in the Remove App screen
     App,
+    /// A project build folder or an installer, from Quick Clean
+    Clutter,
 }
 
 #[derive(Clone, Debug)]
