@@ -218,12 +218,12 @@ min_age_days = 0
 
 ### Resetting Docker
 
-* `x` on the Docker screen resets Docker: every image, container, and volume goes at once, by moving Docker's disk image to the Trash. It is not permanent: Put Back restores it.
+* `x` on the Docker screen resets Docker: every image, container, and volume goes at once, by moving Docker's disk image to the Trash. It is not permanent: moving it back restores it.
 * neet asks first, in a yellow box that names the size and says what goes with it. Only `y` goes ahead. Then neet:
-  1. Stops Docker Desktop with `docker desktop stop`, which waits until it has, then checks that no part of `/Applications/Docker.app` is still running. If it is, nothing moves.
+  1. Stops Docker Desktop with `docker desktop stop`, then waits, up to three minutes, until `lsof` says no process has the disk image open. If one still does, or `lsof` cannot tell, nothing moves.
   2. Checks the disk image with the [build folder check](#build-folders-and-installers), which takes only that one file.
-  3. Moves it to the Trash through Finder, like any other cleanup.
-* Docker Desktop makes a new, empty disk image the next time it opens. To undo, Put Back `Docker.raw` before opening Docker Desktop again.
+  3. Moves it into `~/.Trash` itself, keeping its name, or adding a number if the Trash already has a `Docker.raw`. Finder cannot reach into another app's container folder, and hangs when asked, so Finder's Put Back does not know where it came from.
+* Docker Desktop makes a new, empty disk image the next time it opens. To undo, move `Docker.raw` from the Trash back to `~/Library/Containers/com.docker.docker/Data/vms/0/data/` before opening Docker Desktop again.
 
 ## Planned Features
 

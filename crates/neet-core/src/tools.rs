@@ -436,8 +436,21 @@ fn docker_is_running() -> bool {
         .map_or(true, |output| output.status.success())
 }
 
-/// How long Docker Desktop gets to stop after it says it has
-const QUIT_WAIT: Duration = Duration::from_secs(60);
+/// How long Docker gets to let go of its disk image
+const STOP_WAIT: Duration = Duration::from_secs(180);
+
+/// Whether any process has `path` open, asked of `lsof`. If neet cannot
+/// tell, it answers yes, so nothing moves while it may be in use.
+fn is_open(path: &Path) -> bool {
+    Command::new("/usr/sbin/lsof")
+        .arg("-t")
+        .arg(path)
+        .output()
+        .map_or(true, |output| {
+            // lsof exits 1, printing nothing, when no process has it open.
+            output.status.success() || output.status.code() != Some(1)
+        })
+}
 
 /// Asks Docker Desktop to stop, with `docker desktop stop`, which waits until
 /// it has. Docker Desktop ignores a plain quit from `osascript`, since its
@@ -458,33 +471,38 @@ fn stop_docker() -> io::Result<()> {
     }
 }
 
-/// Stops Docker Desktop, then moves its disk image to the Trash, where Put
-/// Back can restore it while Docker Desktop is quit. Docker Desktop makes a
+/// Stops Docker Desktop, then moves its disk image into the Trash. Moving it
+/// back before Docker Desktop opens again restores everything. Docker Desktop makes a
 /// new, empty one when it opens. Every image, container, and volume goes
 /// with it. Returns the space it took.
 ///
 /// # Errors
 ///
-/// Returns an error if Docker Desktop did not stop in time, the image fails
-/// the path check, or Finder could not move it.
+/// Returns an error if Docker Desktop could not be stopped, still had the
+/// image open after three minutes, the image fails the path check, or it
+/// could not be moved.
 pub fn reset_docker(roots: &CleanupRoots) -> io::Result<u64> {
     let (path, size) = docker_image(roots)
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Docker has no disk image"))?;
     if docker_is_running() {
         stop_docker()?;
-        let started = Instant::now();
-        while docker_is_running() {
-            if started.elapsed() > QUIT_WAIT {
-                return Err(io::Error::new(
-                    io::ErrorKind::TimedOut,
-                    "Docker Desktop did not stop within a minute. Quit it from the whale menu, then try again.",
-                ));
-            }
-            thread::sleep(Duration::from_millis(500));
+    }
+    // Containers can take a while to shut down after Docker says it stopped,
+    // so wait until nothing has the image open.
+    let started = Instant::now();
+    while is_open(&path) {
+        if started.elapsed() > STOP_WAIT {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "Docker still had its disk image open after three minutes. Quit Docker Desktop from the whale menu, then try again.",
+            ));
         }
+        thread::sleep(Duration::from_secs(1));
     }
     let validated = roots.validate_clutter(&path).map_err(io::Error::other)?;
-    trash::move_to_trash(validated.path())?;
+    // Finder hangs on files inside another app's container, so neet moves
+    // it into the Trash itself.
+    trash::move_into_trash(validated.path(), &roots.home().join(".Trash"))?;
     Ok(size)
 }
 
