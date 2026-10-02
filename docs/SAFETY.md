@@ -220,7 +220,7 @@ min_age_days = 0
 
 * `x` on the Docker screen resets Docker: every image, container, and volume goes at once, by moving Docker's disk image to the Trash. It is not permanent: Put Back restores it.
 * neet asks first, in a yellow box that names the size and says what goes with it. Only `y` goes ahead. Then neet:
-  1. Asks Docker Desktop to quit, through `osascript`, and waits up to a minute until no part of `/Applications/Docker.app` is running. If it is still running, nothing moves.
+  1. Stops Docker Desktop with `docker desktop stop`, which waits until it has, then checks that no part of `/Applications/Docker.app` is still running. If it is, nothing moves.
   2. Checks the disk image with the [build folder check](#build-folders-and-installers), which takes only that one file.
   3. Moves it to the Trash through Finder, like any other cleanup.
 * Docker Desktop makes a new, empty disk image the next time it opens. To undo, Put Back `Docker.raw` before opening Docker Desktop again.

@@ -340,6 +340,14 @@ fn parse_docker_usage(text: &[u8]) -> io::Result<Vec<DockerUsage>> {
         .collect()
 }
 
+/// Whether `docker` failed only because Docker Desktop is not running. Older
+/// versions say they cannot connect to the daemon, newer ones to the API.
+fn is_not_running(message: &str) -> bool {
+    let message = message.to_lowercase();
+    message.contains("cannot connect to the docker daemon")
+        || message.contains("failed to connect to the docker api")
+}
+
 /// How much space Docker's images, containers, volumes, and build cache
 /// take, asked of `docker system df`. Nothing changes.
 ///
@@ -355,7 +363,7 @@ pub fn docker_usage() -> io::Result<Docker> {
         .output()?;
     if !output.status.success() {
         let message = String::from_utf8_lossy(&output.stderr);
-        if message.contains("Cannot connect to the Docker daemon") {
+        if is_not_running(&message) {
             return Ok(Docker::NotRunning);
         }
         return Err(failed(&output));
@@ -428,34 +436,48 @@ fn docker_is_running() -> bool {
         .map_or(true, |output| output.status.success())
 }
 
-/// How long Docker Desktop gets to quit
+/// How long Docker Desktop gets to stop after it says it has
 const QUIT_WAIT: Duration = Duration::from_secs(60);
 
-/// Quits Docker Desktop, then moves its disk image to the Trash, where Put
+/// Asks Docker Desktop to stop, with `docker desktop stop`, which waits until
+/// it has. Docker Desktop ignores a plain quit from `osascript`, since its
+/// main process runs in the background.
+fn stop_docker() -> io::Result<()> {
+    let docker = docker_program()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Docker is not installed"))?;
+    let output = Command::new(docker)
+        .args(["desktop", "stop", "--timeout", "60"])
+        .output()?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!(
+            "Docker Desktop could not be stopped ({}). Quit it from the whale menu, then try again.",
+            failed(&output)
+        )))
+    }
+}
+
+/// Stops Docker Desktop, then moves its disk image to the Trash, where Put
 /// Back can restore it while Docker Desktop is quit. Docker Desktop makes a
 /// new, empty one when it opens. Every image, container, and volume goes
 /// with it. Returns the space it took.
 ///
 /// # Errors
 ///
-/// Returns an error if Docker Desktop did not quit in time, the image fails
+/// Returns an error if Docker Desktop did not stop in time, the image fails
 /// the path check, or Finder could not move it.
 pub fn reset_docker(roots: &CleanupRoots) -> io::Result<u64> {
     let (path, size) = docker_image(roots)
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Docker has no disk image"))?;
     if docker_is_running() {
-        let output = Command::new("/usr/bin/osascript")
-            .args(["-e", "tell application id \"com.docker.docker\" to quit"])
-            .output()?;
-        if !output.status.success() {
-            return Err(failed(&output));
-        }
+        stop_docker()?;
         let started = Instant::now();
         while docker_is_running() {
             if started.elapsed() > QUIT_WAIT {
                 return Err(io::Error::new(
                     io::ErrorKind::TimedOut,
-                    "Docker Desktop did not quit within a minute. Quit it from its menu, then try again.",
+                    "Docker Desktop did not stop within a minute. Quit it from the whale menu, then try again.",
                 ));
             }
             thread::sleep(Duration::from_millis(500));
@@ -508,8 +530,8 @@ pub fn docker_prune() -> io::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_runtime_id, is_volume_name, parse_devices, parse_docker_usage, parse_runtimes,
-        parse_unused_volumes,
+        is_not_running, is_runtime_id, is_volume_name, parse_devices, parse_docker_usage,
+        parse_runtimes, parse_unused_volumes,
     };
 
     #[test]
@@ -601,5 +623,16 @@ mod tests {
         assert!(!is_volume_name("--all"));
         assert!(!is_volume_name("a b"));
         assert!(!is_volume_name(""));
+    }
+
+    #[test]
+    fn knows_docker_is_not_running_in_old_and_new_words() {
+        assert!(is_not_running(
+            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?"
+        ));
+        assert!(is_not_running(
+            "failed to connect to the docker API at unix:///Users/me/.docker/run/docker.sock; check if the path is correct and if the daemon is running"
+        ));
+        assert!(!is_not_running("permission denied"));
     }
 }
