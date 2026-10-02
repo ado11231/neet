@@ -13,9 +13,10 @@ use serde::Deserialize;
 
 use crate::clean::{Plan, PlanItem, RulePlan, SkipReason, Skipped, measure};
 use crate::rules::{Category, Rule, Source, Tier};
-use crate::safety::{CleanupRoots, INSTALLER_ENDINGS};
+use crate::safety::{CleanupRoots, DOCKER_IMAGE, INSTALLER_ENDINGS};
 use crate::scan;
 use crate::size::HardLinkTracker;
+use crate::tools;
 use crate::tree::{NodeId, NodeKind, Tree};
 
 /// What kind of clutter a finding is
@@ -46,18 +47,6 @@ pub struct Finding {
     /// The largest item, when it is in the scan, to show in Disk
     pub node: Option<NodeId>,
 }
-
-/// Where Docker Desktop keeps its disk image, from the home folder
-const DOCKER_IMAGE: &[&str] = &[
-    "Library",
-    "Containers",
-    "com.docker.docker",
-    "Data",
-    "vms",
-    "0",
-    "data",
-    "Docker.raw",
-];
 
 /// The findings that come from the scan of the home folder. Kinds with
 /// nothing found are left out.
@@ -293,8 +282,8 @@ struct Runtime {
     size_bytes: u64,
 }
 
-/// The simulator runtimes Xcode downloaded, asked of `xcrun simctl`, which
-/// takes a few seconds. `None` when there are no simulators on this Mac, so
+/// The simulator runtimes Xcode downloaded, and simulators left without
+/// one, asked of `xcrun simctl`, which takes a few seconds. `None` when there are no simulators on this Mac, so
 /// `xcrun` is never run where it might ask to install developer tools.
 ///
 /// # Errors
@@ -313,10 +302,19 @@ pub fn simulator_runtimes() -> io::Result<Option<Finding>> {
     }
     let runtimes: HashMap<String, Runtime> = serde_json::from_slice(&output.stdout)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    // Simulators left without their runtime can never start again.
+    let stranded: Vec<_> = tools::devices()?
+        .into_iter()
+        .filter(|device| !device.available)
+        .collect();
     Ok(Some(Finding {
         kind: Kind::SimulatorRuntimes,
-        size: runtimes.values().map(|runtime| runtime.size_bytes).sum(),
-        count: runtimes.len(),
+        size: runtimes
+            .values()
+            .map(|runtime| runtime.size_bytes)
+            .sum::<u64>()
+            + stranded.iter().map(|device| device.size).sum::<u64>(),
+        count: runtimes.len() + stranded.len(),
         node: None,
     }))
 }
@@ -426,7 +424,7 @@ mod tests {
     fn finds_the_docker_image() {
         let mut tree = Tree::new("/Users/someone");
         let mut folder = tree.root();
-        for name in &super::DOCKER_IMAGE[..super::DOCKER_IMAGE.len() - 1] {
+        for name in &crate::safety::DOCKER_IMAGE[..crate::safety::DOCKER_IMAGE.len() - 1] {
             folder = tree.add(folder, *name, NodeKind::Directory, 0);
         }
         let _ = tree.add(folder, "Docker.raw", NodeKind::File, 999);

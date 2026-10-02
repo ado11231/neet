@@ -45,6 +45,19 @@ const YOUR_FILES: &[&str] = &["Documents", "Desktop", "Downloads"];
 /// take from Downloads. Keep in step with SAFETY.md.
 pub const INSTALLER_ENDINGS: &[&str] = &["dmg", "pkg", "iso", "xip"];
 
+/// Where Docker Desktop keeps its disk image, from the home folder. The
+/// clutter check may take this one file, once Docker Desktop has quit.
+pub const DOCKER_IMAGE: &[&str] = &[
+    "Library",
+    "Containers",
+    "com.docker.docker",
+    "Data",
+    "vms",
+    "0",
+    "data",
+    "Docker.raw",
+];
+
 /// System folders that are never touched, with everything inside.
 const PROTECTED_SYSTEM: &[&str] = &["/System", "/usr", "/Library"];
 
@@ -96,7 +109,8 @@ pub enum SafetyError {
     /// Not a `.app` folder in an Applications folder, nor a related file app
     /// removal may take
     NotAppItem,
-    /// Not a project build folder, nor an installer in Downloads
+    /// Not a project build folder, an installer in Downloads, nor Docker's
+    /// disk image
     NotClutter,
 }
 
@@ -140,7 +154,7 @@ impl fmt::Display for SafetyError {
             Self::NotAppItem => write!(f, "the path is not an app or a file app removal may take"),
             Self::NotClutter => write!(
                 f,
-                "the path is not a project build folder or an installer in Downloads"
+                "the path is not a project build folder, an installer in Downloads, or Docker's disk image"
             ),
         }
     }
@@ -416,8 +430,8 @@ impl CleanupRoots {
         })
     }
 
-    /// Checks that a project build folder, or an installer in Downloads, may
-    /// be moved to the Trash. See Clutter Removal in SAFETY.md.
+    /// Checks that a project build folder, an installer in Downloads, or
+    /// Docker's disk image may be moved to the Trash. See Clutter Removal in SAFETY.md.
     ///
     /// # Errors
     ///
@@ -439,6 +453,8 @@ impl CleanupRoots {
         let parent = real.parent().ok_or(SafetyError::Unsupported)?;
         let allowed = if *first == "Downloads" && rest.len() > 1 && is_installer(name) {
             true
+        } else if rest == DOCKER_IMAGE {
+            metadata.is_file()
         } else {
             // Tools keep their own copies in ~/Library and hidden folders,
             // and a build folder inside another is part of it.
@@ -910,6 +926,38 @@ mod tests {
             refused(&roots, &home.join("Documents/web/node_modules")),
             SafetyError::Protected
         ));
+    }
+
+    #[test]
+    fn clutter_takes_docker_disk_image_and_nothing_beside_it() {
+        let (_dir, roots, home) = home();
+        let image = super::DOCKER_IMAGE
+            .iter()
+            .fold(home.clone(), |path, name| path.join(name));
+        let data = image.parent().expect("image should have a folder");
+        fs::create_dir_all(data).expect("folder should be created");
+        fs::write(&image, "").expect("file should be written");
+        fs::write(data.join("Docker.qcow2"), "").expect("file should be written");
+
+        let validated = roots
+            .validate_clutter(&image)
+            .unwrap_or_else(|error| panic!("Docker.raw should be accepted: {error}"));
+        assert_eq!(validated.check(), Check::Clutter);
+        for refused in [data.join("Docker.qcow2"), data.to_path_buf()] {
+            assert!(
+                matches!(
+                    roots.validate_clutter(&refused),
+                    Err(SafetyError::NotClutter)
+                ),
+                "{} should be refused",
+                refused.display()
+            );
+        }
+
+        // A folder in its place is refused too.
+        fs::remove_file(&image).expect("file should be removed");
+        fs::create_dir(&image).expect("folder should be created");
+        assert!(roots.validate_clutter(&image).is_err());
     }
 
     #[test]
