@@ -14,11 +14,12 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
 use ratatui::style::Stylize;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Clear, Gauge, Padding, Paragraph, Wrap};
+use ratatui::widgets::{Block, Clear, Padding, Paragraph, Wrap};
 
 use super::app::{Action, Context, Screen};
 use super::clean::{Planned, count, display_path, items, skip_reason};
 use super::format;
+use super::loading::Loading;
 
 /// A scrolling position that stops at the last line once drawn.
 #[derive(Default)]
@@ -444,22 +445,29 @@ impl Cleanup {
         matches!(self.state, State::Moving { .. })
     }
 
-    fn result_lines(&self, outcome: &Outcome) -> Vec<Line<'static>> {
+    /// What happened, for the box in the middle of the screen. Paths are
+    /// shortened to fit `width`.
+    fn result_lines(&self, outcome: &Outcome, width: usize) -> Vec<Line<'static>> {
         let home = &self.planned.home;
-        let mut lines = vec![
-            Line::from(format!(
-                "Moved {} to the Trash.",
-                items(outcome.moved.len())
-            ))
-            .bold()
-            .green(),
-            Line::from(format!(
-                "They take up {} in the Trash. Emptying the Trash frees that space.",
-                format::size(outcome.moved_size())
-            )),
-            Line::from("To restore an item, select it in the Trash and choose Put Back.")
-                .dark_gray(),
-        ];
+        let moved = outcome.moved.len();
+        let mut lines = if moved == 0 {
+            vec![Line::from("Nothing was moved.").bold().yellow()]
+        } else {
+            vec![
+                Line::from(format!("✓ Moved {} to the Trash", items(moved)))
+                    .bold()
+                    .green(),
+                Line::default(),
+                Line::from(vec![
+                    Span::raw(format::size(outcome.moved_size())).bold(),
+                    Span::raw(" is in the Trash now."),
+                ]),
+                Line::from("Empty the Trash to free that space."),
+                Line::default(),
+                Line::from("To restore an item, select it in the Trash and choose Put Back.")
+                    .dark_gray(),
+            ]
+        };
         if !outcome.skipped.is_empty() {
             lines.push(Line::default());
             lines.push(
@@ -471,14 +479,32 @@ impl Cleanup {
                 .bold(),
             );
             for skipped in &outcome.skipped {
-                lines.push(Line::from(vec![
-                    Span::raw(display_path(home, &skipped.path)),
-                    Span::raw(format!("  {}", skip_reason(&skipped.reason, None))).dark_gray(),
-                ]));
+                let path = display_path(home, &skipped.path);
+                lines.push(Line::from(format!(
+                    "  {}",
+                    format::shorten_path(&path, width.saturating_sub(2))
+                )));
+                lines.push(
+                    Line::from(format!("    {}", skip_reason(&skipped.reason, None))).dark_gray(),
+                );
             }
         }
         lines
     }
+}
+
+/// How wide the boxes in the middle of the screen are, at most
+const BOX_WIDTH: u16 = 72;
+
+/// `area` shrunk to `width` by `height`, in the middle
+fn centered(area: Rect, width: u16, height: u16) -> Rect {
+    let [area] = Layout::vertical([Constraint::Length(height.min(area.height))])
+        .flex(Flex::Center)
+        .areas(area);
+    let [area] = Layout::horizontal([Constraint::Length(width.min(area.width))])
+        .flex(Flex::Center)
+        .areas(area);
+    area
 }
 
 impl Screen for Cleanup {
@@ -486,57 +512,54 @@ impl Screen for Cleanup {
         self.poll();
         match &self.state {
             State::Moving { done, total, .. } => {
-                let [text, gauge, rest] = Layout::vertical([
-                    Constraint::Length(4),
-                    Constraint::Length(3),
-                    Constraint::Fill(1),
-                ])
-                .areas(area);
-                let lines = vec![
-                    Line::from("Moving items to the Trash…").cyan().bold(),
-                    Line::from(
-                        "The first time, macOS asks whether your terminal may control Finder.",
-                    )
-                    .dark_gray(),
-                ];
-                frame.render_widget(
-                    Paragraph::new(lines).block(
-                        Block::bordered()
-                            .title(" Cleanup ")
-                            .padding(Padding::horizontal(1)),
-                    ),
-                    text,
-                );
-                let ratio = if *total == 0 {
-                    1.0
-                } else {
-                    #[allow(clippy::cast_precision_loss)] // Only drawn as a bar.
-                    let ratio = *done as f64 / *total as f64;
-                    ratio
-                };
-                frame.render_widget(
-                    Gauge::default()
-                        .block(Block::bordered())
-                        .ratio(ratio.clamp(0.0, 1.0))
-                        .label(format!("{} of {}", count(*done), count(*total))),
-                    gauge,
-                );
-                frame.render_widget(Block::default(), rest);
+                let bar = format::bar(*done as u64, (*total).max(1) as u64, 24);
+                Loading {
+                    title: "Cleanup",
+                    doing: "Moving items to the Trash",
+                    progress: format!("{bar}  {} of {}", count(*done), count(*total)),
+                    note: "Each item is checked again, then Finder moves it. The first \
+                           time, macOS asks whether your terminal may control Finder.",
+                }
+                .draw(frame, area);
             }
             State::Done(Err(reason)) => {
-                let body = Paragraph::new(format!("Nothing was moved. {reason}"))
-                    .red()
-                    .block(Block::bordered().title(" Cleanup "));
-                frame.render_widget(body, area);
+                let lines = vec![
+                    Line::from("Nothing was moved.").bold().red(),
+                    Line::default(),
+                    Line::from(reason.clone()),
+                ];
+                let box_area = centered(area, BOX_WIDTH, 7);
+                frame.render_widget(Clear, box_area);
+                frame.render_widget(
+                    Paragraph::new(lines).wrap(Wrap { trim: false }).block(
+                        Block::bordered()
+                            .title(" Cleanup ")
+                            .padding(Padding::uniform(1)),
+                    ),
+                    box_area,
+                );
             }
             State::Done(Ok(outcome)) => {
-                let lines = self.result_lines(outcome);
-                scrolling(
-                    frame,
-                    area,
-                    " Cleanup done ".to_string(),
-                    lines,
-                    &mut self.scroll,
+                // Border and padding take 4 columns and 4 rows.
+                let width = BOX_WIDTH.min(area.width);
+                let lines = self.result_lines(outcome, usize::from(width.saturating_sub(4)));
+                let wanted = u16::try_from(lines.len() + 4).unwrap_or(u16::MAX);
+                let box_area = centered(area, width, wanted);
+                let offset = self.scroll.clamp(lines.len() + 2, box_area);
+                let title = if outcome.moved.is_empty() {
+                    Line::from(" Cleanup done ").yellow()
+                } else {
+                    Line::from(" Cleanup done ").green()
+                };
+                frame.render_widget(Clear, box_area);
+                frame.render_widget(
+                    Paragraph::new(lines).scroll((offset, 0)).block(
+                        Block::bordered()
+                            .title(title)
+                            .title_bottom(Line::from(" Enter or Esc for Home ").right_aligned())
+                            .padding(Padding::uniform(1)),
+                    ),
+                    box_area,
                 );
             }
         }
@@ -700,8 +723,9 @@ mod tests {
         finish(&mut cleanup);
 
         let screen = render(&mut cleanup);
-        assert!(screen.contains("Moved 1 item to the Trash."));
-        assert!(screen.contains("Emptying the Trash frees that space"));
+        assert!(screen.contains("✓ Moved 1 item to the Trash"));
+        assert!(screen.contains("Empty the Trash to free that space."));
+        assert!(screen.contains("Enter or Esc for Home"));
         assert!(matches!(cleanup.back(), Action::Home));
         assert!(!cleanup.is_dialog());
     }
@@ -714,7 +738,7 @@ mod tests {
         finish(&mut cleanup);
 
         let screen = render(&mut cleanup);
-        assert!(screen.contains("Moved 0 items"));
+        assert!(screen.contains("Nothing was moved."));
         assert!(screen.contains("Skipped 1 item,"));
         assert!(screen.contains("com.apple.dt.Xcode is open"));
     }
