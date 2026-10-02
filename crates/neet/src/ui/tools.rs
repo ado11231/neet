@@ -254,7 +254,7 @@ fn simulators_about(frame: &mut Frame, area: Rect) {
         ),
         Line::default(),
         Line::from(vec![
-            Span::raw("For good: ").red().bold(),
+            Span::raw("Permanently: ").red().bold(),
             Span::raw(
                 "runtimes cannot go to the Trash. neet asks xcrun simctl runtime delete to remove them.",
             ),
@@ -345,10 +345,10 @@ impl Screen for Simulators {
             ask(
                 frame,
                 area,
-                "Delete permanently",
+                "Remove permanently",
                 vec![
                     Line::from(format!(
-                        "Permanently delete {}, {}?",
+                        "Permanently remove {}, {}?",
                         names.join(", "),
                         format::size(size)
                     ))
@@ -438,10 +438,10 @@ impl Screen for Simulators {
 
     fn hints(&self) -> &'static str {
         match self.stage {
-            Stage::Asking(_) => "y delete permanently · n or esc back",
+            Stage::Asking(_) => "y remove permanently · n or esc back",
             Stage::Working(..) => "deleting, please wait",
             Stage::Done(_) => "enter or esc home",
-            _ => "↑↓ move · space select · enter delete · esc back · ? help",
+            _ => "↑↓ move · space select · enter remove · esc back · ? help",
         }
     }
 
@@ -568,7 +568,7 @@ impl DockerSpace {
                 ),
             ]),
             Line::from(vec![
-                Span::raw("For good: ").red().bold(),
+                Span::raw("Permanently: ").red().bold(),
                 Span::raw("none of it goes to the Trash."),
             ]),
         ];
@@ -743,7 +743,8 @@ impl Screen for DockerSpace {
             Stage::Asking(_) => "y remove permanently · n or esc back",
             Stage::Working(..) => "pruning, please wait",
             Stage::Done(_) => "enter or esc home",
-            _ => "enter prune · o open Docker Desktop · r look again · esc back · ? help",
+            Stage::Ready(Docker::Usage(_)) => "enter prune · r look again · esc back · ? help",
+            _ => "o open Docker Desktop · r look again · esc back · ? help",
         }
     }
 
@@ -844,7 +845,7 @@ mod tests {
 
         press(&mut screen, KeyCode::Char(' '));
         press(&mut screen, KeyCode::Enter);
-        assert!(render(&mut screen).contains("Permanently delete iOS 18.6, 8.8 GB?"));
+        assert!(render(&mut screen).contains("Permanently remove iOS 18.6, 8.8 GB?"));
         assert!(screen.is_dialog());
 
         // n goes back without deleting.
