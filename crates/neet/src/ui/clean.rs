@@ -434,12 +434,11 @@ fn rule_row(rule: &RulePlan, current: bool) -> Row<'static> {
         ])
         .dark_gray();
     }
-    let found = self::items(items);
     Row::new([
         Cell::from(checkbox(rule.selected, true)),
         Cell::from(name),
         Cell::from(tier_span(rule.rule.tier)),
-        Cell::from(Line::from(found).right_aligned()),
+        Cell::from(Line::from(count(items)).right_aligned()),
         Cell::from(Line::from(format::size(rule.size())).right_aligned()),
     ])
 }
@@ -451,7 +450,7 @@ fn field(label: &str, value: Span<'static>) -> Line<'static> {
 
 /// How many screen rows `lines` take when wrapped to `width` at spaces, as
 /// the details are
-fn rows_used(lines: &[Line], width: usize) -> usize {
+pub(super) fn rows_used(lines: &[Line], width: usize) -> usize {
     let width = width.max(1);
     lines
         .iter()
@@ -902,7 +901,7 @@ fn rules_table(planned: &Planned, current: usize, summary: Line<'static>) -> Tab
         Cell::from(""),
         Cell::from("Rule"),
         Cell::from("Risk"),
-        Cell::from(Line::from("Found").right_aligned()),
+        Cell::from(Line::from("Items").right_aligned()),
         Cell::from(Line::from("Size").right_aligned()),
     ])
     .bold()
