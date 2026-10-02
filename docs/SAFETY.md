@@ -21,7 +21,7 @@
 
 ## The Promises
 
-1. Nothing is deleted permanently, and neet never empties the Trash. The one exception is [simulator runtimes and Docker data](#tools-neet-runs), which only their own tool can remove, after a separate question that says so.
+1. Nothing is deleted permanently, and neet never empties the Trash. The one exception is [simulators and Docker data](#tools-neet-runs), which only their own tool can remove, after a separate question that says so.
 2. You see every path, and confirm, before anything moves.
 3. Cleanup only removes items inside a short, fixed list of folders. App removal, and build folders and installers, each have their own narrow check.
 4. Your own files, cloud files, passwords, and keys are never touched. The one exception: project build folders and installers, which can be in Documents, Desktop, or Downloads.
@@ -180,7 +180,7 @@ min_age_days = 0
 
 ## Build Folders And Installers
 
-* Quick Clean can move project build folders, and installers in Downloads, to the Trash. It uses its own check, not the allowed folders, and follows the same review, question, check before moving, and Trash steps as a cleanup.
+* Quick Clean can move project build folders, installers in Downloads, and Docker's disk image to the Trash. It uses its own check, not the allowed folders, and follows the same review, question, check before moving, and Trash steps as a cleanup.
 * Every item starts selected. You can clear any of them before the review.
 
 | Item | Taken only when |
@@ -188,30 +188,42 @@ min_age_days = 0
 | `node_modules` | It is a folder, inside your home folder. |
 | `target` | It is a folder with a `Cargo.toml` beside it. |
 | Installers | The name ends in `.dmg`, `.pkg`, `.iso`, or `.xip`, in any case, anywhere inside `~/Downloads`. |
+| Docker's disk image | It is a file at exactly `~/Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw`. Only [resetting Docker](#resetting-docker) takes it, after Docker Desktop has quit. |
 
 * Refused:
   1. Links, whatever they point to.
-  2. Anything in `~/Library`, or in a hidden folder directly in your home folder, such as `~/.vscode`. Tools keep their own copies there.
+  2. Anything else in `~/Library`, or in a hidden folder directly in your home folder, such as `~/.vscode`. Tools keep their own copies there.
   3. A build folder inside another one, such as `node_modules` inside `node_modules`. The outer one is taken whole.
   4. Every other protected folder still applies, such as `.git`, iCloud, keychains, and `~/.ssh`.
 * Build folders come back when you install or build again. An installer only comes back if you download it again.
 
 ## Tools neet Runs
 
-* Simulator runtimes and Docker's images cannot go to the Trash: macOS keeps runtimes in secure storage, and Docker keeps images inside its own disk image. neet asks their own tool to remove them, from Quick Clean.
-* This is the only way neet removes anything permanently. Both can be downloaded again.
+* Simulator runtimes, simulators, and Docker's images and volumes cannot go to the Trash: macOS keeps runtimes in secure storage, and Docker keeps the rest inside its own disk image. neet asks their own tool to remove them, from Quick Clean.
+* This is the only way neet removes anything permanently. Runtimes and images can be downloaded again. Simulators and volumes hold data that cannot.
 
 | Tool | Command | Removes |
 | --- | --- | --- |
-| Simulator runtimes | `xcrun simctl runtime delete <id>`, once per runtime you select | The runtime. Simulators that use it stop working until Xcode downloads it again. |
+| Simulator runtimes | `xcrun simctl runtime delete <id>`, once per runtime you select | The runtime. |
+| Simulators | `xcrun simctl delete <udid>`, once per simulator | The simulators on each runtime that was removed, and simulators left without a runtime if you select them. Their apps and data go too. |
 | Docker | `docker system prune --all --force` | Stopped containers, networks no container uses, every image no container uses, and the build cache. Volumes are kept. |
+| Docker volumes | `docker volume rm -- <name>`, once per volume you select | A volume no container uses, with its data. Docker refuses if a container uses it. |
 
-* Before either runs, neet:
-  1. Lists exactly what the tool reports: each runtime with its version, build, size, and when it was last used, or Docker's images, containers, volumes, and build cache with what can be reclaimed.
-  2. Starts with nothing selected for runtimes.
-  3. Asks in a red box that says the removal is permanent and does not go to the Trash. Only `y` goes ahead.
-* Only a runtime ID made of letters, digits, and hyphens is passed to `simctl`, so it can never be `all` or an option.
-* Neither command uses admin rights. neet never starts Docker on its own; `o` opens Docker Desktop only when you press it.
+* Before any of these runs, neet:
+  1. Lists exactly what the tool reports: each runtime with its version, build, size, when it was last used, and the simulators on it; simulators left without a runtime; or Docker's images, containers, volumes, and build cache with what can be reclaimed, and each volume no container uses.
+  2. Starts with nothing selected for runtimes, simulators, and volumes.
+  3. Asks in a red box that lists what goes and says the removal is permanent and does not go to the Trash. Only `y` goes ahead.
+* Only IDs made of letters, digits, and hyphens are passed to `simctl`, so they can never be `all` or an option. Only volume names made of letters, digits, `_`, `.`, and `-`, starting with a letter or digit, are passed to `docker`, after `--`.
+* None of these commands uses admin rights. neet never starts Docker on its own; `o` opens Docker Desktop only when you press it.
+
+### Resetting Docker
+
+* `x` on the Docker screen resets Docker: every image, container, and volume goes at once, by moving Docker's disk image to the Trash. It is not permanent: Put Back restores it.
+* neet asks first, in a yellow box that names the size and says what goes with it. Only `y` goes ahead. Then neet:
+  1. Asks Docker Desktop to quit, through `osascript`, and waits up to a minute until no part of `/Applications/Docker.app` is running. If it is still running, nothing moves.
+  2. Checks the disk image with the [build folder check](#build-folders-and-installers), which takes only that one file.
+  3. Moves it to the Trash through Finder, like any other cleanup.
+* Docker Desktop makes a new, empty disk image the next time it opens. To undo, Put Back `Docker.raw` before opening Docker Desktop again.
 
 ## Planned Features
 

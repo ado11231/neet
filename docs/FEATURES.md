@@ -58,7 +58,8 @@
 | Recent file check | A rule can skip anything changed in the last few days. | Done |
 | Your own rules | Loads extra rules from `~/.config/neet/rules/`. They can never reach outside the allowed folders, and never start selected. | Done |
 | Project build folders | Moves build folders in your code projects, `target/` beside a `Cargo.toml` and `node_modules/`, to the Trash from Quick Clean. You pick which, then review. | Done |
-| Simulator runtimes and Docker | From Quick Clean, runs `xcrun simctl runtime delete` for the runtimes you pick, or `docker system prune --all`, after a red question. Permanent, not the Trash. | Done |
+| Simulators and Docker | From Quick Clean, runs `xcrun simctl` to remove the runtimes you pick with their simulators, and simulators left without a runtime, or `docker system prune --all` with the unused volumes you pick, after a red question. Permanent, not the Trash. | Done |
+| Reset Docker | Quits Docker Desktop and moves its whole disk image to the Trash, after a question. Put Back restores it. | Done |
 | Installers in Downloads | Moves `.dmg`, `.pkg`, `.iso`, and `.xip` files in Downloads to the Trash from Quick Clean. You pick which, then review. | Done |
 
 ### Risk Levels

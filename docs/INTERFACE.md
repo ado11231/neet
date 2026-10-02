@@ -133,7 +133,7 @@
 |   Installers in Downloads     none                neet |  |       ...                                    |
 |   Trash                     4.4 MB  ......  2,195  you |  |                                              |
 |   Docker disk image        11.0 GB  ###...     1   you |  |                                              |
-|   Simulator runtimes       17.3 GB  ####..     2   you |  |                                              |
+|   Simulators               17.3 GB  ####..     2   you |  |                                              |
 |   Temporary files           3.1 GB  #.....  6,033 macOS|  |                                              |
 +------- neet can clear ~31.7 GB . you can free 28.3 GB -+  |                                              |
 + Project build folders ---------------------------------+  |                                              |
@@ -151,8 +151,8 @@
   1. Caches and logs: what every Deep Clean rule found.
   2. Project build folders and installers in Downloads, from the scan. neet moves these to the Trash after you pick and review them.
   3. The Trash, from the scan, which you empty yourself.
-  4. The Docker disk image, from the scan, and simulator runtimes, asked of `xcrun simctl` when there are simulators on the Mac. neet asks their own tools to remove them, which is permanent.
-  5. Temporary files, measured in `/private/var/folders`, which macOS clears. Simulator runtimes and temporary files are worked out in the background and show `looking…` until done.
+  4. The Docker disk image, from the scan, and simulators, asked of `xcrun simctl` when there are simulators on the Mac: runtimes, and simulators left without one. neet asks their own tools to remove them, which is permanent.
+  5. Temporary files, measured in `/private/var/folders`, which macOS clears. Simulators and temporary files are worked out in the background and show `looking…` until done.
 * **Columns:** the size and a bar of it against the largest row, both red from 5 GB and yellow from 1 GB, how many items, and who clears it: `neet` in green, `neet, permanently` in red, `you` in yellow, or `macOS` in blue. Temporary files are left to macOS, since deleting them by hand can break running apps.
 * The bottom edge adds up what neet can clear and what you can free yourself.
 * **Below the table:** what the selected row is, and numbered steps to clear it.
@@ -192,16 +192,22 @@
 
 ### Docker And Simulators
 
-* These cannot go to the Trash, so neet asks their own tool to remove them. Both screens end in a red question that says it is permanent. Only `y` goes ahead. See [SAFETY.md](SAFETY.md#tools-neet-runs).
-* **Simulator runtimes:** a table of each runtime with a checkbox, its version, build, size, and the day a simulator last used it. None start selected. `Enter` asks, then runs `xcrun simctl runtime delete` for each one, and lists which were deleted.
-* **Docker:** a table of what `docker system df` reports: images, containers, volumes, and build cache, with how many, how many are in use, their size, and how much can be freed, in yellow. The box below lists what `docker system prune --all` removes and what it keeps. `Enter` asks, then runs it, and shows how much Docker freed.
-* If Docker Desktop is not running, the screen says so. `o` opens it, and `r` asks Docker again.
+* These cannot go to the Trash, so neet asks their own tool to remove them. Removing ends in a red question that lists what goes and says it is permanent. Only `y` goes ahead. See [SAFETY.md](SAFETY.md#tools-neet-runs).
+* **Simulators:** a table of each runtime with a checkbox, its version, build, size, the day a simulator last used it, and how many simulators run on it. Simulators left without a runtime share one yellow `No runtime` row. None start selected. `Enter` asks, then removes each runtime with `xcrun simctl`, then the simulators on it, and the `No runtime` simulators if selected.
+* **Docker:** a table of what `docker system df` reports: images, containers, volumes, and build cache, with how many, how many are in use, their size, and how much can be freed, in yellow. Below it, the volumes no container uses, none selected, which `Space` adds to the prune. The box below that says, in colored labels, what `docker system prune --all` removes, what it keeps, and how to reset. `Enter` asks, then runs it and removes the selected volumes.
+* **Reset Docker:** `x` asks, in a yellow box, to quit Docker Desktop and move its whole disk image to the Trash. See [Resetting Docker](SAFETY.md#resetting-docker).
+* If Docker Desktop is not running, a small box in the middle says so, with numbered steps: `o` opens it, then `r` asks Docker again. `x` resets Docker without opening it.
+* When done, a small box in the middle ticks off what went and how much space it freed.
 
 | Key | Action |
 | --- | --- |
-| `Space` | On simulator runtimes, select or clear a runtime. |
-| `Enter` | Ask before removing. |
-| `y` | In the question, remove permanently. |
+| `↑` `↓` | Move between runtimes, or between Docker's unused volumes. |
+| `Space` | Select or clear a runtime, the `No runtime` row, or a volume. |
+| `Enter` | Ask before removing, or before the prune. |
+| `x` | On Docker, ask before resetting it to the Trash. |
+| `o` | On Docker, open Docker Desktop. |
+| `r` | On Docker, ask Docker again. |
+| `y` | In the question, go ahead. |
 | `n` or `Esc` | In the question, go back. |
 | `o` / `r` | On Docker, open Docker Desktop, or ask again. |
 
