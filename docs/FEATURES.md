@@ -137,7 +137,6 @@
 
 | Feature | Question |
 | --- | --- |
-| Docker and simulators | Their own tools cannot be undone like the Trash. Is there a safe way to clean them? |
 | Mail downloads | Mail keeps attachments in its own folder. Can that folder be cleaned without losing your only copy of an attachment? |
 | System logs | Can they be cleaned without admin rights? |
 | Startup items | How is each kind found, turned off, and turned back on, on every supported macOS version? |
