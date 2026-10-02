@@ -267,22 +267,31 @@
 ## Large Files
 
 ```text
-+ Large Files: 109 files of 100.0 MB or more, 39.5 GB in all -------------------+
-|        Size  Last Changed   Name              Folder                          |
-|                                                                               |
-| >   11.0 GB  28 days ago    Docker.raw        ~/Library/.../Data/vms/0/data   |
-|      4.3 GB  2 months ago   weights.bin       ~/Library/.../2025.8.8.1141     |
-|    457.4 MB  1 year ago     fca1ae...tar.gz   ~/Library/Caches/Homebrew       |
-+-------------------------------------------------------------------------------+
++ Large Files ---------------------------------------------------------+  + Docker.raw ------------------------------+
+| At least    10 MB   50 MB  [100 MB]  500 MB   1 GB   5 GB  s to change |  | Folder   ~/Library/.../com.docker.docker  |
+| Unchanged  [any age]  30 days  3 months  6 months  1 year  a to change |  | Size     11.0 GB                          |
++----------------------------------------------------------------------+  | Share    59% of the files found           |
++ Files, largest first ------------------------------------------------+  | Changed  28 days ago                      |
+|        Size            Last changed   Name          Folder           |  | Type     Virtual disk                     |
+|                                                                      |  |                                           |
+| >   11.0 GB  ########  28 days ago    Docker.raw    ~/Library/...    |  | Used by a virtual machine or Docker. Free |
+|      4.3 GB  ###.....  2 months ago   weights.bin   ~/Library/...    |  | it from the app that made it.             |
+|      3.1 GB  ##......  6 months ago   Xcode_16.dmg  ~/Downloads      |  +------------------ Enter shows it in Disk +
+|                                                                      |  + Where they are --------------------------+
+|                                                                      |  |   11.0 GB ###### ~/Library/Containers     |
++------------------------------------------- 3 files . 18.4 GB in all -+  |    3.1 GB ##.... ~/Downloads              |
+                                                                          +-------------------------------------------+
 ```
 
-* One full screen table of files from the scan, largest first. Folders are not listed.
-* **Columns:** size, when the file last changed, its name, and the folder it is in.
-  1. Sizes of 5 GB or more are red, and 1 GB or more yellow.
-  2. Files changed in the last 30 days have a dimmed date. Files unchanged for a year or more have a magenta date.
-  3. A long name is shortened in the middle, so its extension shows. A long folder keeps its start, such as `~/Library`, and its last folders.
-* The title shows the filters, how many files match, and their total size.
-* Starts at 100 MB and any age. Lists up to 1,000 files, and the bottom edge says how many more match.
+* Large Files only shows files. Nothing is moved from here: `Enter` shows the file in Disk.
+* **Top:** both filters, with every choice listed and the current one green in brackets, so `s` and `a` show what they change. Starts at 100 MB and any age.
+* **Files, largest first:** a table of files from the scan. Folders are not listed.
+  1. Its size, and a bar of it against the largest file, both red from 5 GB and yellow from 1 GB.
+  2. When it last changed. Files unchanged for a year or more have a magenta date.
+  3. Its name and folder. A long name is shortened in the middle, so its extension shows. A long folder keeps its start, such as `~/Library`, and its last folders.
+  4. The bottom edge shows how many files match and their total size. Up to 1,000 are listed, and the edge says when only the largest are shown.
+  5. When no file matches, the box says so in the middle, with the keys to widen the filters.
+* **Right, from 120 columns:** the selected file, titled with its name: its folder, size, share of the files found, when it changed, its type from the extension, and a plain hint for common types, such as installers, archives, videos, and virtual disks. Below it, **Where they are** adds the files up by folder, largest first. `~/Library` is split one level further, since most large files are there.
 * Until the scan finishes, the screen shows the loading box.
 
 | Key | Action |
