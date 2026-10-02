@@ -312,7 +312,7 @@ impl Screen for RemoveApp {
                 .title_bottom(note.right_aligned()),
         )
         .highlight_symbol("▸ ")
-        .row_highlight_style(Style::new().bold().white());
+        .row_highlight_style(Style::new().bold());
         frame.render_stateful_widget(table, area, &mut self.list);
     }
 

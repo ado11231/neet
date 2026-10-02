@@ -66,13 +66,13 @@ impl<T, R> Stage<T, R> {
     }
 }
 
-/// The red question before a tool removes something for good
+/// The red question before a tool removes something permanently
 fn ask(frame: &mut Frame, area: Rect, title: &str, lines: Vec<Line<'static>>) {
     let mut lines = lines;
     lines.push(Line::default());
     lines.push(Line::from(vec![
         Span::raw("y").bold().red(),
-        Span::raw(" remove for good    "),
+        Span::raw(" remove permanently    "),
         Span::raw("n").bold(),
         Span::raw(" or "),
         Span::raw("Esc").bold(),
@@ -242,7 +242,7 @@ impl Simulators {
                 .padding(Padding::horizontal(1)),
         )
         .highlight_symbol("▸ ")
-        .row_highlight_style(Style::new().bold().white());
+        .row_highlight_style(Style::new().bold());
         frame.render_stateful_widget(table, area, &mut self.list);
     }
 }
@@ -345,10 +345,10 @@ impl Screen for Simulators {
             ask(
                 frame,
                 area,
-                "Delete for good",
+                "Delete permanently",
                 vec![
                     Line::from(format!(
-                        "Delete {}, {}, for good?",
+                        "Permanently delete {}, {}?",
                         names.join(", "),
                         format::size(size)
                     ))
@@ -438,7 +438,7 @@ impl Screen for Simulators {
 
     fn hints(&self) -> &'static str {
         match self.stage {
-            Stage::Asking(_) => "y delete for good · n or esc back",
+            Stage::Asking(_) => "y delete permanently · n or esc back",
             Stage::Working(..) => "deleting, please wait",
             Stage::Done(_) => "enter or esc home",
             _ => "↑↓ move · space select · enter delete · esc back · ? help",
@@ -450,7 +450,7 @@ impl Screen for Simulators {
             ("↑ ↓  j k", "Move the selection"),
             ("Space", "Select or clear a runtime"),
             ("Enter", "Ask before deleting the selected runtimes"),
-            ("y", "In the question: delete them for good"),
+            ("y", "In the question: delete them permanently"),
             ("n  Esc", "In the question: go back"),
         ]
     }
@@ -628,12 +628,12 @@ impl Screen for DockerSpace {
                 ask(
                     frame,
                     area,
-                    "Remove for good",
+                    "Remove permanently",
                     vec![
                         Line::from("Run docker system prune --all?").bold(),
                         Line::default(),
                         Line::from(
-                            "Stopped containers, unused networks, every unused image, and the build cache are removed for good. Volumes are kept.",
+                            "Stopped containers, unused networks, every unused image, and the build cache are removed permanently. Volumes are kept.",
                         ),
                     ],
                 );
@@ -740,7 +740,7 @@ impl Screen for DockerSpace {
 
     fn hints(&self) -> &'static str {
         match self.stage {
-            Stage::Asking(_) => "y remove for good · n or esc back",
+            Stage::Asking(_) => "y remove permanently · n or esc back",
             Stage::Working(..) => "pruning, please wait",
             Stage::Done(_) => "enter or esc home",
             _ => "enter prune · o open Docker Desktop · r look again · esc back · ? help",
@@ -752,7 +752,7 @@ impl Screen for DockerSpace {
             ("Enter", "Ask before running docker system prune --all"),
             ("o", "Open Docker Desktop"),
             ("r", "Ask Docker again"),
-            ("y", "In the question: remove for good"),
+            ("y", "In the question: remove permanently"),
             ("n  Esc", "In the question: go back"),
         ]
     }
@@ -844,7 +844,7 @@ mod tests {
 
         press(&mut screen, KeyCode::Char(' '));
         press(&mut screen, KeyCode::Enter);
-        assert!(render(&mut screen).contains("Delete iOS 18.6, 8.8 GB, for good?"));
+        assert!(render(&mut screen).contains("Permanently delete iOS 18.6, 8.8 GB?"));
         assert!(screen.is_dialog());
 
         // n goes back without deleting.

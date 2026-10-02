@@ -1,6 +1,6 @@
 //! Space only its own tool can free: simulator runtimes, through
 //! `xcrun simctl`, and Docker's images and containers, through `docker`.
-//! Neither can go to the Trash, so removing them is for good. See Tools
+//! Neither can go to the Trash, so removing them is permanent. See Tools
 //! neet Runs in `docs/SAFETY.md`.
 
 use std::collections::HashMap;
@@ -115,7 +115,7 @@ fn is_runtime_id(identifier: &str) -> bool {
             .all(|c| c.is_ascii_hexdigit() || c == '-')
 }
 
-/// Asks `simctl` to delete one runtime, for good. Simulators that are
+/// Asks `simctl` to delete one runtime, permanently. Simulators that are
 /// running on it are shut down first.
 ///
 /// # Errors
@@ -223,7 +223,7 @@ pub fn start_docker() -> io::Result<()> {
 
 /// Runs `docker system prune -a -f`: removes stopped containers, networks
 /// no container uses, every image no container uses, and the build cache,
-/// for good. Volumes are kept. Returns the space Docker says it reclaimed.
+/// permanently. Volumes are kept. Returns the space Docker says it reclaimed.
 ///
 /// # Errors
 ///
