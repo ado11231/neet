@@ -9,10 +9,10 @@ use neet_core::clutter::{self, Kind};
 use neet_core::safety::CleanupRoots;
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
-use ratatui::layout::{Constraint, Rect};
-use ratatui::style::{Style, Stylize};
+use ratatui::layout::Rect;
+use ratatui::style::Stylize;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Cell, Padding, Paragraph, Row, Table, TableState, Wrap};
+use ratatui::widgets::{Cell, Padding, Paragraph, Row, Table, TableState, Wrap};
 
 use super::app::{Action, Context, Screen};
 use super::clean::{Planned, checkbox, display_path, skip_reason};
@@ -130,7 +130,13 @@ fn place(home: &Path, path: &Path) -> String {
         .unwrap_or_default()
 }
 
-fn item_row(rule: &RulePlan, home: &Path, now: SystemTime, width: usize) -> Row<'static> {
+fn item_row(
+    rule: &RulePlan,
+    home: &Path,
+    now: SystemTime,
+    columns: &super::visual::Columns<4>,
+) -> Row<'static> {
+    let width = columns.width(2);
     let Some(item) = rule.items.first() else {
         let (path, why) = rule.skipped.first().map_or_else(
             || (String::new(), String::new()),
@@ -141,13 +147,12 @@ fn item_row(rule: &RulePlan, home: &Path, now: SystemTime, width: usize) -> Row<
                 )
             },
         );
-        return Row::new([
+        return columns.row([
             Cell::from(checkbox(false, false)),
             Cell::from(""),
             Cell::from(format::shorten_path(&path, width)),
             Cell::from(Span::raw(why).yellow()),
-        ])
-        .dark_gray();
+        ]);
     };
     let name = item
         .path
@@ -156,7 +161,7 @@ fn item_row(rule: &RulePlan, home: &Path, now: SystemTime, width: usize) -> Row<
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default();
     let folder = place(home, item.path.path());
-    let room = width.saturating_sub(name.chars().count() + 1);
+    let room = width.saturating_sub(format::display_width(&name) + 1);
     let elapsed = now.duration_since(item.changed).unwrap_or_default();
     // Changed this week: you may be working in it
     let age = if elapsed < RECENT {
@@ -164,14 +169,14 @@ fn item_row(rule: &RulePlan, home: &Path, now: SystemTime, width: usize) -> Row<
     } else {
         Span::raw(format::age(elapsed))
     };
-    Row::new([
+    columns.row([
         Cell::from(checkbox(rule.selected, true)),
         Cell::from(
             Line::from(format::size_span(item.size, format::size(item.size))).right_aligned(),
         ),
         Cell::from(Line::from(vec![
-            Span::raw(format!("{}/", format::shorten_path(&folder, room))).blue(),
-            Span::raw(name),
+            Span::raw(format!("{}/", format::shorten_path(&folder, room))).light_blue(),
+            Span::raw(format::shorten_middle(&name, width.saturating_sub(2))),
         ])),
         Cell::from(age),
     ])
@@ -180,16 +185,16 @@ fn item_row(rule: &RulePlan, home: &Path, now: SystemTime, width: usize) -> Row<
 impl Screen for Pick {
     fn draw(&mut self, frame: &mut Frame, area: Rect, _context: &Context) {
         self.poll();
-        let block = Block::bordered()
+        let block = super::visual::block()
             .title(format!(" {} ", self.title))
             .padding(Padding::horizontal(1));
         let planned = match &self.state {
             State::Planning { started, .. } => {
                 Loading {
                     title: self.title,
-                    doing: "Measuring each item and checking it is safe to move",
+                    doing: "Measuring items and checking paths",
                     progress: format!("{}s", started.elapsed().as_secs()),
-                    note: "Nothing is changed while neet looks.",
+                    note: "Read-only scan.",
                 }
                 .draw(frame, area);
                 return;
@@ -218,40 +223,42 @@ impl Screen for Pick {
             } else {
                 selected.green().bold()
             })
-            .title_bottom(
-                Line::from(" Everything goes to the Trash, where Put Back works ").right_aligned(),
-            );
+            .title(Line::from(" Trash · Put Back restores ").right_aligned());
 
-        // Checkbox, size, and age are fixed; the path takes the rest.
-        let path_width = usize::from(area.width.saturating_sub(4 + 2 + 3 + 9 + 14 + 2 * 3));
+        let sizes = format::column_width(
+            "Size",
+            plan.rules
+                .iter()
+                .flat_map(|rule| &rule.items)
+                .map(|item| format::size(item.size)),
+        );
+        let columns = super::visual::Columns::new(
+            area.width,
+            [(3, 0), (sizes, 0), (16, 1), (14, 0)],
+            &[],
+            true,
+        );
         let now = SystemTime::now();
         let rows: Vec<Row> = plan
             .rules
             .iter()
-            .map(|rule| item_row(rule, &planned.home, now, path_width))
+            .map(|rule| item_row(rule, &planned.home, now, &columns))
             .collect();
-        let header = Row::new([
-            Cell::from(""),
-            Cell::from(Line::from("Size").right_aligned()),
-            Cell::from("Path"),
-            Cell::from("Changed"),
-        ])
-        .bold()
-        .bottom_margin(1);
-        let table = Table::new(
-            rows,
-            [
-                Constraint::Length(3),
-                Constraint::Length(9),
-                Constraint::Fill(1),
-                Constraint::Length(14),
-            ],
-        )
-        .header(header)
-        .column_spacing(2)
-        .block(block)
-        .highlight_symbol("▸ ")
-        .row_highlight_style(Style::new().bold());
+        let header = columns
+            .row([
+                Cell::from(""),
+                Cell::from(Line::from("Size").right_aligned()),
+                Cell::from("Path"),
+                Cell::from("Changed"),
+            ])
+            .style(super::visual::HEADING)
+            .bottom_margin(1);
+        let table = Table::new(rows, columns.widths())
+            .header(header)
+            .column_spacing(2)
+            .block(block)
+            .highlight_symbol("▸ ")
+            .row_highlight_style(super::visual::SELECTED);
         frame.render_stateful_widget(table, area, &mut self.list);
     }
 
@@ -282,16 +289,16 @@ impl Screen for Pick {
     }
 
     fn hints(&self) -> &'static str {
-        "↑↓ move · space select · a all or none · enter review · esc back · ? help"
+        "↑↓ move · space select · a toggle all · enter review · esc back · ? help"
     }
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
         &[
-            ("↑ ↓  j k", "Move the selection"),
+            ("↑ ↓  j k", "Move selection"),
             ("Space", "Select or clear an item"),
             ("a", "Select all, or clear all"),
             ("Enter", "Review every selected path"),
-            ("Esc", "Go back to Quick Clean"),
+            ("Esc", "Back to Quick Clean"),
             ("q", "Quit"),
         ]
     }
@@ -367,6 +374,19 @@ mod tests {
             },
         );
 
+        let scan = ScanStatus::Failed(String::new());
+        let context = Context {
+            scan: &scan,
+            disk: None,
+            cleanable: None,
+            plan: None,
+        };
+        for (width, height) in crate::ui::visual::tests::SIZES {
+            let buffer =
+                crate::ui::visual::tests::render("pick", &mut pick, &context, width, height);
+            assert!(crate::ui::visual::tests::text(&buffer).contains("node_modules"));
+            assert!(crate::ui::visual::tests::text(&buffer).contains("Selected: 2 items"));
+        }
         let text = render(&mut pick);
         assert!(text.contains("~/Documents/web/node_modules"));
         assert!(text.contains("Selected: 2 items"));

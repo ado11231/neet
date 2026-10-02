@@ -20,12 +20,17 @@
 ## Every Screen
 
 * Run `neet` to open it. It opens on Home and starts scanning your home folder in the background.
-* Each screen fills the terminal. The bottom row always lists the keys for the current screen.
-* The row under the arrow turns bold and keeps its colors, so sizes, bars, and labels read the same as the rows around it. Text is kept in the normal color; gray is only for rows you cannot pick, such as features not built yet.
+* Each screen fills the terminal. The footer lists keys for the current screen and wraps when needed.
+* The row under the arrow turns bold and keeps its colors, so sizes, bars, and labels read the same as the rows around it. Body text uses the terminal foreground. Cyan marks headings, keys, and progress; green marks selection and success; yellow marks caution; red marks errors and permanent removal. Labels and symbols carry the same meaning as the color. Gray and dim styles are reserved for the unchanged Home artwork.
 * Screens stack: each one opens on top of the last, and `Esc` goes back one step.
 * Boxes, such as help and questions, open in the middle of the screen, on top of it.
 * The screen redraws about four times a second, so progress stays current.
 * While a screen waits for slow work, such as the scan, it shows a small box in the middle: what neet is doing, a spinner, how far it has got, and what shows when it is done.
+
+* Numeric headers and values share a right edge. Names and paths align left. Column widths account for the border, padding, and selection arrow; numeric widths grow to fit formatted values.
+* At narrow widths, decorative bars disappear first, followed by secondary metadata. Names, sizes, checkboxes, and risk labels stay visible. Selected details retain hidden metadata. Names and paths shorten by terminal cells without splitting Unicode graphemes.
+* Dialogs and loading boxes use the same word wrapping for measurement and rendering. Review, results, and skipped paths scroll through wrapped lines.
+* Screen copy uses short labels and commands. Confirmations still name the action, whether removal is permanent, and how to restore items sent to Trash.
 
 | Key | Action |
 | --- | --- |
@@ -62,7 +67,7 @@
   2. Quick Clean comes first, marked `start here`, and is selected when neet opens.
   3. Deep Clean shows `finding...`, then the total that every rule found. This is worked out again after each cleanup, and when you press `r` in Deep Clean.
   4. Disk shows how much of the disk is used.
-  5. Features not built yet are dimmed and marked `soon`. The selection skips them.
+  5. Features not built yet remain readable and have a yellow `soon` label. The selection skips them.
 * **Right, bottom:** details for the selected row:
   1. What the feature does.
   2. A 16 character gauge of how full the disk is, then free and total space on the next line. The gauge turns yellow at 75% and red at 90%.
@@ -101,13 +106,13 @@
 +---------------------------------------------------------+  +--------------------------+
 ```
 
-* **Left, 55% of the width:** the current folder, largest first. Each row shows a 12 character bar and a percent for its share of the folder, its size, and its name. Folders end in `/`, links in `@`.
+* **Left, 55% of the width:** the current folder, largest first. A table aligns Size, percent, and Name beneath their headers, with a 12 character bar when space allows. Folders end in `/`, links in `@`.
 * Sizes and bars of 5 GB or more are red, and of 1 GB or more yellow, as in Large Files.
 * The title shows the folder's path on the left, and its size, item count, and sort order on the right.
-* **Right:** the selected row, titled with its name in bold white. The preview is hidden when the terminal is narrower than 100 columns.
+* **Right:** the selected row, titled with its name in bold cyan. The preview is hidden when the terminal is narrower than 100 columns.
   1. Its path, and for well known folders, such as `~/Library/Caches` or `.npm`, what they hold in plain words.
   2. Its size and share of the current folder, its item count, and when it last changed.
-  3. Whether neet cleans it: a green `✓` inside a folder neet cleans, a yellow `◆` for a cleanup folder whose items neet cleans, a red `✗` for a protected folder, and a gray `·` for anywhere else.
+  3. Whether neet cleans it: a green `✓` inside a folder neet cleans, a yellow `◆` for a cleanup folder whose items neet cleans, a red `✗` for a protected folder, and a normal foreground `·` for anywhere else.
   4. For a folder, what is inside, in the same order and colors as the left.
 * Until the scan finishes, the screen shows the loading box, with how many items and how much space the scan has counted.
 * The selected row is bold, with an arrow in front.
@@ -152,12 +157,13 @@
   2. Project build folders and installers in Downloads, from the scan. neet moves these to the Trash after you pick and review them.
   3. The Trash, from the scan, which you empty yourself.
   4. The Docker disk image, from the scan, and simulators, asked of `xcrun simctl` when there are simulators on the Mac: runtimes, and simulators left without one. neet asks their own tools to remove them, which is permanent.
-  5. Temporary files, measured in `/private/var/folders`, which macOS clears. Simulators and temporary files are worked out in the background and show `looking…` until done.
-* **Columns:** the size and a bar of it against the largest row, both red from 5 GB and yellow from 1 GB, how many items, and who clears it: `neet` in green, `neet, permanently` in red, `you` in yellow, or `macOS` in blue. Temporary files are left to macOS, since deleting them by hand can break running apps.
+  5. Temporary files, measured in `/private/var/folders`, which macOS clears. Simulators and temporary files are worked out in the background and show cyan `scanning` until done.
+* **Columns:** the size and a bar of it against the largest row, both red from 5 GB and yellow from 1 GB, how many items, and who clears it: `neet` in green, `neet, permanently` in red, `you` in yellow, or `macOS` in light blue. Temporary files are left to macOS, since deleting them by hand can break running apps.
 * The bottom edge adds up what neet can clear and what you can free yourself.
-* **Below the table:** what the selected row is, and numbered steps to clear it.
+* **Below the table:** numbered actions for the selected row, followed by its description when space allows.
 * **Right:** the largest items of the selected row, as many as fit: rules for Caches and logs, folders and installers by path, and the largest item for the Trash and Docker. When there is no list, the reason sits in the middle of the box. It is hidden when the terminal is narrower than 130 columns.
 * Build folders and installers that are empty, or already gone since the scan, are left out.
+* Below 120 columns, the selected path and age sit below the file table when at least 18 rows are available.
 * Until the scan finishes, the screen shows the loading box.
 * Nothing on this screen changes a file.
 
@@ -182,7 +188,7 @@
 
 * Lists every build folder, or every installer, largest first, each with a checkbox, its size, its path with the folder in blue, and when anything inside last changed. A change in the last 7 days is yellow, since you may be working in it.
 * Everything starts selected. Measuring and checking each item shows the loading box first.
-* An item the check refuses is dimmed, with the reason. What is allowed is in [SAFETY.md](SAFETY.md#build-folders-and-installers).
+* An item the check refuses remains readable, with the reason in yellow. What is allowed is in [SAFETY.md](SAFETY.md#build-folders-and-installers).
 
 | Key | Action |
 | --- | --- |
@@ -236,7 +242,7 @@
 
 * neet looks for everything the rules cover once, in the background, as soon as it opens. Deep Clean opens on that result, so going back and opening it again does not look again. If Deep Clean opens before the look is done, the loading box shows a timer. Nothing changes while it looks.
 * neet looks again after a cleanup, and when you press `r`, such as after removing files yourself.
-* **Left, top, 55% of the width:** a table of rules, largest first, with a checkbox, the rule's name, its risk level, how many items it found, and their size. Rules that found nothing are listed last, dimmed, with no checkbox. The bottom edge shows what every rule found together.
+* **Left, top, 55% of the width:** a table of rules, largest first, with a checkbox, the rule's name, its risk level, how many items it found, and their size. Rules that found nothing are listed last with no checkbox. The bottom edge shows what every rule found together.
 * **Left, bottom:** the Selected box. Each selected rule with its size, then the total. Before anything is selected, it says how selecting works.
 * **Right:** the rule the arrow is on, in boxes that fit what they hold:
   1. **Top,** titled with the rule's name: what it removes, its risk level and what that means on one line, apps to close first, how recent files it keeps, and the folder it looks in, in blue.
@@ -245,7 +251,7 @@
   4. **Where the space is:** every rule that found something, largest first, with a bar, green when selected. The rule the arrow is on is bold. The last line adds up everything found and what is selected. It takes whatever room is left, and is left out when there is none.
   5. If a list is too long, its last line says how many more there are.
 * When the terminal is narrower than 100 columns, the details go under the list, and the list's bottom edge shows the selected total instead.
-* A selected checkbox is a green `[✓]`. The arrow's row shows its name in bold white, so the checkbox and risk keep their colors.
+* A selected checkbox is a green `[✓]`. The arrow's row shows its name in bold, so the checkbox and risk keep their colors.
 * A note at the top of the details explains when a rule was not selected, or could not be. Rules that failed to load are listed there too.
 * `safe` rules start selected, unless their app is open.
 
@@ -290,7 +296,7 @@
 ```
 
 * Large Files only shows files. Nothing is moved from here: `Enter` shows the file in Disk.
-* **Top:** both filters, with every choice listed and the current one green in brackets, so `s` and `a` show what they change. Starts at 100 MB and any age.
+* **Top:** both filters, with every choice listed and the current one green in brackets. Below 100 columns of panel width, show only the active size and age with `s` and `a` to change them. Starts at 100 MB and any age.
 * **Files, largest first:** a table of files from the scan. Folders are not listed.
   1. Its size, and a bar of it against the largest file, both red from 5 GB and yellow from 1 GB.
   2. When it last changed. Files unchanged for a year or more have a magenta date.
@@ -298,6 +304,7 @@
   4. The bottom edge shows how many files match and their total size. Up to 1,000 are listed, and the edge says when only the largest are shown.
   5. When no file matches, the box says so in the middle, with the keys to widen the filters.
 * **Right, from 120 columns:** the selected file, titled with its name: its folder, size, share of the files found, when it changed, its type from the extension, and a plain hint for common types, such as installers, archives, videos, and virtual disks. Below it, **Where they are** adds the files up by folder, largest first. `~/Library` is split one level further, since most large files are there.
+* Below 120 columns, the selected path and age sit below the file table when at least 18 rows are available.
 * Until the scan finishes, the screen shows the loading box.
 
 | Key | Action |
@@ -333,12 +340,12 @@
 +--------------------------------------------------------------------------------------------+
 ```
 
-* **App list:** a table of each app in `/Applications` and `~/Applications`, with its name, its size, a bar of its size against the largest app, its folder, and its bundle ID (the name macOS uses to identify it). Apps neet can remove come first. Apps it will not remove are listed after them, dimmed, with the reason, such as `Apple app` or `link`.
-* **Colors:** sizes and bars are red from 5 GB and yellow from 1 GB, and bars are green below that. `/Applications` is blue, `~/Applications` magenta, and bundle IDs cyan.
+* **App list:** a table of each app in `/Applications` and `~/Applications`, with its name, its size, a bar of its size against the largest app, its folder, and its bundle ID (the name macOS uses to identify it). Apps neet can remove come first. Apps it will not remove are listed after them, with a yellow refusal reason, such as `Apple app` or `link`.
+* **Colors:** sizes and bars are red from 5 GB and yellow from 1 GB, and bars are green below that. `/Applications` is light blue, `~/Applications` magenta, and bundle IDs cyan.
 * Sizes are measured in the background, one app after another, and show `…` until then. Press `s` to list the largest first, and again to go back to names.
-* The bottom edge shows how many apps can be removed and how much space they take, then the sort order, or a note, such as why an app cannot be opened.
+* The bottom edge shows how many apps can be removed and how much space they take, with the sort order or a note on the top edge. A Selected box keeps the current app’s path and bundle ID or refusal visible.
 * **App files:** opening an app finds and measures its files, with the loading box and a timer. Then a table lists the app and each file, with a checkbox, size, name, folder, and a note on anything left unselected, such as `may be your data`.
-* The box under the table explains the file the arrow is on: why it starts selected or not, and what to check first.
+* The box under the table shows the bundle ID and selected path, then explains the file the arrow is on: why it starts selected or not, and what to check first.
 * The bottom edge shows the selected total, in green once something is selected.
 * What is found, and what starts selected, is in [SAFETY.md](SAFETY.md#app-removal).
 
@@ -358,7 +365,7 @@
 | Screen | Layout | Keys |
 | --- | --- | --- |
 | Space Breakdown | A list of parts that add up to the disk's used space: the scan, skipped folders, apps, macOS, snapshots, purgeable space, and anything unexplained. Opened with `b` on Home. | `Enter` opens a folder in Disk. |
-| Projects | A list of build folders in code projects, with project, last change, folder, and size. Folders that cannot be cleaned are dimmed with the reason. | `Space` selects, `s` sorts, `Enter` reviews. |
+| Projects | A list of build folders in code projects, with project, last change, folder, and size. Folders that cannot be cleaned show the reason. | `Space` selects, `s` sorts, `Enter` reviews. |
 | Startup | Sections for login items, background items, launch agents, and launch daemons. Each row shows the program, whether it runs, and whether it is signed. | Turn off, turn back on. |
 | SSH | Sections for hosts, keys, agent keys, known hosts, and permission problems. | Fix permissions, add or remove agent keys, remove known hosts. |
 | Dotfiles | Settings files grouped by shell, Git, SSH, editors, and terminal. | Edit with a backup, export. |

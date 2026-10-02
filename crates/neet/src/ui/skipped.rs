@@ -6,7 +6,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::Rect;
 use ratatui::style::Stylize;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Padding, Paragraph, Wrap};
+use ratatui::widgets::{Padding, Paragraph, Wrap};
 
 use super::app::{Action, Context, Screen};
 use super::format;
@@ -68,7 +68,7 @@ fn allow_steps(terminal: Option<&str>) -> Vec<Line<'static>> {
         Line::from("macOS blocked some folders, so their sizes are missing.")
             .yellow()
             .bold(),
-        Line::from("To let neet read them:"),
+        Line::from("Grant Full Disk Access:"),
         Line::from("  1. Open System Settings, then Privacy & Security, then Full Disk Access."),
         Line::from(format!("  2. Turn on {app}.")),
         Line::from(format!(
@@ -152,20 +152,17 @@ impl Screen for Skipped {
         let text = match context.scan {
             ScanStatus::Done { scan, .. } => lines(scan),
             ScanStatus::Running(_) => {
-                vec![Line::from(
-                    "The scan is still running. Check back when it finishes.",
-                )]
+                vec![Line::from("Scan in progress.")]
             }
             ScanStatus::Failed(reason) => vec![Line::from(format!("The scan failed. {reason}"))],
         };
         // Keep the last line on screen when scrolling to the end.
         let visible = area.height.saturating_sub(2);
-        let last = u16::try_from(text.len())
-            .unwrap_or(u16::MAX)
+        let last = super::visual::wrapped_rows(&text, area.width.saturating_sub(4))
             .saturating_sub(visible);
         self.scroll = self.scroll.min(last);
 
-        let block = Block::bordered()
+        let block = super::visual::block()
             .title(" Skipped ")
             .padding(Padding::horizontal(1));
         let body = Paragraph::new(text)
@@ -198,7 +195,7 @@ impl Screen for Skipped {
             ("↑ ↓  j k", "Scroll"),
             ("PgUp PgDn", "Scroll a page"),
             ("g  G", "Jump to the top or bottom"),
-            ("Esc", "Go back to Home"),
+            ("Esc", "Back to Home"),
             ("q", "Quit"),
         ]
     }
