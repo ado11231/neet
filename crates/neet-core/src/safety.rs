@@ -87,6 +87,29 @@ pub enum SafetyError {
     NotAppItem,
 }
 
+/// An `io::Error` cannot be copied, so a copy keeps its kind and message.
+pub(crate) fn copy_error(error: &io::Error) -> io::Error {
+    io::Error::new(error.kind(), error.to_string())
+}
+
+impl Clone for SafetyError {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Empty => Self::Empty,
+            Self::Relative => Self::Relative,
+            Self::Unsupported => Self::Unsupported,
+            Self::TopOfDisk => Self::TopOfDisk,
+            Self::Unreadable(error) => Self::Unreadable(copy_error(error)),
+            Self::OutsideRoots => Self::OutsideRoots,
+            Self::IsRoot => Self::IsRoot,
+            Self::Protected => Self::Protected,
+            Self::LinkLeadsOut => Self::LinkLeadsOut,
+            Self::Link => Self::Link,
+            Self::NotAppItem => Self::NotAppItem,
+        }
+    }
+}
+
 impl fmt::Display for SafetyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
