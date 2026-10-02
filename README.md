@@ -45,7 +45,7 @@ neet
 
 | Screen | What It Does |
 | --- | --- |
-| Quick Clean | Start here: see everything taking space that can be cleared, and how. |
+| Quick Clean | Start here: see everything taking space that can be cleared, and move project build folders and old installers to the Trash. |
 | Deep Clean | Go through every cache and log rule, and move what your apps can make again to the Trash. |
 | Remove App | Remove an app along with the files it left in your Library folder. |
 | Large Files | Find your largest and oldest files. |
@@ -56,7 +56,7 @@ neet
 * Works on macOS 13 or later, on Apple silicon and Intel.
 * Files go to the Trash, never deleted, so you can put them back.
 * You review and confirm everything before it moves.
-* Your personal folders, iCloud files, keychains, and SSH keys are never touched.
+* Your personal folders, iCloud files, keychains, and SSH keys are never touched. The one exception is project build folders and installers, which you pick in Quick Clean.
 * For a full scan, give your terminal Full Disk Access:
   1. Open System Settings, then Privacy & Security, then Full Disk Access.
   2. Turn on your terminal app, such as Terminal, iTerm, or Ghostty.

@@ -48,7 +48,7 @@
 
 | Feature | What It Does | Status |
 | --- | --- | --- |
-| Quick Clean | One table of everything that can be cleared: what the rules found, which neet cleans, and the Trash, installers in Downloads, project build folders, the Docker disk image, simulator runtimes, and temporary files, with how to remove each yourself. Looking never changes a file. | Done |
+| Quick Clean | One table of everything that can be cleared: what the rules found, project build folders, and installers in Downloads, which neet clears, and the Trash, the Docker disk image, simulator runtimes, and temporary files, with how to remove each yourself. Looking never changes a file. | Done |
 | Preview | Finds everything the cleanup rules cover, with sizes, and changes nothing. | Done |
 | Review and confirm | Lists every path, then asks with the item count and total size. It cannot be skipped. | Done |
 | Move to the Trash | Moves items through Finder, so Put Back restores them. Space is freed when you empty the Trash. | Done |
@@ -58,7 +58,8 @@
 | Recent file check | A rule can skip anything changed in the last few days. | Done |
 | Your own rules | Loads extra rules from `~/.config/neet/rules/`. They can never reach outside the allowed folders, and never start selected. | Done |
 | Clean one item | Press `d` in Disk or Large Files to clean the selected item, with the same checks. | Done |
-| Project build folders | Cleans old build folders in your code projects, such as `target/` and `node_modules/`. Quick Clean already finds them, and you remove them. | Proposed |
+| Project build folders | Moves build folders in your code projects, `target/` beside a `Cargo.toml` and `node_modules/`, to the Trash from Quick Clean. You pick which, then review. | Done |
+| Installers in Downloads | Moves `.dmg`, `.pkg`, `.iso`, and `.xip` files in Downloads to the Trash from Quick Clean. You pick which, then review. | Done |
 
 ### Risk Levels
 

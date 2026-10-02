@@ -1,21 +1,31 @@
+use std::cmp::Reverse;
+use std::fs;
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 
 use neet_core::clutter::{self, Finding, Kind};
-use neet_core::tree::Tree;
+use neet_core::tree::{NodeId, Tree};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Style, Stylize};
+use ratatui::style::{Color, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Cell, Padding, Paragraph, Row, Table, TableState, Wrap};
 
 use super::app::{Action, Context, Screen};
-use super::clean::Clean;
+use super::clean::{Clean, display_path};
 use super::disk::Disk;
 use super::format;
 use super::loading::scanning;
+use super::pick::Pick;
 use super::scan::ScanStatus;
+
+/// Below this width the largest items are left out.
+const MIN_SIDE_WIDTH: u16 = 130;
+
+/// Width of the table and the box under it, when the largest items are beside them
+const TABLE_WIDTH: u16 = 86;
 
 /// What the background work found, once it is done
 enum Asked {
@@ -49,15 +59,19 @@ enum Item {
     Clutter(Kind),
 }
 
+/// What neet clears first, then what you clear, then what macOS clears
 const ITEMS: [Item; 7] = [
     Item::Rules,
-    Item::Clutter(Kind::Trash),
-    Item::Clutter(Kind::Installers),
     Item::Clutter(Kind::BuildFolders),
+    Item::Clutter(Kind::Installers),
+    Item::Clutter(Kind::Trash),
     Item::Clutter(Kind::DockerImage),
     Item::Clutter(Kind::SimulatorRuntimes),
     Item::Clutter(Kind::TempFiles),
 ];
+
+/// Width of the bar that shows each row's share of everything found
+const SHARE_BAR: usize = 14;
 
 /// What a row shows: found, still looking, or nothing
 enum Status {
@@ -90,63 +104,92 @@ enum Who {
 fn who(item: Item) -> Who {
     match item {
         Item::Rules => Who::Neet,
+        Item::Clutter(kind) if clutter::neet_removes(kind) => Who::Neet,
         Item::Clutter(Kind::TempFiles) => Who::Mac,
         Item::Clutter(_) => Who::You,
     }
 }
 
-/// The step that frees an item, in a few words
-fn step(item: Item) -> &'static str {
-    match item {
-        Item::Rules => "Enter, then review in Deep Clean",
-        Item::Clutter(Kind::Trash) => "Empty the Trash",
-        Item::Clutter(Kind::Installers) => "Delete in Finder",
-        Item::Clutter(Kind::BuildFolders) => "cargo clean, or rm -rf node_modules",
-        Item::Clutter(Kind::DockerImage) => "docker system prune",
-        Item::Clutter(Kind::SimulatorRuntimes) => "Xcode, Settings, Components",
-        Item::Clutter(Kind::TempFiles) => "Restart the Mac",
+fn who_span(who: Who) -> Span<'static> {
+    match who {
+        Who::Neet => Span::raw("neet").green(),
+        Who::You => Span::raw("you").yellow(),
+        Who::Mac => Span::raw("macOS").blue(),
     }
 }
 
-/// What the item is, and how to remove it
-fn explain(item: Item) -> [&'static str; 2] {
+/// What the item is
+fn about(item: Item) -> &'static str {
     match item {
-        Item::Rules => [
-            "Caches and logs the cleanup rules found. Apps make them again when needed.",
-            "Press Enter to choose them in Deep Clean, review every path, and move them to the Trash.",
+        Item::Rules => "Caches and logs the cleanup rules found. Apps make them again when needed.",
+        Item::Clutter(Kind::Trash) => {
+            "Items already in the Trash still take space until it is emptied."
+        }
+        Item::Clutter(Kind::Installers) => {
+            "Disk images and installers in Downloads. Once an app is installed, its installer is rarely needed."
+        }
+        Item::Clutter(Kind::BuildFolders) => {
+            "node_modules folders, and Rust target folders, in your projects. They come back when you install or build again."
+        }
+        Item::Clutter(Kind::DockerImage) => {
+            "The disk image Docker Desktop keeps containers and images in. It does not shrink on its own."
+        }
+        Item::Clutter(Kind::SimulatorRuntimes) => {
+            "iOS and other simulator runtimes Xcode downloaded. They live outside your home folder."
+        }
+        Item::Clutter(Kind::TempFiles) => {
+            "Your temporary files and caches in /private/var/folders. Apps use them while they run."
+        }
+    }
+}
+
+/// The steps that free an item
+fn steps(item: Item) -> &'static [&'static str] {
+    match item {
+        Item::Rules => &[
+            "Press Enter to open Deep Clean.",
+            "Choose rules with Space, then review every path.",
+            "Confirm, and the files go to the Trash.",
         ],
-        Item::Clutter(Kind::Trash) => [
-            "Items already in the Trash still take space.",
-            "Empty the Trash in Finder to free it. neet never empties the Trash.",
+        Item::Clutter(Kind::BuildFolders) => &[
+            "Press Enter to list every build folder.",
+            "All start selected. Clear any you are working in.",
+            "Review, confirm, and they go to the Trash.",
         ],
-        Item::Clutter(Kind::Installers) => [
-            "Disk images and installers in Downloads. Once an app is installed, its installer is rarely needed.",
-            "Downloads is protected, so delete them in Finder. Enter shows the largest in Disk.",
+        Item::Clutter(Kind::Installers) => &[
+            "Press Enter to list every installer.",
+            "All start selected. Clear any you still need.",
+            "Review, confirm, and they go to the Trash.",
         ],
-        Item::Clutter(Kind::BuildFolders) => [
-            "node_modules folders, and Rust target folders, in your projects. They come back when you install or build again.",
-            "Delete them in the project, such as with rm -rf node_modules or cargo clean. Enter shows the largest in Disk.",
+        Item::Clutter(Kind::Trash) => &[
+            "Empty the Trash in Finder, or right click it in the Dock.",
+            "neet never empties the Trash, so Put Back always works.",
         ],
-        Item::Clutter(Kind::DockerImage) => [
-            "The disk image Docker Desktop keeps containers and images in. It does not shrink on its own.",
-            "Remove what you do not use in Docker Desktop, or with docker system prune. Enter shows it in Disk.",
+        Item::Clutter(Kind::DockerImage) => &[
+            "Run: docker system prune -a",
+            "Or remove images in Docker Desktop.",
+            "Then Docker Desktop, Settings, Resources can shrink the disk.",
         ],
-        Item::Clutter(Kind::SimulatorRuntimes) => [
-            "iOS and other simulator runtimes Xcode downloaded. They live outside your home folder.",
-            "Delete the ones you do not use in Xcode, Settings, Components, or with xcrun simctl runtime delete.",
+        Item::Clutter(Kind::SimulatorRuntimes) => &[
+            "Run: xcrun simctl runtime list",
+            "Then: xcrun simctl runtime delete <id>",
+            "Or Xcode, Settings, Components.",
         ],
-        Item::Clutter(Kind::TempFiles) => [
-            "Your temporary files and caches in /private/var/folders. Apps use them while they run.",
-            "macOS removes old ones on its own, and restarting the Mac clears more. Do not delete them by hand.",
+        Item::Clutter(Kind::TempFiles) => &[
+            "macOS removes old ones on its own.",
+            "Restarting the Mac clears more.",
+            "Do not delete them by hand.",
         ],
     }
 }
 
 /// Everything taking space that can be cleared, in one table: what neet
-/// cleans itself, and what you remove with the right tool.
+/// clears itself, and what you remove with the right tool.
 pub struct QuickClean {
     table: TableState,
     from_tree: Option<Vec<Finding>>,
+    /// Build folders and installers that are still on disk, largest first
+    removable: Option<Vec<(Kind, Vec<NodeId>)>>,
     simulators: Asked,
     temp: Asked,
 }
@@ -163,6 +206,7 @@ impl QuickClean {
         Self {
             table: TableState::default().with_selected(Some(0)),
             from_tree: None,
+            removable: None,
             simulators,
             temp,
         }
@@ -174,6 +218,31 @@ impl QuickClean {
         if self.from_tree.is_none() {
             self.from_tree = Some(clutter::from_tree(tree));
         }
+        if self.removable.is_none() {
+            // Empty ones free nothing. The scan is from when neet opened, so
+            // leave out anything already moved since.
+            self.removable = Some(
+                [Kind::BuildFolders, Kind::Installers]
+                    .into_iter()
+                    .map(|kind| {
+                        let ids = clutter::items(tree, kind)
+                            .into_iter()
+                            .filter(|&id| tree.get(id).total_size > 0)
+                            .filter(|&id| fs::symlink_metadata(tree.path(id)).is_ok())
+                            .collect();
+                        (kind, ids)
+                    })
+                    .collect(),
+            );
+        }
+    }
+
+    /// The items neet can move of `kind`, largest first
+    fn removable(&self, kind: Kind) -> &[NodeId] {
+        self.removable
+            .as_ref()
+            .and_then(|lists| lists.iter().find(|(found, _)| *found == kind))
+            .map_or(&[], |(_, ids)| ids.as_slice())
     }
 
     fn finding(&self, kind: Kind) -> Option<&Finding> {
@@ -201,6 +270,21 @@ impl QuickClean {
                 Some(size) => Status::Found { size, count: None },
                 None => Status::Looking,
             },
+            Item::Clutter(kind) if clutter::neet_removes(kind) => {
+                let ScanStatus::Done { scan, .. } = context.scan else {
+                    return Status::Looking;
+                };
+                let ids = self.removable(kind);
+                let size = ids.iter().map(|&id| scan.tree.get(id).total_size).sum();
+                if size == 0 {
+                    Status::Nothing
+                } else {
+                    Status::Found {
+                        size,
+                        count: Some(ids.len()),
+                    }
+                }
+            }
             Item::Clutter(kind) => {
                 let waiting = match kind {
                     Kind::SimulatorRuntimes => matches!(self.simulators, Asked::Waiting(_)),
@@ -224,59 +308,71 @@ impl QuickClean {
     }
 
     fn draw_table(&mut self, frame: &mut Frame, area: Rect, context: &Context) {
+        let statuses: Vec<Status> = ITEMS
+            .iter()
+            .map(|&item| self.status(item, context))
+            .collect();
+        let size_of = |status: &Status| match status {
+            Status::Found { size, .. } => *size,
+            _ => 0,
+        };
+        let largest = statuses.iter().map(size_of).max().unwrap_or(0);
         let mut neet_total = 0;
         let mut your_total = 0;
         let rows: Vec<Row> = ITEMS
             .iter()
-            .map(|&item| {
-                let status = self.status(item, context);
-                let by_neet = item == Item::Rules;
-                let cleared_by = match who(item) {
-                    Who::Neet => Span::raw("neet").green(),
-                    Who::You => Span::raw("you").yellow(),
-                    Who::Mac => Span::raw("macOS"),
-                };
-                let (size, found) = match status {
+            .zip(&statuses)
+            .map(|(&item, status)| {
+                let (size, bar, found) = match *status {
                     Status::Found { size, count } => {
                         match who(item) {
                             Who::Neet => neet_total += size,
                             Who::You => your_total += size,
                             Who::Mac => {}
                         }
-                        let text = format!("{:>9}", format::size(size));
-                        let size = if by_neet {
-                            Span::raw(format!("~{}", text.trim_start())).bold()
+                        let text = if item == Item::Rules {
+                            format!("~{}", format::size(size))
                         } else {
-                            format::size_span(size, text)
+                            format::size(size)
                         };
                         let found = count.map_or_else(String::new, |count| {
                             format::count(u64::try_from(count).unwrap_or(u64::MAX))
                         });
-                        (size, Span::raw(found))
+                        (
+                            format::size_span(size, text),
+                            share_bar(size, largest),
+                            found,
+                        )
                     }
-                    Status::Looking => (Span::raw("looking…").dark_gray(), Span::raw("")),
-                    Status::Nothing => (Span::raw("none").dark_gray(), Span::raw("")),
+                    Status::Looking => (
+                        Span::raw("looking…").dark_gray(),
+                        Span::raw(""),
+                        String::new(),
+                    ),
+                    Status::Nothing => {
+                        (Span::raw("none").dark_gray(), Span::raw(""), String::new())
+                    }
                 };
                 Row::new([
                     Cell::from(name(item)),
                     Cell::from(Line::from(size).right_aligned()),
+                    Cell::from(bar),
                     Cell::from(Line::from(found).right_aligned()),
-                    Cell::from(cleared_by),
-                    Cell::from(Span::raw(step(item))),
+                    Cell::from(who_span(who(item))),
                 ])
             })
             .collect();
         let header = Row::new([
             Cell::from("Item"),
             Cell::from(Line::from("Size").right_aligned()),
+            Cell::from(""),
             Cell::from(Line::from("Found").right_aligned()),
             Cell::from("Cleared by"),
-            Cell::from("How"),
         ])
         .bold()
         .bottom_margin(1);
         let summary = Line::from(vec![
-            Span::raw(" neet can clean "),
+            Span::raw(" neet can clear "),
             Span::raw(format!("~{}", format::size(neet_total)))
                 .green()
                 .bold(),
@@ -289,8 +385,8 @@ impl QuickClean {
             [
                 Constraint::Length(24),
                 Constraint::Length(10),
+                Constraint::Length(u16::try_from(SHARE_BAR).unwrap_or(u16::MAX)),
                 Constraint::Length(7),
-                Constraint::Length(10),
                 Constraint::Fill(1),
             ],
         )
@@ -307,21 +403,129 @@ impl QuickClean {
         frame.render_stateful_widget(table, area, &mut self.table);
     }
 
-    fn draw_details(&self, frame: &mut Frame, area: Rect) {
+    /// What the selected row is and how to clear it, numbered
+    fn draw_about(&self, frame: &mut Frame, area: Rect) {
         let item = self.selected();
-        let [what, how] = explain(item);
-        let lines = vec![
-            Line::from(name(item)).bold(),
-            Line::from(what),
+        let mut lines = vec![
+            Line::from(vec![
+                Span::raw("Cleared by ").bold(),
+                who_span(who(item)).bold(),
+            ]),
+            Line::from(about(item)),
             Line::default(),
-            Line::from(how).cyan(),
+            Line::from("How").bold(),
         ];
+        let color = match who(item) {
+            Who::Neet => Color::Green,
+            Who::You => Color::Yellow,
+            Who::Mac => Color::Blue,
+        };
+        for (number, step) in steps(item).iter().enumerate() {
+            lines.push(Line::from(vec![
+                Span::raw(format!("{}. ", number + 1)).fg(color),
+                Span::raw(*step),
+            ]));
+        }
         frame.render_widget(
-            Paragraph::new(lines)
-                .wrap(Wrap { trim: true })
-                .block(Block::bordered().padding(Padding::horizontal(1))),
+            Paragraph::new(lines).wrap(Wrap { trim: true }).block(
+                Block::bordered()
+                    .title(format!(" {} ", name(item)))
+                    .padding(Padding::horizontal(1)),
+            ),
             area,
         );
+    }
+
+    /// The largest items of the selected row, when there is a list to show
+    fn draw_largest(&self, frame: &mut Frame, area: Rect, context: &Context) {
+        let item = self.selected();
+        let width = usize::from(area.width.saturating_sub(4));
+        let rows = usize::from(area.height.saturating_sub(2));
+        let entries: Vec<(u64, String)> = match item {
+            Item::Rules => context
+                .plan
+                .and_then(|estimate| estimate.planned.as_ref())
+                .map(|planned| {
+                    let mut rules: Vec<_> = planned
+                        .plan
+                        .rules
+                        .iter()
+                        .filter(|rule| rule.size() > 0)
+                        .map(|rule| (rule.size(), rule.rule.name.clone()))
+                        .collect();
+                    rules.sort_by_key(|(size, _)| Reverse(*size));
+                    rules
+                })
+                .unwrap_or_default(),
+            Item::Clutter(kind) => match context.scan {
+                ScanStatus::Done { scan, .. } => {
+                    let home = scan.tree.path(scan.tree.root());
+                    let ids: Vec<NodeId> = if clutter::neet_removes(kind) {
+                        self.removable(kind).to_vec()
+                    } else {
+                        self.finding(kind)
+                            .and_then(|found| found.node)
+                            .into_iter()
+                            .collect()
+                    };
+                    ids.into_iter()
+                        .map(|id| {
+                            (
+                                scan.tree.get(id).total_size,
+                                display_path(&home, &scan.tree.path(id)),
+                            )
+                        })
+                        .collect()
+                }
+                _ => Vec::new(),
+            },
+        };
+        let mut lines: Vec<Line> = entries
+            .iter()
+            .take(rows)
+            .map(|(size, path)| {
+                Line::from(vec![
+                    format::size_span(*size, format!("{:>9}  ", format::size(*size))),
+                    Span::raw(format::shorten_path(path, width.saturating_sub(11))),
+                ])
+            })
+            .collect();
+        if entries.len() > lines.len() && !lines.is_empty() {
+            lines.pop();
+            lines.push(Line::from(format!(
+                "{:>9}  and {} more",
+                "",
+                format::count(u64::try_from(entries.len() - lines.len()).unwrap_or(u64::MAX))
+            )));
+        }
+        if lines.is_empty() {
+            lines.push(Line::from(match item {
+                Item::Clutter(Kind::SimulatorRuntimes | Kind::TempFiles) => {
+                    "Outside your home folder, so there is no list to show."
+                }
+                _ => "Nothing to list.",
+            }));
+        }
+        frame.render_widget(
+            Paragraph::new(lines).block(
+                Block::bordered()
+                    .title(" Largest ")
+                    .padding(Padding::horizontal(1)),
+            ),
+            area,
+        );
+    }
+}
+
+/// A bar of `size` against the largest row, colored like the size
+fn share_bar(size: u64, largest: u64) -> Span<'static> {
+    let bar = Span::raw(format::bar(size, largest, SHARE_BAR));
+    if size >= format::HUGE {
+        bar.red()
+    } else if size >= format::HUGE / 5 {
+        bar.yellow()
+    } else {
+        bar.green()
     }
 }
 
@@ -358,10 +562,25 @@ impl Screen for QuickClean {
         self.poll(tree);
         // Border, header, gap, then one row per item
         let table_height = u16::try_from(ITEMS.len()).unwrap_or(u16::MAX) + 4;
-        let [table, details] =
-            Layout::vertical([Constraint::Length(table_height), Constraint::Fill(1)]).areas(area);
-        self.draw_table(frame, table, context);
-        self.draw_details(frame, details);
+        if area.width >= MIN_SIDE_WIDTH {
+            // The table and how to clear the row on the left, the largest
+            // items down the whole right side
+            let [left, largest] =
+                Layout::horizontal([Constraint::Length(TABLE_WIDTH), Constraint::Fill(1)])
+                    .areas(area);
+            let [table, about] =
+                Layout::vertical([Constraint::Length(table_height), Constraint::Fill(1)])
+                    .areas(left);
+            self.draw_table(frame, table, context);
+            self.draw_about(frame, about);
+            self.draw_largest(frame, largest, context);
+        } else {
+            let [table, about] =
+                Layout::vertical([Constraint::Length(table_height), Constraint::Fill(1)])
+                    .areas(area);
+            self.draw_table(frame, table, context);
+            self.draw_about(frame, about);
+        }
     }
 
     fn handle_key(&mut self, key: KeyEvent, context: &Context) -> Action {
@@ -375,20 +594,42 @@ impl Screen for QuickClean {
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => match self.selected() {
                 Item::Rules => return Action::Open(Box::new(Clean::new())),
                 Item::Clutter(kind) => {
-                    if let ScanStatus::Done { scan, .. } = context.scan
-                        && let Some(node) = self.finding(kind).and_then(|found| found.node)
-                    {
+                    let ScanStatus::Done { scan, .. } = context.scan else {
+                        return Action::None;
+                    };
+                    if clutter::neet_removes(kind) {
+                        let paths: Vec<PathBuf> = self
+                            .removable(kind)
+                            .iter()
+                            .map(|&id| scan.tree.path(id))
+                            .collect();
+                        if !paths.is_empty() {
+                            return Action::Open(Box::new(Pick::start(
+                                kind,
+                                name(Item::Clutter(kind)),
+                                paths,
+                            )));
+                        }
+                    } else if let Some(node) = self.finding(kind).and_then(|found| found.node) {
                         return Action::Open(Box::new(Disk::showing(&scan.tree, node)));
                     }
                 }
             },
+            KeyCode::Char('d') => {
+                if let (Item::Clutter(kind), ScanStatus::Done { scan, .. }) =
+                    (self.selected(), context.scan)
+                    && let Some(node) = self.finding(kind).and_then(|found| found.node)
+                {
+                    return Action::Open(Box::new(Disk::showing(&scan.tree, node)));
+                }
+            }
             _ => {}
         }
         Action::None
     }
 
     fn hints(&self) -> &'static str {
-        "↑↓ move · enter clean or show in Disk · esc home · ? help · q quit"
+        "↑↓ move · enter clear it · d show in Disk · esc home · ? help · q quit"
     }
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
@@ -397,8 +638,9 @@ impl Screen for QuickClean {
             ("g  G", "Jump to the first or last row"),
             (
                 "Enter  →  l",
-                "Caches and logs: choose them in Deep Clean. Others: show in Disk",
+                "Rows neet clears: pick what goes to the Trash. Others: show in Disk",
             ),
+            ("d", "Show the largest item in Disk"),
             ("Esc", "Go back to Home"),
             ("q", "Quit"),
         ]
@@ -408,27 +650,33 @@ impl Screen for QuickClean {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neet_core::scan::Scan;
-    use neet_core::tree::NodeKind;
+    use neet_core::scan;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::crossterm::event::KeyModifiers;
+    use tempfile::TempDir;
 
-    fn done() -> ScanStatus {
-        let mut tree = Tree::new("/Users/test");
-        let root = tree.root();
-        let trash = tree.add(root, ".Trash", NodeKind::Directory, 0);
-        let _ = tree.add(trash, "old.zip", NodeKind::File, 2_000_000_000);
-        let downloads = tree.add(root, "Downloads", NodeKind::Directory, 0);
-        let _ = tree.add(downloads, "App.dmg", NodeKind::File, 300_000_000);
-        ScanStatus::Done {
-            scan: Scan {
-                tree,
-                errors: Vec::new(),
-                other_disks: Vec::new(),
-            },
-            elapsed: std::time::Duration::from_secs(1),
+    /// A real home folder, scanned, so items can be checked on disk
+    fn done() -> (TempDir, ScanStatus) {
+        let dir = tempfile::tempdir().expect("temporary directory should be created");
+        let home = fs::canonicalize(dir.path()).expect("home should resolve");
+        for (file, size) in [
+            (".Trash/old.zip", 2_000_000),
+            ("Downloads/App.dmg", 300_000),
+            ("code/web/node_modules/x.js", 1_000_000),
+        ] {
+            let path = home.join(file);
+            fs::create_dir_all(path.parent().unwrap()).expect("folder should be made");
+            fs::write(path, vec![7u8; size]).expect("file should be written");
         }
+        let scan = scan::scan(&home, |_| {}).expect("scan should finish");
+        (
+            dir,
+            ScanStatus::Done {
+                scan,
+                elapsed: std::time::Duration::from_secs(1),
+            },
+        )
     }
 
     fn quick() -> QuickClean {
@@ -444,16 +692,19 @@ mod tests {
         )
     }
 
-    fn render(screen: &mut QuickClean, scan: &ScanStatus) -> String {
-        let mut terminal = Terminal::new(TestBackend::new(110, 30)).unwrap();
-        let context = Context {
+    fn context(scan: &ScanStatus) -> Context<'_> {
+        Context {
             scan,
             disk: None,
             cleanable: Some(8_600_000_000),
             plan: None,
-        };
+        }
+    }
+
+    fn render(screen: &mut QuickClean, scan: &ScanStatus) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(140, 30)).unwrap();
         terminal
-            .draw(|frame| screen.draw(frame, frame.area(), &context))
+            .draw(|frame| screen.draw(frame, frame.area(), &context(scan)))
             .unwrap();
         terminal
             .backend()
@@ -464,50 +715,81 @@ mod tests {
             .collect()
     }
 
+    fn press(screen: &mut QuickClean, scan: &ScanStatus, code: KeyCode) -> Action {
+        screen.handle_key(KeyEvent::new(code, KeyModifiers::NONE), &context(scan))
+    }
+
     #[test]
-    fn lists_what_neet_cleans_and_what_you_remove() {
-        let scan = done();
+    fn lists_what_neet_clears_and_what_you_remove() {
+        let (_dir, scan) = done();
         let screen = render(&mut quick(), &scan);
 
         assert!(screen.contains("~8.6 GB"));
         assert!(screen.contains("Trash"));
-        assert!(screen.contains("2.0 GB"));
-        assert!(screen.contains("300.0 MB"));
+        assert!(screen.contains("2.0 MB"));
+        assert!(screen.contains("1.0 MB"));
+        assert!(screen.contains("300.0 KB") || screen.contains("303.1 KB"));
         assert!(screen.contains("17.0 GB"));
         assert!(screen.contains("looking…"));
-        assert!(screen.contains("none"));
-        assert!(screen.contains("you can free 19.3 GB more"));
+        assert!(screen.contains("you can free 17.0 GB more"));
         assert!(screen.contains("macOS"));
-        assert!(screen.contains("Empty the Trash"));
+        assert!(screen.contains("Press Enter to open Deep Clean"));
     }
 
     #[test]
-    fn enter_opens_clean_then_disk_for_a_finding() {
-        let scan = done();
+    fn build_folders_show_their_paths_and_open_the_picker() {
+        let (_dir, scan) = done();
         let mut screen = quick();
         let _ = render(&mut screen, &scan);
-        let context = Context {
-            scan: &scan,
-            disk: None,
-            cleanable: None,
-            plan: None,
-        };
-        let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
-        let down = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
 
+        press(&mut screen, &scan, KeyCode::Down);
+        let text = render(&mut screen, &scan);
+        assert!(text.contains("~/code/web/node_modules"));
+        assert!(text.contains("Press Enter to list every build folder"));
         assert!(matches!(
-            screen.handle_key(enter, &context),
+            press(&mut screen, &scan, KeyCode::Enter),
             Action::Open(_)
         ));
-        let _ = screen.handle_key(down, &context);
+    }
+
+    #[test]
+    fn items_already_moved_are_left_out() {
+        let (dir, scan) = done();
+        fs::remove_dir_all(dir.path().join("code/web/node_modules")).expect("folder should go");
+        let mut screen = quick();
+        let _ = render(&mut screen, &scan);
+
+        press(&mut screen, &scan, KeyCode::Down);
         assert!(matches!(
-            screen.handle_key(enter, &context),
+            press(&mut screen, &scan, KeyCode::Enter),
+            Action::None
+        ));
+    }
+
+    #[test]
+    fn enter_opens_deep_clean_then_disk_for_the_trash() {
+        let (_dir, scan) = done();
+        let mut screen = quick();
+        let _ = render(&mut screen, &scan);
+
+        assert!(matches!(
+            press(&mut screen, &scan, KeyCode::Enter),
+            Action::Open(_)
+        ));
+        for _ in 0..3 {
+            press(&mut screen, &scan, KeyCode::Down);
+        }
+        assert!(matches!(
+            press(&mut screen, &scan, KeyCode::Enter),
             Action::Open(_)
         ));
         // Simulator runtimes are outside the scan, so there is nothing to show.
-        for _ in 0..4 {
-            let _ = screen.handle_key(down, &context);
+        for _ in 0..2 {
+            press(&mut screen, &scan, KeyCode::Down);
         }
-        assert!(matches!(screen.handle_key(enter, &context), Action::None));
+        assert!(matches!(
+            press(&mut screen, &scan, KeyCode::Enter),
+            Action::None
+        ));
     }
 }
