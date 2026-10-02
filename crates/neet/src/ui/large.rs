@@ -117,12 +117,14 @@ impl LargeFiles {
             let lines = vec![
                 Line::from(vec![
                     Span::raw("Size ≥ "),
-                    Span::raw(SIZES[self.size].1).cyan().bold(),
+                    Span::raw(SIZES[self.size].1)
+                        .fg(super::visual::ACCENT)
+                        .bold(),
                     Span::raw("    s change"),
                 ]),
                 Line::from(vec![
                     Span::raw("Unchanged: "),
-                    Span::raw(AGES[self.age].1).cyan().bold(),
+                    Span::raw(AGES[self.age].1).fg(super::visual::ACCENT).bold(),
                     Span::raw("    a change"),
                 ]),
             ];
@@ -538,7 +540,7 @@ impl Screen for LargeFiles {
                         .and_then(|time| SystemTime::now().duration_since(time).ok())
                         .map_or_else(|| "unknown".to_string(), format::age);
                     vec![
-                        Line::from(display_path(tree, id)).light_blue(),
+                        Line::from(display_path(tree, id)).fg(super::visual::ACCENT),
                         Line::from(format!("Changed: {age}")),
                     ]
                 })

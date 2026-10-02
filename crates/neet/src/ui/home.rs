@@ -148,11 +148,11 @@ impl Home {
                 _ => format!("{} ", index + 1),
             };
             let mut spans = vec![
-                Span::raw(number).cyan(),
+                Span::raw(number).fg(super::visual::ACCENT),
                 Span::raw(format!("{:<14}", entry.label)),
             ];
             if let Some(summary) = summary(entry.label, context) {
-                spans.push(Span::raw(summary).cyan());
+                spans.push(Span::raw(summary).fg(super::visual::ACCENT));
             }
             if matches!(entry.target, Target::Soon) {
                 spans.push(Span::raw("soon").yellow().italic());
@@ -223,7 +223,7 @@ fn disk_lines(disk: Option<DiskSpace>) -> Vec<Line<'static>> {
     let gauge = match used {
         90.. => gauge.red(),
         75..90 => gauge.yellow(),
-        _ => gauge.cyan(),
+        _ => gauge.fg(super::visual::ACCENT),
     };
     let mut lines = vec![
         Line::from(vec![gauge, Span::raw(format!(" {used}% used")).bold()]),
@@ -256,7 +256,7 @@ fn paths(count: usize) -> String {
 fn scan_lines(scan: &ScanStatus) -> Vec<Line<'static>> {
     match scan {
         ScanStatus::Running(progress) => vec![
-            Line::from("Scanning home…").cyan(),
+            Line::from("Scanning home…").fg(super::visual::ACCENT),
             Line::from(format!(
                 "{} items · {}",
                 format::count(progress.entries),

@@ -315,7 +315,7 @@ impl Clean {
                 Span::raw(rule.rule.id.clone()).bold(),
                 Span::raw(" and press Enter to select it."),
             ]),
-            Line::from(format!("> {typed}█")).cyan(),
+            Line::from(format!("> {typed}█")).fg(super::visual::ACCENT),
         ];
         let [area] = Layout::vertical([Constraint::Length(
             super::visual::wrapped_rows(&lines, area.width.min(64).saturating_sub(4))
@@ -555,7 +555,7 @@ fn about(rule: &RulePlan, home: &Path) -> Vec<Line<'static>> {
         },
         |folder| display_path(home, folder),
     );
-    lines.push(field("Folder", Span::raw(folder).light_blue()));
+    lines.push(field("Folder", Span::raw(folder).fg(super::visual::ACCENT)));
     lines
 }
 
@@ -728,7 +728,7 @@ fn chart_lines(planned: &Planned, current: &RulePlan, width: usize) -> Vec<Line<
             let bar = if rule.selected {
                 bar.green()
             } else {
-                bar.cyan()
+                bar.fg(super::visual::ACCENT)
             };
             Line::from(vec![
                 format::size_span(rule.size(), format!("{:>9}  ", format::size(rule.size()))),

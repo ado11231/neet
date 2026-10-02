@@ -152,12 +152,16 @@ fn ask(
 
 /// A key to press, as it shows in text
 fn key(name: &'static str) -> Span<'static> {
-    Span::raw(name).cyan().bold()
+    Span::raw(name).fg(super::visual::ACCENT).bold()
 }
 
 /// A numbered step
 fn step(number: usize, text: Vec<Span<'static>>) -> Line<'static> {
-    let mut spans = vec![Span::raw(format!("{number}  ")).cyan().bold()];
+    let mut spans = vec![
+        Span::raw(format!("{number}  "))
+            .fg(super::visual::ACCENT)
+            .bold(),
+    ];
     spans.extend(text);
     Line::from(spans)
 }
@@ -444,7 +448,7 @@ impl Simulators {
         let mut lines = vec![
             labeled(
                 "Runtime",
-                Color::Cyan,
+                super::visual::ACCENT,
                 vec![Span::raw(
                     "lets Xcode run simulators of one iOS, watchOS, tvOS, or visionOS version.",
                 )],
@@ -469,7 +473,7 @@ impl Simulators {
                     runtime.build,
                     runtime.last_used.as_deref().map_or("never", day)
                 ))
-                .cyan(),
+                .fg(super::visual::ACCENT),
             );
         }
         if self
@@ -926,7 +930,7 @@ impl DockerSpace {
         }
         if let Some(note) = &self.note {
             lines.push(Line::default());
-            lines.push(Line::from(note.clone()).cyan());
+            lines.push(Line::from(note.clone()).fg(super::visual::ACCENT));
         }
         lines
     }
@@ -983,7 +987,7 @@ impl DockerSpace {
         ]);
         if let Some(note) = &self.note {
             lines.push(Line::default());
-            lines.push(Line::from(note.clone()).cyan());
+            lines.push(Line::from(note.clone()).fg(super::visual::ACCENT));
         }
         about_box(frame, rest, lines);
     }

@@ -198,7 +198,7 @@ impl RemoveApp {
         let folder = if folder.starts_with('~') {
             Span::raw(folder).magenta()
         } else {
-            Span::raw(folder).light_blue()
+            Span::raw(folder).fg(super::visual::ACCENT)
         };
         let id = app.bundle_id.clone().unwrap_or_default();
         let (size, bar) = match self.sizes.get(&app.path) {
@@ -206,7 +206,9 @@ impl RemoveApp {
                 format::size_span(size, format::size(size)),
                 size_bar(size, largest),
             ),
-            None if self.measuring.is_some() => (Span::raw("…").cyan(), Span::raw("")),
+            None if self.measuring.is_some() => {
+                (Span::raw("…").fg(super::visual::ACCENT), Span::raw(""))
+            }
             None => (Span::raw(""), Span::raw("")),
         };
         match app.refused {
@@ -229,7 +231,7 @@ impl RemoveApp {
                 Cell::from(Line::from(size).right_aligned()),
                 Cell::from(bar),
                 Cell::from(folder),
-                Cell::from(Span::raw(id).cyan()),
+                Cell::from(Span::raw(id).fg(super::visual::ACCENT)),
             ]),
         }
     }
@@ -308,12 +310,12 @@ impl Screen for RemoveApp {
                 );
                 let status = Span::raw(status);
                 Line::from(vec![
-                    Span::raw(app.path.display().to_string()).light_blue(),
+                    Span::raw(app.path.display().to_string()).fg(super::visual::ACCENT),
                     Span::raw(" · "),
                     if app.refused.is_some() {
                         status.yellow()
                     } else {
-                        status.cyan()
+                        status.fg(super::visual::ACCENT)
                     },
                 ])
             });
@@ -536,7 +538,9 @@ fn file_row(
         Cell::from(checkbox(rule.selected, !rule.items.is_empty())),
         Cell::from(Line::from(size).right_aligned()),
         Cell::from(name),
-        Cell::from(Span::raw(format::shorten_path(folder, columns.width(3))).light_blue()),
+        Cell::from(
+            Span::raw(format::shorten_path(folder, columns.width(3))).fg(super::visual::ACCENT),
+        ),
         Cell::from(Span::raw(note).yellow()),
     ])
 }
@@ -588,7 +592,7 @@ impl Screen for AppFiles {
             })
             .title(Line::from(" Trash · Put Back restores ").right_aligned());
         let current = self.list.selected().unwrap_or(0);
-        let mut details = vec![Line::from(self.bundle_id.clone()).cyan()];
+        let mut details = vec![Line::from(self.bundle_id.clone()).fg(super::visual::ACCENT)];
         if let Some(rule) = plan.rules.get(current) {
             if let Some(path) = rule
                 .items
@@ -596,7 +600,8 @@ impl Screen for AppFiles {
                 .map(|item| item.path.path())
                 .or_else(|| rule.skipped.first().map(|item| item.path.as_path()))
             {
-                details.push(Line::from(display_path(&planned.home, path)).light_blue());
+                details
+                    .push(Line::from(display_path(&planned.home, path)).fg(super::visual::ACCENT));
             }
             details.push(Line::from(explain(rule)));
         }

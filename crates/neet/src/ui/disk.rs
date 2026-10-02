@@ -197,7 +197,7 @@ fn row(
         columns.width(3),
     ));
     let name = if node.kind == NodeKind::Directory {
-        name.light_blue().bold()
+        name.fg(super::visual::ACCENT).bold()
     } else {
         name
     };
@@ -268,7 +268,7 @@ fn draw_preview(frame: &mut Frame, area: Rect, tree: &Tree, browser: &Browser) {
     let block = block.title(
         Line::from(format!(" {} ", display_name(tree, id)))
             .bold()
-            .cyan(),
+            .fg(super::visual::ACCENT),
     );
     let inner = block.inner(area);
     frame.render_widget(block, area);

@@ -120,7 +120,7 @@ fn who_span(who: Who) -> Span<'static> {
         Who::Neet => Span::raw("neet").green(),
         Who::Tool => Span::raw("neet, permanently").red(),
         Who::You => Span::raw("you").yellow(),
-        Who::Mac => Span::raw("macOS").light_blue(),
+        Who::Mac => Span::raw("macOS").fg(super::visual::ACCENT),
     }
 }
 
@@ -349,7 +349,11 @@ impl QuickClean {
                             found,
                         )
                     }
-                    Status::Looking => (Span::raw("scanning").cyan(), Span::raw(""), String::new()),
+                    Status::Looking => (
+                        Span::raw("scanning").fg(super::visual::ACCENT),
+                        Span::raw(""),
+                        String::new(),
+                    ),
                     Status::Nothing => (Span::raw("none"), Span::raw(""), String::new()),
                 };
                 columns.row([
@@ -402,7 +406,7 @@ impl QuickClean {
             Who::Neet => Color::Green,
             Who::Tool => Color::Red,
             Who::You => Color::Yellow,
-            Who::Mac => Color::LightBlue,
+            Who::Mac => super::visual::ACCENT,
         };
         for (number, step) in steps(item).iter().enumerate() {
             lines.push(Line::from(vec![

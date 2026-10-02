@@ -33,10 +33,10 @@ impl Loading<'_> {
         let width = WIDTH.min(area.width);
         let lines = vec![
             Line::from(vec![
-                Span::raw(format!("{} ", spinner())).cyan(),
+                Span::raw(format!("{} ", spinner())).fg(super::visual::ACCENT),
                 Span::raw(self.doing).bold(),
             ]),
-            Line::from(format!("  {}", self.progress)).cyan(),
+            Line::from(format!("  {}", self.progress)).fg(super::visual::ACCENT),
             Line::default(),
             Line::from(self.note),
         ];
