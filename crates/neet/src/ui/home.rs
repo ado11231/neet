@@ -392,6 +392,7 @@ mod tests {
                 scan: &scan,
                 disk: None,
                 cleanable: None,
+                plan: None,
             },
         )
     }
@@ -410,6 +411,7 @@ mod tests {
                 purgeable: Some(7_400_000_000),
             }),
             cleanable: Some(18_400_000_000),
+            plan: None,
         };
         terminal
             .draw(|frame| home.draw(frame, frame.area(), &context))

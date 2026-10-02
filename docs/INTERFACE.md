@@ -175,7 +175,8 @@
 +------------------------------------------------------+  + Put Back works ------------------------+
 ```
 
-* When Clean opens, it looks for everything the rules cover. This takes a few seconds, and the loading box shows a timer. Nothing changes while it looks.
+* neet looks for everything the rules cover once, in the background, as soon as it opens. Clean opens on that result, so going back and opening it again does not look again. If Clean opens before the look is done, the loading box shows a timer. Nothing changes while it looks.
+* neet looks again after a cleanup, and when you press `r`, such as after removing files yourself.
 * **Left, top, 55% of the width:** a table of rules, largest first, with a checkbox, the rule's name, its risk level, how many items it found, and their size. Rules that found nothing are listed last, dimmed, with no checkbox. The bottom edge shows what every rule found together.
 * **Left, bottom:** the Selected box. Each selected rule with its size, then the total. Before anything is selected, it says how selecting works.
 * **Right:** the rule the arrow is on:
@@ -196,6 +197,7 @@
 | `g` / `G` | Jump to the first or last rule. |
 | `Space` | Select or clear the rule. Does nothing if it found nothing, or if its app is open. |
 | `Enter` | Review the selected rules. Does nothing when none are selected. |
+| `r` | Look again. Your selection starts over. |
 
 * **Selecting an `expert` rule** opens a box that asks you to type the rule's ID. `Enter` checks it. A wrong ID selects nothing. `Esc` closes the box. While the box is open, every key but `Esc` is typed into it.
 

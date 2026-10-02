@@ -28,6 +28,8 @@ pub enum Action {
     Back,
     /// Close every screen above Home
     Home,
+    /// Look again for what the cleanup rules cover
+    Replan,
     Quit,
 }
 
@@ -38,6 +40,8 @@ pub struct Context<'a> {
     pub disk: Option<DiskSpace>,
     /// How much every cleanup rule found, once planned
     pub cleanable: Option<u64>,
+    /// Every rule's plan, made in the background, for Clean to open on
+    pub plan: Option<&'a Estimate>,
 }
 
 /// One screen on the stack. Home is always at the bottom.
@@ -206,6 +210,7 @@ impl App {
             scan: self.scan.status(),
             disk: self.disk.space(),
             cleanable: self.estimate.size(),
+            plan: Some(&self.estimate),
         };
         for screen in &mut self.stack[base..] {
             screen.draw(frame, body, &context);
@@ -220,6 +225,7 @@ impl App {
             scan: self.scan.status(),
             disk: self.disk.space(),
             cleanable: self.estimate.size(),
+            plan: Some(&self.estimate),
         };
         let screen = self.stack.last_mut().expect("Home is never popped");
         let action = match key.code {
@@ -246,6 +252,7 @@ impl App {
                 // A cleanup may have just run, so the old amount is stale.
                 self.estimate = Estimate::start(self.home.clone());
             }
+            Action::Replan => self.estimate = Estimate::start(self.home.clone()),
             Action::Quit => self.quit = true,
         }
     }

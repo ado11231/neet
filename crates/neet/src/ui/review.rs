@@ -650,6 +650,7 @@ mod tests {
             scan: &scan,
             disk: None,
             cleanable: None,
+            plan: None,
         };
         terminal
             .draw(|frame| screen.draw(frame, frame.area(), &context))
@@ -671,6 +672,7 @@ mod tests {
                 scan: &scan,
                 disk: None,
                 cleanable: None,
+                plan: None,
             },
         )
     }

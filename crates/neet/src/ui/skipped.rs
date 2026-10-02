@@ -229,6 +229,7 @@ mod tests {
             scan,
             disk: None,
             cleanable: None,
+            plan: None,
         };
         terminal
             .draw(|frame| Skipped::new().draw(frame, frame.area(), &context))

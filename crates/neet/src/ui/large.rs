@@ -321,6 +321,7 @@ mod tests {
             scan,
             disk: None,
             cleanable: None,
+            plan: None,
         };
         terminal
             .draw(|frame| screen.draw(frame, frame.area(), &context))
@@ -341,6 +342,7 @@ mod tests {
                 scan,
                 disk: None,
                 cleanable: None,
+                plan: None,
             },
         )
     }
@@ -398,6 +400,7 @@ mod tests {
             scan,
             disk: None,
             cleanable: None,
+            plan: None,
         };
         terminal
             .draw(|frame| screen.draw(frame, frame.area(), &context))

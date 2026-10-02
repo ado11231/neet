@@ -24,6 +24,7 @@ use super::review::Review;
 /// A plan and the rules that could not be loaded, or why planning failed.
 type Outcome = Result<Planned, String>;
 
+#[derive(Clone)]
 pub struct Planned {
     pub plan: Plan,
     pub errors: Vec<RuleError>,
@@ -45,16 +46,23 @@ fn make_plan(home: &Path, user_rules: Option<&Path>) -> Outcome {
     })
 }
 
-/// How much every rule found, planned in the background for Home
+/// Every rule's plan, made once in the background and kept, so Home can
+/// show the total and Clean opens without looking again. Planned again after
+/// a cleanup, or when you ask Clean to refresh.
 pub struct Estimate {
     result: Option<Receiver<Outcome>>,
-    size: Option<u64>,
+    started: Instant,
+    planned: Option<Arc<Planned>>,
+    failed: Option<String>,
 }
 
 impl Estimate {
     /// Plans every rule for `home` on its own thread. Nothing on disk is
     /// changed. Without a home folder there is nothing to plan.
     pub fn start(home: Option<PathBuf>) -> Self {
+        let failed = home
+            .is_none()
+            .then(|| "HOME is not set, so there is no home folder to clean.".to_string());
         let result = home.map(|home| {
             let (sender, result) = mpsc::channel();
             thread::spawn(move || {
@@ -63,27 +71,37 @@ impl Estimate {
             });
             result
         });
-        Self { result, size: None }
+        Self {
+            result,
+            started: Instant::now(),
+            planned: None,
+            failed,
+        }
     }
 
     pub fn poll(&mut self) {
         if let Some(result) = &self.result
             && let Ok(outcome) = result.try_recv()
         {
-            self.size = outcome
-                .ok()
-                .map(|planned| planned.plan.rules.iter().map(RulePlan::size).sum());
+            match outcome {
+                Ok(planned) => self.planned = Some(Arc::new(planned)),
+                Err(reason) => self.failed = Some(reason),
+            }
             self.result = None;
         }
     }
 
     /// The total, once planned
     pub fn size(&self) -> Option<u64> {
-        self.size
+        self.planned
+            .as_ref()
+            .map(|planned| planned.plan.rules.iter().map(RulePlan::size).sum())
     }
 }
 
 enum State {
+    /// Waiting for the plan the app makes in the background
+    Shared,
     Planning {
         started: Instant,
         result: Receiver<Outcome>,
@@ -106,15 +124,38 @@ pub struct Clean {
 }
 
 impl Clean {
-    /// Starts planning for the home folder in `HOME`.
+    /// Opens on the plan the app made in the background, without looking
+    /// again.
     pub fn new() -> Self {
-        let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
-            return Self::from_state(State::Failed(
-                "HOME is not set, so there is no home folder to clean.".to_string(),
-            ));
-        };
-        let user_rules = home.join(".config/neet/rules");
-        Self::start(move || make_plan(&home, Some(&user_rules)))
+        Self::from_state(State::Shared)
+    }
+
+    /// Takes a copy of the shared plan once it is ready, so selecting rules
+    /// here never changes it. Without one, such as in tests, plans by itself.
+    fn adopt(&mut self, context: &Context) {
+        if !matches!(self.state, State::Shared) {
+            return;
+        }
+        match context.plan {
+            Some(estimate) => {
+                if let Some(planned) = &estimate.planned {
+                    self.show(Planned::clone(planned));
+                } else if let Some(reason) = &estimate.failed {
+                    self.state = State::Failed(reason.clone());
+                }
+            }
+            None => match std::env::var_os("HOME").map(PathBuf::from) {
+                Some(home) => {
+                    let user_rules = home.join(".config/neet/rules");
+                    *self = Self::start(move || make_plan(&home, Some(&user_rules)));
+                }
+                None => {
+                    self.state = State::Failed(
+                        "HOME is not set, so there is no home folder to clean.".to_string(),
+                    );
+                }
+            },
+        }
     }
 
     fn start(work: impl FnOnce() -> Outcome + Send + 'static) -> Self {
@@ -739,9 +780,23 @@ fn rules_table(planned: &Planned, current: usize, summary: Line<'static>) -> Tab
 }
 
 impl Screen for Clean {
-    fn draw(&mut self, frame: &mut Frame, area: Rect, _context: &Context) {
+    fn draw(&mut self, frame: &mut Frame, area: Rect, context: &Context) {
+        self.adopt(context);
         self.poll();
         let planned = match &self.state {
+            State::Shared => {
+                let started = context
+                    .plan
+                    .map_or_else(Instant::now, |estimate| estimate.started);
+                Loading {
+                    title: "Clean",
+                    doing: "Finding files the rules cover",
+                    progress: format!("{}s", started.elapsed().as_secs()),
+                    note: "Nothing is changed while neet looks. This happens once, and again when you press r.",
+                }
+                .draw(frame, area);
+                return;
+            }
             State::Planning { started, .. } => {
                 Loading {
                     title: "Clean",
@@ -816,11 +871,12 @@ impl Screen for Clean {
         self.draw_typing(frame, area);
     }
 
-    fn handle_key(&mut self, key: KeyEvent, _context: &Context) -> Action {
+    fn handle_key(&mut self, key: KeyEvent, context: &Context) -> Action {
         if self.typing.is_some() {
             self.type_key(key.code);
             return Action::None;
         }
+        self.adopt(context);
         self.note = None;
         let last = self.rule_count().saturating_sub(1);
         match key.code {
@@ -833,6 +889,11 @@ impl Screen for Clean {
             KeyCode::Char('g') | KeyCode::Home => self.list.select(Some(0)),
             KeyCode::Char('G') | KeyCode::End => self.list.select(Some(last)),
             KeyCode::Char(' ') => self.toggle(),
+            KeyCode::Char('r') if !matches!(self.state, State::Shared | State::Planning { .. }) => {
+                self.state = State::Shared;
+                self.list.select(Some(0));
+                return Action::Replan;
+            }
             KeyCode::Enter => {
                 if let State::Ready(planned) = &self.state
                     && planned.plan.selected_count() > 0
@@ -861,7 +922,7 @@ impl Screen for Clean {
         if self.typing.is_some() {
             return "type the ID · enter select · esc cancel";
         }
-        "↑↓ move · space select · enter review · esc home · ? help · q quit"
+        "↑↓ move · space select · enter review · r look again · esc home · ? help"
     }
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
@@ -873,6 +934,7 @@ impl Screen for Clean {
                 "Select or clear a rule. An expert rule asks you to type its ID",
             ),
             ("Enter", "Review every path the selected rules found"),
+            ("r", "Look again, such as after removing files yourself"),
             ("Esc", "Go back to Home"),
             ("q", "Quit"),
         ]
@@ -916,6 +978,7 @@ mod tests {
             scan: &scan,
             disk: None,
             cleanable: None,
+            plan: None,
         };
         terminal
             .draw(|frame| clean.draw(frame, frame.area(), &context))
@@ -937,8 +1000,53 @@ mod tests {
                 scan: &scan,
                 disk: None,
                 cleanable: None,
+                plan: None,
             },
         );
+    }
+
+    #[test]
+    fn opens_on_the_shared_plan_and_r_looks_again() {
+        let dir = fake_home();
+        let estimate = Estimate {
+            result: None,
+            started: Instant::now(),
+            planned: Some(Arc::new(planned(&dir))),
+            failed: None,
+        };
+        let scan = super::super::scan::ScanStatus::Failed(String::new());
+        let context = Context {
+            scan: &scan,
+            disk: None,
+            cleanable: None,
+            plan: Some(&estimate),
+        };
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        let shared = |estimate: &Estimate| {
+            estimate
+                .planned
+                .as_ref()
+                .map(|planned| planned.plan.selected_count())
+        };
+        let before = shared(&estimate);
+
+        let mut clean = Clean::new();
+        let _ = clean.handle_key(key(KeyCode::Char(' ')), &context);
+
+        let State::Ready(mine) = &clean.state else {
+            panic!("Clean should open on the shared plan without looking again");
+        };
+        assert_ne!(Some(mine.plan.selected_count()), before);
+        assert_eq!(
+            shared(&estimate),
+            before,
+            "the shared plan should not change"
+        );
+        assert!(matches!(
+            clean.handle_key(key(KeyCode::Char('r')), &context),
+            Action::Replan
+        ));
+        assert!(matches!(clean.state, State::Shared));
     }
 
     fn select_rule(clean: &mut Clean, id: &str) {
@@ -997,6 +1105,7 @@ mod tests {
             scan: &scan,
             disk: None,
             cleanable: None,
+            plan: None,
         };
         terminal
             .draw(|frame| clean.draw(frame, frame.area(), &context))
@@ -1046,6 +1155,7 @@ mod tests {
             scan: &scan,
             disk: None,
             cleanable: None,
+            plan: None,
         };
         let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
 
