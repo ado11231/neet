@@ -52,7 +52,7 @@ impl Loading<'_> {
             ]),
             Line::from(format!("  {}", self.progress)).cyan(),
             Line::default(),
-            Line::from(self.note).dark_gray(),
+            Line::from(self.note),
         ];
         let block = Block::bordered()
             .title(format!(" {} ", self.title))

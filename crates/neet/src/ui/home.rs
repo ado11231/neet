@@ -48,14 +48,14 @@ const ENTRIES: &[Entry] = &[
         target: Target::Screen(|| Box::new(QuickClean::new())),
     },
     Entry {
-        label: "Disk",
-        about: "Browse your folders by size.",
-        target: Target::Screen(|| Box::new(Disk::new())),
+        label: "Deep Clean",
+        about: "Every cache and log rule, one by one: choose what goes to the Trash, and review every path.",
+        target: Target::Screen(|| Box::new(Clean::new())),
     },
     Entry {
-        label: "Clean",
-        about: "Move files your apps can make again to the Trash, after you review every path.",
-        target: Target::Screen(|| Box::new(Clean::new())),
+        label: "Remove App",
+        about: "Review an app and its files before removing it.",
+        target: Target::Screen(|| Box::new(RemoveApp::new())),
     },
     Entry {
         label: "Large Files",
@@ -63,9 +63,9 @@ const ENTRIES: &[Entry] = &[
         target: Target::Screen(|| Box::new(LargeFiles::new())),
     },
     Entry {
-        label: "Remove App",
-        about: "Review an app and its files before removing it.",
-        target: Target::Screen(|| Box::new(RemoveApp::new())),
+        label: "Disk",
+        about: "Browse your folders by size.",
+        target: Target::Screen(|| Box::new(Disk::new())),
     },
     Entry {
         label: "Startup",
@@ -147,12 +147,9 @@ impl Home {
                 _ if index >= 9 => "  ".to_string(),
                 _ => format!("{} ", index + 1),
             };
-            let mut spans = vec![
-                Span::raw(number).dark_gray(),
-                Span::raw(format!("{:<14}", entry.label)),
-            ];
+            let mut spans = vec![Span::raw(number), Span::raw(format!("{:<14}", entry.label))];
             if let Some(summary) = summary(entry.label, context) {
-                spans.push(Span::raw(summary).dark_gray());
+                spans.push(Span::raw(summary));
             }
             if matches!(entry.target, Target::Soon) {
                 spans.push(Span::raw("soon").italic());
@@ -168,7 +165,7 @@ impl Home {
                     .padding(Padding::horizontal(1)),
             )
             .highlight_symbol("▸ ")
-            .highlight_style(Style::new().bold().cyan());
+            .highlight_style(Style::new().bold().white());
         frame.render_stateful_widget(list, area, &mut self.list);
     }
 
@@ -199,7 +196,7 @@ fn summary(label: &str, context: &Context) -> Option<String> {
             .disk
             .map(|disk| format!("{} used", format::size(disk.used()))),
         "Quick Clean" => Some("start here".to_string()),
-        "Clean" => Some(context.cleanable.map_or_else(
+        "Deep Clean" => Some(context.cleanable.map_or_else(
             || "finding…".to_string(),
             |size| format!("~{} found", format::size(size)),
         )),
@@ -218,7 +215,7 @@ const MIN_PURGEABLE: u64 = 100_000_000;
 /// can clear space on its own, a last line says why Finder shows more free.
 fn disk_lines(disk: Option<DiskSpace>) -> Vec<Line<'static>> {
     let Some(disk) = disk else {
-        return vec![Line::from("Disk space could not be read.").dark_gray()];
+        return vec![Line::from("Disk space could not be read.")];
     };
     let used = format::percent(disk.used(), disk.total);
     let gauge = Span::raw(format::bar(disk.used(), disk.total, GAUGE_WIDTH));
@@ -233,18 +230,14 @@ fn disk_lines(disk: Option<DiskSpace>) -> Vec<Line<'static>> {
             "{} free of {}",
             format::size(disk.available),
             format::size(disk.total)
-        ))
-        .dark_gray(),
+        )),
     ];
     if let Some(purgeable) = disk.purgeable.filter(|size| *size >= MIN_PURGEABLE) {
-        lines.push(
-            Line::from(format!(
-                "Finder shows {} free, counting {} macOS clears when needed.",
-                format::size(disk.available.saturating_add(purgeable)),
-                format::size(purgeable)
-            ))
-            .dark_gray(),
-        );
+        lines.push(Line::from(format!(
+            "Finder shows {} free, counting {} macOS clears when needed.",
+            format::size(disk.available.saturating_add(purgeable)),
+            format::size(purgeable)
+        )));
     }
     lines
 }
@@ -267,8 +260,7 @@ fn scan_lines(scan: &ScanStatus) -> Vec<Line<'static>> {
                 "{} items · {}",
                 format::count(progress.entries),
                 format::size(progress.bytes)
-            ))
-            .dark_gray(),
+            )),
         ],
         ScanStatus::Done { scan, elapsed } => {
             let entries = u64::try_from(scan.tree.node_count() - 1).unwrap_or(u64::MAX);
@@ -306,13 +298,10 @@ fn scan_lines(scan: &ScanStatus) -> Vec<Line<'static>> {
                 );
             }
             if !scan.other_disks.is_empty() {
-                lines.push(
-                    Line::from(format!(
-                        "Skipped {} folders on other disks. Press s to see them.",
-                        scan.other_disks.len()
-                    ))
-                    .dark_gray(),
-                );
+                lines.push(Line::from(format!(
+                    "Skipped {} folders on other disks. Press s to see them.",
+                    scan.other_disks.len()
+                )));
             }
             lines
         }
@@ -430,13 +419,13 @@ mod tests {
         let mut home = Home::new();
         assert_eq!(ENTRIES[home.selected()].label, "Quick Clean");
         press(&mut home, KeyCode::Down);
-        assert_eq!(ENTRIES[home.selected()].label, "Disk");
+        assert_eq!(ENTRIES[home.selected()].label, "Deep Clean");
         press(&mut home, KeyCode::Down);
-        assert_eq!(ENTRIES[home.selected()].label, "Clean");
+        assert_eq!(ENTRIES[home.selected()].label, "Remove App");
         press(&mut home, KeyCode::Down);
         assert_eq!(ENTRIES[home.selected()].label, "Large Files");
         press(&mut home, KeyCode::Down);
-        assert_eq!(ENTRIES[home.selected()].label, "Remove App");
+        assert_eq!(ENTRIES[home.selected()].label, "Disk");
         press(&mut home, KeyCode::Down);
         assert_eq!(ENTRIES[home.selected()].label, "Quit");
     }
@@ -497,7 +486,7 @@ mod tests {
         let screen = render(&mut Home::new(), 60, 30);
         assert!(!screen.contains("⣿"));
         assert!(!screen.contains("╚═╝"));
-        assert!(screen.contains("Clean"));
+        assert!(screen.contains("Deep Clean"));
     }
 
     #[test]

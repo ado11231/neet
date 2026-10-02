@@ -107,7 +107,7 @@ impl Review {
             let size = found.iter().map(|item| item.size).sum();
             lines.push(Line::from(vec![
                 Span::raw(name.to_string()).bold().cyan(),
-                Span::raw(format!("  {} · {}", items(found.len()), format::size(size))).dark_gray(),
+                Span::raw(format!("  {} · {}", items(found.len()), format::size(size))),
             ]));
             for item in found {
                 lines.push(Line::from(vec![
@@ -127,7 +127,7 @@ impl Review {
         let total = plan.selected_size();
         let mut lines = vec![
             Line::from(format::size(total)).bold().green(),
-            Line::from(format!("in {}", items(plan.selected_count()))).dark_gray(),
+            Line::from(format!("in {}", items(plan.selected_count()))),
             Line::default(),
         ];
         let mut groups: Vec<(&str, u64)> = self
@@ -148,19 +148,19 @@ impl Review {
             Line::default(),
             Line::from("What happens next").bold(),
             Line::from(vec![
-                Span::raw("1. ").dark_gray(),
+                Span::raw("1. "),
                 Span::raw("Enter asks you once more."),
             ]),
             Line::from(vec![
-                Span::raw("2. ").dark_gray(),
+                Span::raw("2. "),
                 Span::raw("Each item is checked again, then moved to the Trash."),
             ]),
             Line::from(vec![
-                Span::raw("3. ").dark_gray(),
+                Span::raw("3. "),
                 Span::raw("Put Back restores any item."),
             ]),
             Line::from(vec![
-                Span::raw("4. ").dark_gray(),
+                Span::raw("4. "),
                 Span::raw("Empty the Trash to free the space."),
             ]),
         ]);
@@ -464,8 +464,7 @@ impl Cleanup {
                 ]),
                 Line::from("Empty the Trash to free that space."),
                 Line::default(),
-                Line::from("To restore an item, select it in the Trash and choose Put Back.")
-                    .dark_gray(),
+                Line::from("To restore an item, select it in the Trash and choose Put Back."),
             ]
         };
         if !outcome.skipped.is_empty() {
@@ -484,9 +483,10 @@ impl Cleanup {
                     "  {}",
                     format::shorten_path(&path, width.saturating_sub(2))
                 )));
-                lines.push(
-                    Line::from(format!("    {}", skip_reason(&skipped.reason, None))).dark_gray(),
-                );
+                lines.push(Line::from(format!(
+                    "    {}",
+                    skip_reason(&skipped.reason, None)
+                )));
             }
         }
         lines

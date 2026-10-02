@@ -129,7 +129,7 @@ fn lines(scan: &Scan) -> Vec<Line<'static>> {
         for error in &unreadable {
             lines.push(Line::from(vec![
                 Span::raw(path_of(error)),
-                Span::raw(format!("  {}", error.message)).dark_gray(),
+                Span::raw(format!("  {}", error.message)),
             ]));
         }
         lines.push(Line::default());

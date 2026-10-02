@@ -184,8 +184,7 @@ fn row(tree: &Tree, id: NodeId, parent_total: u64) -> ListItem<'static> {
         Span::raw(format!(
             "{:>3}%  ",
             format::percent(node.total_size, parent_total)
-        ))
-        .dark_gray(),
+        )),
         name,
     ]))
 }
@@ -205,10 +204,7 @@ fn draw_folder(frame: &mut Frame, area: Rect, tree: &Tree, browser: &mut Browser
         .padding(Padding::horizontal(1));
 
     if browser.rows.is_empty() {
-        frame.render_widget(
-            Paragraph::new("Empty folder.").dark_gray().block(block),
-            area,
-        );
+        frame.render_widget(Paragraph::new("Empty folder.").block(block), area);
         return;
     }
     let items = browser
@@ -218,7 +214,7 @@ fn draw_folder(frame: &mut Frame, area: Rect, tree: &Tree, browser: &mut Browser
     let list = List::new(items)
         .block(block)
         .highlight_symbol("▸ ")
-        .highlight_style(Style::new().bold().cyan());
+        .highlight_style(Style::new().bold().white());
     frame.render_stateful_widget(list, area, &mut browser.list);
 }
 
@@ -263,7 +259,7 @@ fn draw_preview(frame: &mut Frame, area: Rect, tree: &Tree, browser: &Browser) {
         format!("Inside, by {}", browser.sort.label())
     };
     frame.render_widget(
-        Paragraph::new(vec![Line::default(), Line::from(title).dark_gray()]),
+        Paragraph::new(vec![Line::default(), Line::from(title)]),
         heading,
     );
     let items = rows.iter().map(|&child| row(tree, child, node.total_size));
@@ -285,14 +281,14 @@ fn bar_color(bytes: u64) -> Color {
 fn about(tree: &Tree, id: NodeId, browser: &Browser) -> Vec<Line<'static>> {
     let node = tree.get(id);
     let parent_total = tree.get(browser.current).total_size;
-    let mut lines = vec![Line::from(display_path(tree, id)).dark_gray()];
+    let mut lines = vec![Line::from(display_path(tree, id))];
     if let Some(meaning) = meaning(tree, id) {
         lines.push(Line::default());
         lines.push(Line::from(meaning));
     }
     lines.push(Line::default());
 
-    let label = |text: &str| Span::raw(format!("{text:<9}")).dark_gray();
+    let label = |text: &str| Span::raw(format!("{text:<9}")).bold();
     lines.push(Line::from(vec![
         label("Size"),
         format::size_span(node.total_size, format::size(node.total_size)),
@@ -300,8 +296,7 @@ fn about(tree: &Tree, id: NodeId, browser: &Browser) -> Vec<Line<'static>> {
             "  {}% of {}",
             format::percent(node.total_size, parent_total),
             display_path(tree, browser.current)
-        ))
-        .dark_gray(),
+        )),
     ]));
     match node.kind {
         NodeKind::Directory => lines.push(Line::from(vec![
@@ -331,8 +326,7 @@ fn about(tree: &Tree, id: NodeId, browser: &Browser) -> Vec<Line<'static>> {
 /// Whether `d` can clean an item, in one colored line.
 fn cleanable(path: &std::path::Path, roots: Option<&CleanupRoots>) -> Line<'static> {
     let Some(roots) = roots else {
-        return Line::from("neet could not read the home folder, so nothing can be cleaned.")
-            .dark_gray();
+        return Line::from("neet could not read the home folder, so nothing can be cleaned.");
     };
     match roots.validate_deletable(path) {
         Ok(_) => Line::from(vec![
@@ -348,8 +342,8 @@ fn cleanable(path: &std::path::Path, roots: Option<&CleanupRoots>) -> Line<'stat
             Span::raw("Protected. neet never moves anything in it.").red(),
         ]),
         Err(_) => Line::from(vec![
-            Span::raw("· ").dark_gray(),
-            Span::raw("Outside the folders neet cleans.").dark_gray(),
+            Span::raw("· "),
+            Span::raw("Outside the folders neet cleans."),
         ]),
     }
 }
@@ -770,7 +764,7 @@ mod tests {
     }
 
     #[test]
-    fn the_selected_row_is_cyan_without_a_filled_background() {
+    fn the_selected_row_is_white_without_a_filled_background() {
         let scan = ScanStatus::Done {
             scan: Scan {
                 tree: sample(),
@@ -794,7 +788,7 @@ mod tests {
         // The first row sits below the top border, after the padding.
         let arrow = &buffer[(2, 1)];
         assert_eq!(arrow.symbol(), "▸");
-        assert_eq!(arrow.fg, ratatui::style::Color::Cyan);
+        assert_eq!(arrow.fg, ratatui::style::Color::White);
         assert!(!arrow.modifier.contains(ratatui::style::Modifier::REVERSED));
         assert_eq!(arrow.bg, ratatui::style::Color::Reset);
     }

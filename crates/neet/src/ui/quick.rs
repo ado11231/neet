@@ -44,7 +44,7 @@ impl Asked {
 /// One row of the table, in a fixed order so the selection never jumps
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Item {
-    /// What every cleanup rule found, cleaned in the Clean screen
+    /// What every cleanup rule found, cleaned in the Deep Clean screen
     Rules,
     Clutter(Kind),
 }
@@ -98,7 +98,7 @@ fn who(item: Item) -> Who {
 /// The step that frees an item, in a few words
 fn step(item: Item) -> &'static str {
     match item {
-        Item::Rules => "Enter, then review in Clean",
+        Item::Rules => "Enter, then review in Deep Clean",
         Item::Clutter(Kind::Trash) => "Empty the Trash",
         Item::Clutter(Kind::Installers) => "Delete in Finder",
         Item::Clutter(Kind::BuildFolders) => "cargo clean, or rm -rf node_modules",
@@ -113,7 +113,7 @@ fn explain(item: Item) -> [&'static str; 2] {
     match item {
         Item::Rules => [
             "Caches and logs the cleanup rules found. Apps make them again when needed.",
-            "Press Enter to choose them in Clean, review every path, and move them to the Trash.",
+            "Press Enter to choose them in Deep Clean, review every path, and move them to the Trash.",
         ],
         Item::Clutter(Kind::Trash) => [
             "Items already in the Trash still take space.",
@@ -234,7 +234,7 @@ impl QuickClean {
                 let cleared_by = match who(item) {
                     Who::Neet => Span::raw("neet").green(),
                     Who::You => Span::raw("you").yellow(),
-                    Who::Mac => Span::raw("macOS").dark_gray(),
+                    Who::Mac => Span::raw("macOS"),
                 };
                 let (size, found) = match status {
                     Status::Found { size, count } => {
@@ -260,9 +260,9 @@ impl QuickClean {
                 Row::new([
                     Cell::from(name(item)),
                     Cell::from(Line::from(size).right_aligned()),
-                    Cell::from(Line::from(found.dark_gray()).right_aligned()),
+                    Cell::from(Line::from(found).right_aligned()),
                     Cell::from(cleared_by),
-                    Cell::from(Span::raw(step(item)).dark_gray()),
+                    Cell::from(Span::raw(step(item))),
                 ])
             })
             .collect();
@@ -303,7 +303,7 @@ impl QuickClean {
                 .padding(Padding::horizontal(1)),
         )
         .highlight_symbol("▸ ")
-        .row_highlight_style(Style::new().bold().cyan());
+        .row_highlight_style(Style::new().bold().white());
         frame.render_stateful_widget(table, area, &mut self.table);
     }
 
@@ -397,7 +397,7 @@ impl Screen for QuickClean {
             ("g  G", "Jump to the first or last row"),
             (
                 "Enter  →  l",
-                "Caches and logs: choose them in Clean. Others: show in Disk",
+                "Caches and logs: choose them in Deep Clean. Others: show in Disk",
             ),
             ("Esc", "Go back to Home"),
             ("q", "Quit"),
