@@ -11,7 +11,7 @@
 3. [Skipped](#skipped)
 4. [Disk](#disk)
 5. [Quick Clean](#quick-clean)
-6. [Clean](#clean)
+6. [Deep Clean](#deep-clean)
 7. [Review, Confirm, And Move](#review-confirm-and-move)
 8. [Large Files](#large-files)
 9. [Remove App](#remove-app)
@@ -21,6 +21,7 @@
 
 * Run `neet` to open it. It opens on Home and starts scanning your home folder in the background.
 * Each screen fills the terminal. The bottom row always lists the keys for the current screen.
+* The row under the arrow turns bold white. Text is kept in the normal color; gray is only for rows you cannot pick, such as features not built yet.
 * Screens stack: each one opens on top of the last, and `Esc` goes back one step.
 * Boxes, such as help and questions, open in the middle of the screen, on top of it.
 * The screen redraws about four times a second, so progress stays current.
@@ -38,16 +39,16 @@
 ```text
 +--------------------------------+  +- neet ------------------------------+
 |                                |  | > 1 Quick Clean   start here        |
-|                                |  |   2 Disk          412.2 GB used     |
-|                                |  |   3 Clean         ~8.8 GB found     |
+|                                |  |   2 Deep Clean    ~8.8 GB found     |
+|                                |  |   3 Remove App                      |
 |              Art               |  |   4 Large Files                     |
-|                                |  |   5 Remove App                      |
+|                                |  |   5 Disk          412.2 GB used     |
 |                                |  |     ...                             |
 |                                |  |     Quit                            |
 |                                |  +-------------------------------------+
 |                                |  +-------------------------------------+
-|                                |  | Disk                                |
-|                                |  | Browse your folders by size.        |
+|                                |  | Quick Clean                         |
+|                                |  | Start here: everything taking space |
 |                                |  | [########......] 83% used           |
 |                                |  | 82.0 GB free of 494.4 GB            |
 |                                |  | Scanning your home folder...        |
@@ -57,10 +58,11 @@
 
 * **Left:** the neet art. It takes about 45% of the width, and is hidden when the terminal is narrower than 90 columns.
 * **Right, top:** the menu, one numbered row per feature.
-  1. Quick Clean comes first, marked `start here`, and is selected when neet opens.
-  2. Disk shows how much of the disk is used.
-  3. Clean shows `finding...`, then the total that every rule found. This is worked out again after each cleanup, and when you press `r` in Clean.
-  4. Features not built yet are dimmed and marked `soon`. The selection skips them.
+  1. The rows go from the quickest way to free space to the most detailed: Quick Clean, Deep Clean, Remove App, Large Files, then Disk.
+  2. Quick Clean comes first, marked `start here`, and is selected when neet opens.
+  3. Deep Clean shows `finding...`, then the total that every rule found. This is worked out again after each cleanup, and when you press `r` in Deep Clean.
+  4. Disk shows how much of the disk is used.
+  5. Features not built yet are dimmed and marked `soon`. The selection skips them.
 * **Right, bottom:** details for the selected row:
   1. What the feature does.
   2. A 16 character gauge of how full the disk is, then free and total space on the next line. The gauge turns yellow at 75% and red at 90%.
@@ -102,13 +104,13 @@
 * **Left, 55% of the width:** the current folder, largest first. Each row shows a 12 character bar and a percent for its share of the folder, its size, and its name. Folders end in `/`, links in `@`.
 * Sizes and bars of 5 GB or more are red, and of 1 GB or more yellow, as in Large Files.
 * The title shows the folder's path on the left, and its size, item count, and sort order on the right.
-* **Right:** the selected row, titled with its name in cyan. The preview is hidden when the terminal is narrower than 100 columns.
+* **Right:** the selected row, titled with its name in bold white. The preview is hidden when the terminal is narrower than 100 columns.
   1. Its path, and for well known folders, such as `~/Library/Caches` or `.npm`, what they hold in plain words.
   2. Its size and share of the current folder, its item count, and when it last changed.
   3. Whether `d` can clean it: a green `✓` when it can, a yellow `◆` for a cleanup folder whose items can be cleaned, a red `✗` for a protected folder, and a gray `·` for anywhere else.
   4. For a folder, what is inside, in the same order and colors as the left.
 * Until the scan finishes, the screen shows the loading box, with how many items and how much space the scan has counted.
-* The selected row is bold cyan, with an arrow in front.
+* The selected row is bold white, with an arrow in front.
 * The screen shows the scan as it was. An item moved to the Trash stays listed until the next scan.
 
 | Key | Action |
@@ -126,7 +128,7 @@
 + Quick Clean -------------------------------------------------------------------------+
 |   Item                        Size   Found  Cleared by  How                            |
 |                                                                                       |
-| > Caches and logs          ~7.2 GB          neet        Enter, then review in Clean    |
+| > Caches and logs          ~7.2 GB          neet        Enter, then review in Deep Clean|
 |   Trash                    20.5 KB      1   you         Empty the Trash                |
 |   Project build folders    28.4 GB     26   you         cargo clean, or rm -rf ...     |
 |   Simulator runtimes       17.3 GB      2   you         Xcode, Settings, Components    |
@@ -140,7 +142,7 @@
 
 * One table of everything taking space that can be cleared, so you can start with the biggest wins.
 * **Rows,** always in this order:
-  1. Caches and logs: what every Clean rule found. neet cleans these.
+  1. Caches and logs: what every Deep Clean rule found. neet cleans these.
   2. Trash, installers in Downloads, project build folders, and the Docker disk image, from the scan.
   3. Simulator runtimes, asked of `xcrun simctl` when there are simulators on the Mac, and temporary files, measured in `/private/var/folders`. Both are worked out in the background and show `looking…` until done.
 * **Columns:** the size, red from 5 GB and yellow from 1 GB, how many items, who clears it, and how. `neet` is green, `you` yellow, and `macOS` gray. Temporary files are left to macOS, since deleting them by hand can break running apps.
@@ -153,12 +155,12 @@
 | --- | --- |
 | `Up` / `Down` | Move the selection. |
 | `g` / `G` | Jump to the first or last row. |
-| `Enter`, `Right`, or `l` | On Caches and logs, open [Clean](#clean). On a row from the scan, show the largest item in [Disk](#disk). |
+| `Enter`, `Right`, or `l` | On Caches and logs, open [Deep Clean](#deep-clean). On a row from the scan, show the largest item in [Disk](#disk). |
 
-## Clean
+## Deep Clean
 
 ```text
-+ Clean -----------------------------------------------+  + Homebrew downloads --------------------+
++ Deep Clean ------------------------------------------+  + Homebrew downloads --------------------+
 |        Rule                Risk     Found    Size    |  | Installers and bottles Homebrew        |
 |                                                      |  | downloaded. Installed programs stay.   |
 |   [✓]  npm cache           caution  3 items  4.7 GB  |  |                                        |
@@ -176,7 +178,7 @@
 +------------------------------------------------------+  + Put Back works ------------------------+
 ```
 
-* neet looks for everything the rules cover once, in the background, as soon as it opens. Clean opens on that result, so going back and opening it again does not look again. If Clean opens before the look is done, the loading box shows a timer. Nothing changes while it looks.
+* neet looks for everything the rules cover once, in the background, as soon as it opens. Deep Clean opens on that result, so going back and opening it again does not look again. If Deep Clean opens before the look is done, the loading box shows a timer. Nothing changes while it looks.
 * neet looks again after a cleanup, and when you press `r`, such as after removing files yourself.
 * **Left, top, 55% of the width:** a table of rules, largest first, with a checkbox, the rule's name, its risk level, how many items it found, and their size. Rules that found nothing are listed last, dimmed, with no checkbox. The bottom edge shows what every rule found together.
 * **Left, bottom:** the Selected box. Each selected rule with its size, then the total. Before anything is selected, it says how selecting works.
@@ -188,7 +190,7 @@
   5. Every path it skipped, with the reason. A reason shared by more than two paths is shown once, with how many.
   6. If a list is too long, its last line says how many more there are.
 * When the terminal is narrower than 100 columns, the details go under the list, and the list's bottom edge shows the selected total instead.
-* A selected checkbox is a green `[✓]`. The arrow's row shows its name in cyan, so the checkbox and risk keep their colors.
+* A selected checkbox is a green `[✓]`. The arrow's row shows its name in bold white, so the checkbox and risk keep their colors.
 * A note at the top of the details explains when a rule was not selected, or could not be. Rules that failed to load are listed there too.
 * `safe` rules start selected, unless their app is open.
 
@@ -204,7 +206,7 @@
 
 ## Review, Confirm, And Move
 
-* Clean, Disk, Large Files, and Remove App all end in these same four steps. Quick Clean leads to them through Clean.
+* Deep Clean, Disk, Large Files, and Remove App all end in these same four steps. Quick Clean leads to them through Deep Clean.
 
 | Step | Layout | Keys |
 | --- | --- | --- |
