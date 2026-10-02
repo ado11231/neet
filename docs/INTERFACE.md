@@ -21,7 +21,7 @@
 
 * Run `neet` to open it. It opens on Home and starts scanning your home folder in the background.
 * Each screen fills the terminal. The bottom row always lists the keys for the current screen.
-* The row under the arrow turns bold white. Text is kept in the normal color; gray is only for rows you cannot pick, such as features not built yet.
+* The row under the arrow turns bold and keeps its colors, so sizes, bars, and labels read the same as the rows around it. Text is kept in the normal color; gray is only for rows you cannot pick, such as features not built yet.
 * Screens stack: each one opens on top of the last, and `Esc` goes back one step.
 * Boxes, such as help and questions, open in the middle of the screen, on top of it.
 * The screen redraws about four times a second, so progress stays current.
@@ -107,10 +107,11 @@
 * **Right:** the selected row, titled with its name in bold white. The preview is hidden when the terminal is narrower than 100 columns.
   1. Its path, and for well known folders, such as `~/Library/Caches` or `.npm`, what they hold in plain words.
   2. Its size and share of the current folder, its item count, and when it last changed.
-  3. Whether `d` can clean it: a green `✓` when it can, a yellow `◆` for a cleanup folder whose items can be cleaned, a red `✗` for a protected folder, and a gray `·` for anywhere else.
+  3. Whether neet cleans it: a green `✓` inside a folder neet cleans, a yellow `◆` for a cleanup folder whose items neet cleans, a red `✗` for a protected folder, and a gray `·` for anywhere else.
   4. For a folder, what is inside, in the same order and colors as the left.
 * Until the scan finishes, the screen shows the loading box, with how many items and how much space the scan has counted.
-* The selected row is bold white, with an arrow in front.
+* The selected row is bold, with an arrow in front.
+* Disk only shows what is there. Cleaning happens in Quick Clean and Deep Clean.
 * The screen shows the scan as it was. An item moved to the Trash stays listed until the next scan.
 
 | Key | Action |
@@ -120,7 +121,6 @@
 | `Left` or `h` | Go up to the parent folder, keeping your place. |
 | `s` | Sort by size, then name, then item count. |
 | `g` / `G` | Jump to the first or last row. |
-| `d` | Clean the selected item. Opens [Review](#review-confirm-and-move), or a box that says in plain sentences why neet will not move it. Any key closes the box. |
 
 ## Quick Clean
 
@@ -151,12 +151,12 @@
   1. Caches and logs: what every Deep Clean rule found.
   2. Project build folders and installers in Downloads, from the scan. neet moves these to the Trash after you pick and review them.
   3. The Trash, from the scan, which you empty yourself.
-  4. The Docker disk image, from the scan, and simulator runtimes, asked of `xcrun simctl` when there are simulators on the Mac. neet asks their own tools to remove them, which is for good.
+  4. The Docker disk image, from the scan, and simulator runtimes, asked of `xcrun simctl` when there are simulators on the Mac. neet asks their own tools to remove them, which is permanent.
   5. Temporary files, measured in `/private/var/folders`, which macOS clears. Simulator runtimes and temporary files are worked out in the background and show `looking…` until done.
-* **Columns:** the size and a bar of it against the largest row, both red from 5 GB and yellow from 1 GB, how many items, and who clears it: `neet` in green, `neet, for good` in red, `you` in yellow, or `macOS` in blue. Temporary files are left to macOS, since deleting them by hand can break running apps.
+* **Columns:** the size and a bar of it against the largest row, both red from 5 GB and yellow from 1 GB, how many items, and who clears it: `neet` in green, `neet, permanently` in red, `you` in yellow, or `macOS` in blue. Temporary files are left to macOS, since deleting them by hand can break running apps.
 * The bottom edge adds up what neet can clear and what you can free yourself.
 * **Below the table:** what the selected row is, and numbered steps to clear it.
-* **Right:** the largest items of the selected row, as many as fit: rules for Caches and logs, folders and installers by path, and the largest item for the Trash and Docker. It is hidden when the terminal is narrower than 130 columns.
+* **Right:** the largest items of the selected row, as many as fit: rules for Caches and logs, folders and installers by path, and the largest item for the Trash and Docker. When there is no list, the reason sits in the middle of the box. It is hidden when the terminal is narrower than 130 columns.
 * Build folders and installers that are empty, or already gone since the scan, are left out.
 * Until the scan finishes, the screen shows the loading box.
 * Nothing on this screen changes a file.
@@ -192,7 +192,7 @@
 
 ### Docker And Simulators
 
-* These cannot go to the Trash, so neet asks their own tool to remove them. Both screens end in a red question that says it is for good. Only `y` goes ahead. See [SAFETY.md](SAFETY.md#tools-neet-runs).
+* These cannot go to the Trash, so neet asks their own tool to remove them. Both screens end in a red question that says it is permanent. Only `y` goes ahead. See [SAFETY.md](SAFETY.md#tools-neet-runs).
 * **Simulator runtimes:** a table of each runtime with a checkbox, its version, build, size, and the day a simulator last used it. None start selected. `Enter` asks, then runs `xcrun simctl runtime delete` for each one, and lists which were deleted.
 * **Docker:** a table of what `docker system df` reports: images, containers, volumes, and build cache, with how many, how many are in use, their size, and how much can be freed, in yellow. The box below lists what `docker system prune --all` removes and what it keeps. `Enter` asks, then runs it, and shows how much Docker freed.
 * If Docker Desktop is not running, the screen says so. `o` opens it, and `r` asks Docker again.
@@ -201,7 +201,7 @@
 | --- | --- |
 | `Space` | On simulator runtimes, select or clear a runtime. |
 | `Enter` | Ask before removing. |
-| `y` | In the question, remove for good. |
+| `y` | In the question, remove permanently. |
 | `n` or `Esc` | In the question, go back. |
 | `o` / `r` | On Docker, open Docker Desktop, or ask again. |
 
@@ -209,11 +209,11 @@
 
 ```text
 + Deep Clean ------------------------------------------+  + Homebrew downloads --------------------+
-|        Rule                Risk     Found    Size    |  | Installers and bottles Homebrew        |
+|        Rule                Risk     Items    Size    |  | Installers and bottles Homebrew        |
 |                                                      |  | downloaded. Installed programs stay.   |
-|   [✓]  npm cache           caution  3 items  4.7 GB  |  | Risk    caution  You may need to ...   |
-| > [✓]  Homebrew downloads  caution 14 items  1.2 GB  |  | Folder  ~/Library/Caches/Homebrew      |
-|   [ ]  User logs           caution 27 items 83.0 MB  |  +----------------------------------------+
+|   [✓]  npm cache           caution        3  4.7 GB  |  | Risk    caution  You may need to ...   |
+| > [✓]  Homebrew downloads  caution       14  1.2 GB  |  | Folder  ~/Library/Caches/Homebrew      |
+|   [ ]  User logs           caution       27 83.0 MB  |  +----------------------------------------+
 |        Yarn cache          caution     none       .  |  + Found . 14 items . 1.2 GB -----------+
 + 10 of 14 rules found 8.8 GB -------------------------+  |    1.1 GB  ##########  downloads       |
 + Selected --------------------------------------------+  |   50.8 MB  ..........  bootsnap        |
@@ -255,7 +255,7 @@
 
 ## Review, Confirm, And Move
 
-* Deep Clean, Pick, Disk, Large Files, and Remove App all end in these same four steps.
+* Deep Clean, Pick, and Remove App all end in these same four steps.
 
 | Step | Layout | Keys |
 | --- | --- | --- |
@@ -292,7 +292,6 @@
 | `s` | Change the smallest size: 10 MB, 50 MB, 100 MB, 500 MB, 1 GB, 5 GB. |
 | `a` | Change how long files must be unchanged: any age, 30 days, 3 months, 6 months, 1 year, 2 years. |
 | `Enter`, `Right`, or `l` | Show the file in Disk. `Esc` comes back. |
-| `d` | Clean the file, as in Disk. Most files are refused, with the reason. |
 
 ## Remove App
 
