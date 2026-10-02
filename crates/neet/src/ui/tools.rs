@@ -1057,7 +1057,9 @@ impl DockerSpace {
             Line::default(),
             Line::from(vec![
                 Span::raw("Undo: ").green().bold(),
-                Span::raw("Put Back Docker.raw before opening Docker Desktop again."),
+                Span::raw(
+                    "move Docker.raw from the Trash back to its folder before opening Docker Desktop again.",
+                ),
             ]),
         ]
     }
@@ -1159,7 +1161,7 @@ impl DockerSpace {
                 lines.push(Line::default());
                 lines.push(Line::from(vec![
                     Span::raw("Undo: ").green().bold(),
-                    Span::raw("Put Back Docker.raw before opening Docker Desktop again."),
+                    Span::raw("move Docker.raw from the Trash back to its folder before opening Docker Desktop again."),
                 ]));
             }
             DockerDone::Reset(Err(reason)) => {
