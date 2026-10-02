@@ -37,8 +37,8 @@
 
 ```text
 +--------------------------------+  +- neet ------------------------------+
-|                                |  | > 1 Disk          412.2 GB used     |
-|                                |  |   2 Quick Clean                     |
+|                                |  | > 1 Quick Clean   start here        |
+|                                |  |   2 Disk          412.2 GB used     |
 |                                |  |   3 Clean         ~8.8 GB found     |
 |              Art               |  |   4 Large Files                     |
 |                                |  |   5 Remove App                      |
@@ -57,9 +57,10 @@
 
 * **Left:** the neet art. It takes about 45% of the width, and is hidden when the terminal is narrower than 90 columns.
 * **Right, top:** the menu, one numbered row per feature.
-  1. Disk shows how much of the disk is used.
-  2. Clean shows `finding...`, then the total that every rule found. This is worked out again after each cleanup.
-  3. Features not built yet are dimmed and marked `soon`. The selection skips them.
+  1. Quick Clean comes first, marked `start here`, and is selected when neet opens.
+  2. Disk shows how much of the disk is used.
+  3. Clean shows `finding...`, then the total that every rule found. This is worked out again after each cleanup, and when you press `r` in Clean.
+  4. Features not built yet are dimmed and marked `soon`. The selection skips them.
 * **Right, bottom:** details for the selected row:
   1. What the feature does.
   2. A 16 character gauge of how full the disk is, then free and total space on the next line. The gauge turns yellow at 75% and red at 90%.

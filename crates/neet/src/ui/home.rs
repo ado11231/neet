@@ -43,14 +43,14 @@ impl Entry {
 
 const ENTRIES: &[Entry] = &[
     Entry {
+        label: "Quick Clean",
+        about: "Start here: everything taking space that can be cleared, and how to clear it.",
+        target: Target::Screen(|| Box::new(QuickClean::new())),
+    },
+    Entry {
         label: "Disk",
         about: "Browse your folders by size.",
         target: Target::Screen(|| Box::new(Disk::new())),
-    },
-    Entry {
-        label: "Quick Clean",
-        about: "See everything taking space that can be cleared, and how, before cleaning.",
-        target: Target::Screen(|| Box::new(QuickClean::new())),
     },
     Entry {
         label: "Clean",
@@ -198,6 +198,7 @@ fn summary(label: &str, context: &Context) -> Option<String> {
         "Disk" => context
             .disk
             .map(|disk| format!("{} used", format::size(disk.used()))),
+        "Quick Clean" => Some("start here".to_string()),
         "Clean" => Some(context.cleanable.map_or_else(
             || "finding…".to_string(),
             |size| format!("~{} found", format::size(size)),
@@ -427,8 +428,9 @@ mod tests {
     #[test]
     fn down_skips_rows_that_are_not_built() {
         let mut home = Home::new();
-        press(&mut home, KeyCode::Down);
         assert_eq!(ENTRIES[home.selected()].label, "Quick Clean");
+        press(&mut home, KeyCode::Down);
+        assert_eq!(ENTRIES[home.selected()].label, "Disk");
         press(&mut home, KeyCode::Down);
         assert_eq!(ENTRIES[home.selected()].label, "Clean");
         press(&mut home, KeyCode::Down);
