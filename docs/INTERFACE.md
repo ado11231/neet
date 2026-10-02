@@ -195,32 +195,33 @@
 + Deep Clean ------------------------------------------+  + Homebrew downloads --------------------+
 |        Rule                Risk     Found    Size    |  | Installers and bottles Homebrew        |
 |                                                      |  | downloaded. Installed programs stay.   |
-|   [✓]  npm cache           caution  3 items  4.7 GB  |  |                                        |
-| > [✓]  Homebrew downloads  caution 14 items  1.2 GB  |  | Risk    caution                        |
-|   [ ]  User logs           caution 27 items 83.0 MB  |  | You may need to download again.        |
-|        Yarn cache          caution     none       .  |  |                                        |
-+ 10 of 14 rules found 8.8 GB -------------------------+  | Folder  ~/Library/Caches/Homebrew      |
-+ Selected --------------------------------------------+  |                                        |
-|    4.7 GB  npm cache                                 |  | Found 14 items . 1.2 GB                |
-|    1.2 GB  Homebrew downloads                        |  |    1.1 GB  downloads                   |
-|                                                      |  |   50.8 MB  bootsnap                    |
-|    6.0 GB  total, in 17 items                        |  |                                        |
-|                                                      |  | Skipped 179 left in place              |
-| Press Enter to see every path first.                 |  | 179 paths  a link, left in place       |
-+------------------------------------------------------+  + Put Back works ------------------------+
+|   [✓]  npm cache           caution  3 items  4.7 GB  |  | Risk    caution  You may need to ...   |
+| > [✓]  Homebrew downloads  caution 14 items  1.2 GB  |  | Folder  ~/Library/Caches/Homebrew      |
+|   [ ]  User logs           caution 27 items 83.0 MB  |  +----------------------------------------+
+|        Yarn cache          caution     none       .  |  + Found . 14 items . 1.2 GB -----------+
++ 10 of 14 rules found 8.8 GB -------------------------+  |    1.1 GB  ##########  downloads       |
++ Selected --------------------------------------------+  |   50.8 MB  ..........  bootsnap        |
+|    4.7 GB  npm cache                                 |  +------------- Items go to the Trash ----+
+|    1.2 GB  Homebrew downloads                        |  + Skipped . 179 left in place ---------+
+|                                                      |  | 179 paths  a link, left in place       |
+|    6.0 GB  total, in 17 items                        |  +----------------------------------------+
+|                                                      |  + Where the space is -------------------+
+| Press Enter to see every path first.                 |  |    4.7 GB  ##########  npm cache       |
+|                                                      |  |    1.2 GB  ###.......  Homebrew ...    |
+|                                                      |  |    8.8 GB  in all . 6.0 GB selected    |
++------------------------------------------------------+  +----------------------------------------+
 ```
 
 * neet looks for everything the rules cover once, in the background, as soon as it opens. Deep Clean opens on that result, so going back and opening it again does not look again. If Deep Clean opens before the look is done, the loading box shows a timer. Nothing changes while it looks.
 * neet looks again after a cleanup, and when you press `r`, such as after removing files yourself.
 * **Left, top, 55% of the width:** a table of rules, largest first, with a checkbox, the rule's name, its risk level, how many items it found, and their size. Rules that found nothing are listed last, dimmed, with no checkbox. The bottom edge shows what every rule found together.
 * **Left, bottom:** the Selected box. Each selected rule with its size, then the total. Before anything is selected, it says how selecting works.
-* **Right:** the rule the arrow is on:
-  1. What it removes.
-  2. Its risk level and what that means.
-  3. Apps to close first, how recent files it keeps, and the folder it looks in, when every path is in one folder.
-  4. Every path it found, largest first. When they share a folder, only their names are shown.
-  5. Every path it skipped, with the reason. A reason shared by more than two paths is shown once, with how many.
-  6. If a list is too long, its last line says how many more there are.
+* **Right:** the rule the arrow is on, in boxes that fit what they hold:
+  1. **Top,** titled with the rule's name: what it removes, its risk level and what that means on one line, apps to close first, how recent files it keeps, and the folder it looks in, in blue.
+  2. **Found:** every path it found, largest first, with its size and a bar against the largest. When they share a folder, only their names are shown.
+  3. **Skipped:** only when something was skipped. Every path with the reason. A reason shared by more than two paths is shown once, with how many. It takes at most a third of the height.
+  4. **Where the space is:** every rule that found something, largest first, with a bar, green when selected. The rule the arrow is on is bold. The last line adds up everything found and what is selected. It takes whatever room is left, and is left out when there is none.
+  5. If a list is too long, its last line says how many more there are.
 * When the terminal is narrower than 100 columns, the details go under the list, and the list's bottom edge shows the selected total instead.
 * A selected checkbox is a green `[✓]`. The arrow's row shows its name in bold white, so the checkbox and risk keep their colors.
 * A note at the top of the details explains when a rule was not selected, or could not be. Rules that failed to load are listed there too.

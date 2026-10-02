@@ -449,11 +449,28 @@ fn field(label: &str, value: Span<'static>) -> Line<'static> {
     Line::from(vec![Span::raw(format!("{label:<8}")).bold(), value])
 }
 
-/// How many screen rows `lines` take when wrapped to `width`
+/// How many screen rows `lines` take when wrapped to `width` at spaces, as
+/// the details are
 fn rows_used(lines: &[Line], width: usize) -> usize {
+    let width = width.max(1);
     lines
         .iter()
-        .map(|line| line.width().max(1).div_ceil(width.max(1)))
+        .map(|line| {
+            let text = line.to_string();
+            let mut rows = 1;
+            let mut used = 0;
+            for word in text.split(' ') {
+                let length = word.chars().count();
+                let needed = if used == 0 { length } else { used + 1 + length };
+                if needed <= width {
+                    used = needed;
+                } else {
+                    rows += 1 + length.saturating_sub(1) / width;
+                    used = length % width;
+                }
+            }
+            rows
+        })
         .sum()
 }
 
@@ -510,15 +527,20 @@ fn skipped_lines(rule: &RulePlan, home: &Path, width: usize) -> Vec<Line<'static
     lines
 }
 
-/// The selected rule, explained: what it removes, its risk, and every path
-/// the dry run found or skipped, cut to fit `room` rows of `width`.
-fn details(rule: &RulePlan, home: &Path, room: usize, width: usize) -> Vec<Line<'static>> {
+/// Width of the bar beside each item found
+const ITEM_BAR: usize = 10;
+
+/// What the selected rule removes, its risk, and what it needs, for the box
+/// at the top of the details
+fn about(rule: &RulePlan, home: &Path) -> Vec<Line<'static>> {
     let mut lines = vec![
         Line::from(rule.rule.description.clone()),
         Line::default(),
-        field("Risk", tier_span(rule.rule.tier).bold()),
-        Line::from(tier_meaning(rule.rule.tier)),
-        Line::default(),
+        Line::from(vec![
+            Span::raw(format!("{:<8}", "Risk")).bold(),
+            tier_span(rule.rule.tier).bold(),
+            Span::raw(format!("  {}", tier_meaning(rule.rule.tier))),
+        ]),
     ];
     if !rule.rule.requires_quit.is_empty() {
         lines.push(field(
@@ -535,80 +557,212 @@ fn details(rule: &RulePlan, home: &Path, room: usize, width: usize) -> Vec<Line<
             )),
         ));
     }
-    let shared = shared_folder(rule);
-    if let Some(folder) = shared {
-        lines.push(field("Folder", Span::raw(display_path(home, folder))));
-    }
-    if lines.last().is_some_and(|line| line.width() > 0) {
-        lines.push(Line::default());
-    }
+    let folder = shared_folder(rule).map_or_else(
+        || {
+            rule.rule
+                .paths
+                .iter()
+                .map(|path| display_path(home, path))
+                .collect::<Vec<_>>()
+                .join(", ")
+        },
+        |folder| display_path(home, folder),
+    );
+    lines.push(field("Folder", Span::raw(folder).blue()));
+    lines
+}
 
-    if rule.items.is_empty() && rule.skipped.is_empty() {
-        let paths: Vec<String> = rule
-            .rule
-            .paths
-            .iter()
-            .map(|path| display_path(home, path))
-            .collect();
-        lines.push(Line::from(format!(
-            "Nothing found in {}.",
-            paths.join(", ")
-        )));
-        return lines;
+/// Every item the rule found, largest first, with a bar against the
+/// largest, cut to `room` rows of `width`
+fn found_lines(rule: &RulePlan, home: &Path, room: usize, width: usize) -> Vec<Line<'static>> {
+    if rule.items.is_empty() {
+        return vec![Line::from("Nothing found.")];
     }
-
+    let shared = shared_folder(rule).is_some();
     let mut largest: Vec<_> = rule.items.iter().collect();
     largest.sort_by_key(|item| Reverse(item.size));
-    let path_room = width.saturating_sub(11);
-    let mut found: Vec<Line<'static>> = largest
+    let top = largest.first().map_or(0, |item| item.size);
+    let path_room = width.saturating_sub(11 + ITEM_BAR + 2);
+    let mut lines: Vec<Line<'static>> = largest
         .iter()
         .map(|item| {
             Line::from(vec![
-                Span::raw(format!("{:>9}  ", format::size(item.size))),
-                Span::raw(detail_path(
-                    home,
-                    item.path.path(),
-                    shared.is_some(),
-                    path_room,
-                )),
+                format::size_span(item.size, format!("{:>9}  ", format::size(item.size))),
+                Span::raw(format::bar(item.size, top, ITEM_BAR)).green(),
+                Span::raw("  "),
+                Span::raw(detail_path(home, item.path.path(), shared, path_room)),
             ])
         })
         .collect();
-    let mut skipped = skipped_lines(rule, home, width);
-
-    // Fit both lists in what is left, giving skipped paths at most a third.
-    let headings = usize::from(!found.is_empty()) + 2 * usize::from(!skipped.is_empty());
-    let left = room.saturating_sub(rows_used(&lines, width) + headings);
-    let skipped_room = skipped.len().min((left / 3).max(2));
-    let found_room = left.saturating_sub(skipped_room).max(2);
-    for (list, room) in [(&mut found, found_room), (&mut skipped, skipped_room)] {
-        if list.len() > room {
-            let more = list.len() - (room - 1);
-            list.truncate(room - 1);
-            list.push(Line::from(format!("{:>9}  and {} more", "", count(more))));
-        }
+    let room = room.max(2);
+    if lines.len() > room {
+        let more = lines.len() - (room - 1);
+        lines.truncate(room - 1);
+        lines.push(Line::from(format!("{:>9}  and {} more", "", count(more))));
     }
+    lines
+}
 
-    if !found.is_empty() {
-        lines.push(Line::from(vec![
-            Span::raw("Found ").bold(),
-            Span::raw(format!(
-                "{} · {}",
+impl Clean {
+    /// The selected rule in up to three boxes: what it is, what it found,
+    /// and what it left in place. `notes` go at the top.
+    fn draw_details(
+        frame: &mut Frame,
+        area: Rect,
+        planned: &Planned,
+        rule: &RulePlan,
+        notes: Vec<Line<'static>>,
+    ) {
+        let home = planned.home.as_path();
+        let width = usize::from(area.width.saturating_sub(4));
+        let mut top = notes;
+        top.extend(about(rule, home));
+        let top_height = u16::try_from(rows_used(&top, width) + 2).unwrap_or(u16::MAX);
+
+        let mut skipped = skipped_lines(rule, home, width);
+        let skipped_height = if skipped.is_empty() {
+            0
+        } else {
+            let most = usize::from(area.height / 3).max(3);
+            if skipped.len() + 2 > most {
+                let keep = most.saturating_sub(3).max(1);
+                let more = skipped.len() - keep;
+                skipped.truncate(keep);
+                skipped.push(Line::from(format!("{:>9}  and {} more", "", count(more))));
+            }
+            u16::try_from(skipped.len() + 2).unwrap_or(u16::MAX)
+        };
+
+        // The found box fits its items, and the chart of every rule takes
+        // what is left, when there is room for it.
+        let found_all = found_lines(rule, home, usize::MAX, width);
+        let free = area
+            .height
+            .saturating_sub(top_height)
+            .saturating_sub(skipped_height);
+        let found_height = u16::try_from(found_all.len() + 2).unwrap_or(u16::MAX);
+        let chart = chart_lines(planned, rule, width);
+        let chart_height = u16::try_from(chart.len() + 2).unwrap_or(u16::MAX);
+        let found_height = if free >= found_height + chart_height {
+            found_height
+        } else {
+            free
+        };
+        let [about_area, found_area, skipped_area, chart_area] = Layout::vertical([
+            Constraint::Length(top_height),
+            Constraint::Length(found_height),
+            Constraint::Length(skipped_height),
+            Constraint::Fill(1),
+        ])
+        .areas(area);
+
+        frame.render_widget(
+            Paragraph::new(top).wrap(Wrap { trim: false }).block(
+                Block::bordered()
+                    .title(format!(" {} ", rule.rule.name))
+                    .padding(Padding::horizontal(1)),
+            ),
+            about_area,
+        );
+
+        let room = usize::from(found_area.height.saturating_sub(2));
+        let title = if rule.items.is_empty() {
+            " Found ".to_string()
+        } else {
+            format!(
+                " Found · {} · {} ",
                 items(rule.items.len()),
                 format::size(rule.size())
-            )),
-        ]));
-        lines.extend(found);
-    }
-    if !skipped.is_empty() {
-        if !rule.items.is_empty() {
-            lines.push(Line::default());
+            )
+        };
+        frame.render_widget(
+            Paragraph::new(found_lines(rule, home, room, width)).block(
+                Block::bordered()
+                    .title(Line::from(title).bold())
+                    .title_bottom(
+                        Line::from(" Items go to the Trash, where Put Back works ").right_aligned(),
+                    )
+                    .padding(Padding::horizontal(1)),
+            ),
+            found_area,
+        );
+
+        if !skipped.is_empty() {
+            frame.render_widget(
+                Paragraph::new(skipped).block(
+                    Block::bordered()
+                        .title(
+                            Line::from(format!(
+                                " Skipped · {} left in place ",
+                                count(rule.skipped.len())
+                            ))
+                            .bold(),
+                        )
+                        .padding(Padding::horizontal(1)),
+                ),
+                skipped_area,
+            );
         }
+
+        if chart_area.height >= 3 {
+            frame.render_widget(
+                Paragraph::new(chart).block(
+                    Block::bordered()
+                        .title(Line::from(" Where the space is ").bold())
+                        .padding(Padding::horizontal(1)),
+                ),
+                chart_area,
+            );
+        }
+    }
+}
+
+/// Every rule that found something, largest first, with a bar against the
+/// largest. The selected rule's name is bold.
+fn chart_lines(planned: &Planned, current: &RulePlan, width: usize) -> Vec<Line<'static>> {
+    let mut rules: Vec<&RulePlan> = planned
+        .plan
+        .rules
+        .iter()
+        .filter(|rule| !rule.items.is_empty())
+        .collect();
+    rules.sort_by_key(|rule| Reverse(rule.size()));
+    let top = rules.first().map_or(0, |rule| rule.size());
+    let name_room = width.saturating_sub(11 + ITEM_BAR + 2);
+    let total: u64 = rules.iter().map(|rule| rule.size()).sum();
+    let mut lines: Vec<Line<'static>> = rules
+        .into_iter()
+        .map(|rule| {
+            let name = Span::raw(format::shorten_middle(&rule.rule.name, name_room));
+            let name = if rule.rule.id == current.rule.id {
+                name.bold()
+            } else {
+                name
+            };
+            let bar = Span::raw(format::bar(rule.size(), top, ITEM_BAR));
+            let bar = if rule.selected {
+                bar.green()
+            } else {
+                bar.cyan()
+            };
+            Line::from(vec![
+                format::size_span(rule.size(), format!("{:>9}  ", format::size(rule.size()))),
+                bar,
+                Span::raw("  "),
+                name,
+            ])
+        })
+        .collect();
+    if !lines.is_empty() {
+        lines.push(Line::default());
         lines.push(Line::from(vec![
-            Span::raw("Skipped ").bold(),
-            Span::raw(format!("{} left in place", count(rule.skipped.len()))),
+            Span::raw(format!("{:>9}  ", format::size(total))).bold(),
+            Span::raw("in all · "),
+            Span::raw(format::size(planned.plan.selected_size()))
+                .green()
+                .bold(),
+            Span::raw(" selected"),
         ]));
-        lines.extend(skipped);
     }
     lines
 }
@@ -845,22 +999,12 @@ impl Screen for Clean {
         let Some(rule) = planned.plan.rules.get(current) else {
             return;
         };
-        let mut lines = problems(&planned.errors);
+        let mut notes = problems(&planned.errors);
         if let Some(note) = &self.note {
-            lines.insert(0, Line::from(note.clone()).yellow());
-            lines.insert(1, Line::default());
+            notes.insert(0, Line::from(note.clone()).yellow());
+            notes.insert(1, Line::default());
         }
-        let width = usize::from(detail_area.width.saturating_sub(4));
-        let room = usize::from(detail_area.height.saturating_sub(2))
-            .saturating_sub(rows_used(&lines, width));
-        lines.extend(details(rule, &planned.home, room, width));
-        let body = Paragraph::new(lines).wrap(Wrap { trim: false }).block(
-            Block::bordered()
-                .title(format!(" {} ", rule.rule.name))
-                .title_bottom(Line::from(" Items go to the Trash, where Put Back works "))
-                .padding(Padding::horizontal(1)),
-        );
-        frame.render_widget(body, detail_area);
+        Self::draw_details(frame, detail_area, planned, rule, notes);
         self.draw_typing(frame, area);
     }
 
@@ -1083,6 +1227,9 @@ mod tests {
         assert!(screen.contains("total, in 1 item"));
         assert!(screen.contains("Folder  ~/Library/Developer/Xcode/DerivedData"));
         assert!(screen.contains("App-abc"));
+        assert!(screen.contains("Found · 1 item · 4.1 KB"));
+        assert!(screen.contains("Where the space is"));
+        assert!(screen.contains("16.4 KB  in all · 4.1 KB selected"));
     }
 
     #[test]
