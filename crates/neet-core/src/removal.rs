@@ -9,6 +9,7 @@ use std::process::Command;
 use crate::clean::{Plan, PlanItem, RulePlan, SkipReason, Skipped, measure};
 use crate::rules::{Category, Rule, Source, Tier};
 use crate::safety::CleanupRoots;
+use crate::scan;
 use crate::size::HardLinkTracker;
 
 /// Why an app cannot be removed
@@ -112,6 +113,14 @@ fn list_apps_with(
         .collect();
     apps.sort_by_cached_key(|app| app.name.to_lowercase());
     apps
+}
+
+/// The space an app takes on disk, measured the same way as the home folder
+/// scan. Parts it cannot read are left out. `None` if it cannot be read.
+#[must_use]
+pub fn app_size(app: &Path) -> Option<u64> {
+    let scan = scan::scan(app, |_| {}).ok()?;
+    Some(scan.tree.get(scan.tree.root()).total_size)
 }
 
 /// What a related file is marked with, and why it starts unselected

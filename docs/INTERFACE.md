@@ -248,13 +248,14 @@
 ## Remove App
 
 ```text
-+ Remove App: 15 apps you can remove --------------------------------------------------------+
-|   Name        Bundle ID               Folder                                               |
++ Remove App --------------------------------------------------------------------------------+
+|   Name             Size                Folder          Bundle ID                            |
 |                                                                                            |
-| > Discord     com.hnc.Discord         /Applications                                        |
-|   Slingshot   dev.slingshot.menubar   ~/Applications                                       |
-|   Xcode       com.apple.dt.Xcode      /Applications    not removable: Apple app            |
-+ Only apps directly in /Applications and ~/Applications are listed -------------------------+
+| > Discord      500.4 MB  ##..........  /Applications   com.hnc.Discord                      |
+|   Docker         2.6 GB  #######.....  /Applications   com.docker.docker                    |
+|   Slingshot    585.7 KB  ............  ~/Applications  dev.slingshot.menubar                |
+|   Xcode          4.3 GB                /Applications   not removable: Apple app             |
++ 15 apps you can remove take 9.1 GB ---------------------------- By name . s sorts by size +
 
 + Discord (com.hnc.Discord) -----------------------------------------------------------------+
 |             Size  Name                   Folder                          Note              |
@@ -269,8 +270,10 @@
 +--------------------------------------------------------------------------------------------+
 ```
 
-* **App list:** a table of each app in `/Applications` and `~/Applications`, with its name, its bundle ID (the name macOS uses to identify it), and its folder. Apps neet can remove come first. Apps it will not remove are listed after them, dimmed, with the reason, such as `Apple app` or `link`.
-* The title shows how many apps can be removed. The bottom edge shows a note, such as why an app cannot be opened.
+* **App list:** a table of each app in `/Applications` and `~/Applications`, with its name, its size, a bar of its size against the largest app, its folder, and its bundle ID (the name macOS uses to identify it). Apps neet can remove come first. Apps it will not remove are listed after them, dimmed, with the reason, such as `Apple app` or `link`.
+* **Colors:** sizes and bars are red from 5 GB and yellow from 1 GB, and bars are green below that. `/Applications` is blue, `~/Applications` magenta, and bundle IDs cyan.
+* Sizes are measured in the background, one app after another, and show `…` until then. Press `s` to list the largest first, and again to go back to names.
+* The bottom edge shows how many apps can be removed and how much space they take, then the sort order, or a note, such as why an app cannot be opened.
 * **App files:** opening an app finds and measures its files, with the loading box and a timer. Then a table lists the app and each file, with a checkbox, size, name, folder, and a note on anything left unselected, such as `may be your data`.
 * The box under the table explains the file the arrow is on: why it starts selected or not, and what to check first.
 * The bottom edge shows the selected total, in green once something is selected.
@@ -281,6 +284,7 @@
 | `Up` / `Down` | Move the selection. |
 | `Enter` | On the app list, open the app. On the file list, go to [Review](#review-confirm-and-move). |
 | `Space` | On the file list, select or clear a file. |
+| `s` | On the app list, sort by size or by name. |
 
 * An app that is open cannot be opened here. The note says to quit it first.
 
