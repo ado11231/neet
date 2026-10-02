@@ -346,7 +346,7 @@ impl QuickClean {
                         });
                         (
                             format::size_span(size, text),
-                            share_bar(size, largest),
+                            format::size_bar(size, largest, SHARE_BAR),
                             found,
                         )
                     }
@@ -529,18 +529,6 @@ impl QuickClean {
             return;
         }
         frame.render_widget(Paragraph::new(lines).block(block), area);
-    }
-}
-
-/// A bar of `size` against the largest row, colored like the size
-fn share_bar(size: u64, largest: u64) -> Span<'static> {
-    let bar = Span::raw(format::bar(size, largest, SHARE_BAR));
-    if size >= format::HUGE {
-        bar.red()
-    } else if size >= format::HUGE / 5 {
-        bar.yellow()
-    } else {
-        bar.green()
     }
 }
 
