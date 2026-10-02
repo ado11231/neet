@@ -54,7 +54,7 @@ neet
 ## Notes
 
 * Works on macOS 13 or later, on Apple silicon and Intel.
-* Files go to the Trash, never deleted, so you can put them back.
+* Files go to the Trash, never deleted, so you can put them back. Simulator runtimes and Docker images are the exception: neet asks their own tools to remove them, after a red question that says so.
 * You review and confirm everything before it moves.
 * Your personal folders, iCloud files, keychains, and SSH keys are never touched. The one exception is project build folders and installers, which you pick in Quick Clean.
 * For a full scan, give your terminal Full Disk Access:
