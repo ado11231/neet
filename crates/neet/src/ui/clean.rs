@@ -419,11 +419,11 @@ pub(super) fn checkbox(selected: bool, selectable: bool) -> Span<'static> {
 }
 
 /// One rule as a table row. `current` is the row the arrow is on, whose
-/// name turns cyan, so the checkbox and risk keep their own colors.
+/// name turns white, so the checkbox and risk keep their own colors.
 fn rule_row(rule: &RulePlan, current: bool) -> Row<'static> {
     let items = rule.items.len();
     let name = Span::raw(rule.rule.name.clone());
-    let name = if current { name.cyan().bold() } else { name };
+    let name = if current { name.white().bold() } else { name };
     if items == 0 {
         return Row::new([
             Cell::from(checkbox(false, false)),
@@ -439,14 +439,14 @@ fn rule_row(rule: &RulePlan, current: bool) -> Row<'static> {
         Cell::from(checkbox(rule.selected, true)),
         Cell::from(name),
         Cell::from(tier_span(rule.rule.tier)),
-        Cell::from(Line::from(found).dark_gray().right_aligned()),
+        Cell::from(Line::from(found).right_aligned()),
         Cell::from(Line::from(format::size(rule.size())).right_aligned()),
     ])
 }
 
 /// A label and its value, lined up with the other labels
 fn field(label: &str, value: Span<'static>) -> Line<'static> {
-    Line::from(vec![Span::raw(format!("{label:<8}")).dark_gray(), value])
+    Line::from(vec![Span::raw(format!("{label:<8}")).bold(), value])
 }
 
 /// How many screen rows `lines` take when wrapped to `width`
@@ -492,25 +492,19 @@ fn skipped_lines(rule: &RulePlan, home: &Path, width: usize) -> Vec<Line<'static
     let mut lines = Vec::new();
     for (reason, paths) in groups {
         if paths.len() > 2 {
-            lines.push(
-                Line::from(format!(
-                    "{:>9}  {reason}",
-                    format!("{} paths", count(paths.len()))
-                ))
-                .dark_gray(),
-            );
+            lines.push(Line::from(format!(
+                "{:>9}  {reason}",
+                format!("{} paths", count(paths.len()))
+            )));
             continue;
         }
         for path in paths {
             let room = width.saturating_sub(reason.chars().count() + 13);
-            lines.push(
-                Line::from(format!(
-                    "{:>9}  {}  {reason}",
-                    "",
-                    detail_path(home, path, shared, room)
-                ))
-                .dark_gray(),
-            );
+            lines.push(Line::from(format!(
+                "{:>9}  {}  {reason}",
+                "",
+                detail_path(home, path, shared, room)
+            )));
         }
     }
     lines
@@ -523,7 +517,7 @@ fn details(rule: &RulePlan, home: &Path, room: usize, width: usize) -> Vec<Line<
         Line::from(rule.rule.description.clone()),
         Line::default(),
         field("Risk", tier_span(rule.rule.tier).bold()),
-        Line::from(tier_meaning(rule.rule.tier)).dark_gray(),
+        Line::from(tier_meaning(rule.rule.tier)),
         Line::default(),
     ];
     if !rule.rule.requires_quit.is_empty() {
@@ -556,7 +550,10 @@ fn details(rule: &RulePlan, home: &Path, room: usize, width: usize) -> Vec<Line<
             .iter()
             .map(|path| display_path(home, path))
             .collect();
-        lines.push(Line::from(format!("Nothing found in {}.", paths.join(", "))).dark_gray());
+        lines.push(Line::from(format!(
+            "Nothing found in {}.",
+            paths.join(", ")
+        )));
         return lines;
     }
 
@@ -588,7 +585,7 @@ fn details(rule: &RulePlan, home: &Path, room: usize, width: usize) -> Vec<Line<
         if list.len() > room {
             let more = list.len() - (room - 1);
             list.truncate(room - 1);
-            list.push(Line::from(format!("{:>9}  and {} more", "", count(more))).dark_gray());
+            list.push(Line::from(format!("{:>9}  and {} more", "", count(more))));
         }
     }
 
@@ -599,8 +596,7 @@ fn details(rule: &RulePlan, home: &Path, room: usize, width: usize) -> Vec<Line<
                 "{} · {}",
                 items(rule.items.len()),
                 format::size(rule.size())
-            ))
-            .dark_gray(),
+            )),
         ]));
         lines.extend(found);
     }
@@ -610,7 +606,7 @@ fn details(rule: &RulePlan, home: &Path, room: usize, width: usize) -> Vec<Line<
         }
         lines.push(Line::from(vec![
             Span::raw("Skipped ").bold(),
-            Span::raw(format!("{} left in place", count(rule.skipped.len()))).dark_gray(),
+            Span::raw(format!("{} left in place", count(rule.skipped.len()))),
         ]));
         lines.extend(skipped);
     }
@@ -654,7 +650,7 @@ fn totals(planned: &Planned) -> Line<'static> {
         format::size(plan.selected_size())
     ));
     let mut spans = vec![if rules == 0 {
-        text.dark_gray()
+        text
     } else {
         text.green().bold()
     }];
@@ -675,15 +671,12 @@ fn found_overall(planned: &Planned) -> Line<'static> {
     let rules = &planned.plan.rules;
     let found = rules.iter().filter(|rule| !rule.items.is_empty()).count();
     let size: u64 = rules.iter().map(RulePlan::size).sum();
-    let mut spans = vec![
-        Span::raw(format!(
-            " {} of {} rules found {} ",
-            count(found),
-            count(rules.len()),
-            format::size(size)
-        ))
-        .dark_gray(),
-    ];
+    let mut spans = vec![Span::raw(format!(
+        " {} of {} rules found {} ",
+        count(found),
+        count(rules.len()),
+        format::size(size)
+    ))];
     if !planned.errors.is_empty() {
         spans.push(Span::raw(format!("· {} rule problems ", count(planned.errors.len()))).yellow());
     }
@@ -703,9 +696,9 @@ fn selection(planned: &Planned) -> Paragraph<'static> {
         .padding(Padding::horizontal(1));
     if chosen.is_empty() {
         return Paragraph::new(vec![
-            Line::from("Nothing selected yet.").dark_gray(),
+            Line::from("Nothing selected yet."),
             Line::default(),
-            Line::from("Press Space to select a rule. Safe rules start selected, and caution rules are yours to choose.").dark_gray(),
+            Line::from("Press Space to select a rule. Safe rules start selected, and caution rules are yours to choose."),
         ])
         .wrap(Wrap { trim: false })
         .block(block);
@@ -734,7 +727,9 @@ fn selection(planned: &Planned) -> Paragraph<'static> {
         .bold(),
     ]));
     lines.push(Line::default());
-    lines.push(Line::from("Press Enter to see every path before anything moves.").dark_gray());
+    lines.push(Line::from(
+        "Press Enter to see every path before anything moves.",
+    ));
     Paragraph::new(lines)
         .wrap(Wrap { trim: false })
         .block(block)
@@ -772,7 +767,7 @@ fn rules_table(planned: &Planned, current: usize, summary: Line<'static>) -> Tab
     .column_spacing(2)
     .block(
         Block::bordered()
-            .title(" Clean ")
+            .title(" Deep Clean ")
             .title_bottom(summary)
             .padding(Padding::horizontal(1)),
     )
@@ -789,7 +784,7 @@ impl Screen for Clean {
                     .plan
                     .map_or_else(Instant::now, |estimate| estimate.started);
                 Loading {
-                    title: "Clean",
+                    title: "Deep Clean",
                     doing: "Finding files the rules cover",
                     progress: format!("{}s", started.elapsed().as_secs()),
                     note: "Nothing is changed while neet looks. This happens once, and again when you press r.",
@@ -799,7 +794,7 @@ impl Screen for Clean {
             }
             State::Planning { started, .. } => {
                 Loading {
-                    title: "Clean",
+                    title: "Deep Clean",
                     doing: "Finding files the rules cover",
                     progress: format!("{}s", started.elapsed().as_secs()),
                     note: "Nothing is changed while neet looks.",
@@ -809,7 +804,7 @@ impl Screen for Clean {
             }
             State::Failed(reason) => {
                 let block = Block::bordered()
-                    .title(" Clean ")
+                    .title(" Deep Clean ")
                     .padding(Padding::horizontal(1));
                 frame.render_widget(
                     Paragraph::new(format!("Planning failed. {reason}"))
@@ -862,9 +857,7 @@ impl Screen for Clean {
         let body = Paragraph::new(lines).wrap(Wrap { trim: false }).block(
             Block::bordered()
                 .title(format!(" {} ", rule.rule.name))
-                .title_bottom(
-                    Line::from(" Items go to the Trash, where Put Back works ").dark_gray(),
-                )
+                .title_bottom(Line::from(" Items go to the Trash, where Put Back works "))
                 .padding(Padding::horizontal(1)),
         );
         frame.render_widget(body, detail_area);

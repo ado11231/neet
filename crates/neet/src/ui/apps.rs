@@ -135,8 +135,8 @@ impl Screen for RemoveApp {
                     .dark_gray(),
                     None => Row::new([
                         Cell::from(app.name.clone()),
-                        Cell::from(Span::raw(id).dark_gray()),
-                        Cell::from(Span::raw(folder).dark_gray()),
+                        Cell::from(Span::raw(id)),
+                        Cell::from(Span::raw(folder)),
                         Cell::from(""),
                     ]),
                 }
@@ -146,10 +146,7 @@ impl Screen for RemoveApp {
             .bold()
             .bottom_margin(1);
         let note = self.note.clone().map_or_else(
-            || {
-                Line::from(" Only apps directly in /Applications and ~/Applications are listed ")
-                    .dark_gray()
-            },
+            || Line::from(" Only apps directly in /Applications and ~/Applications are listed "),
             |note| Line::from(format!(" {note} ")).yellow(),
         );
         let table = Table::new(
@@ -172,7 +169,7 @@ impl Screen for RemoveApp {
                 .title_bottom(note),
         )
         .highlight_symbol("▸ ")
-        .row_highlight_style(Style::new().bold().cyan());
+        .row_highlight_style(Style::new().bold().white());
         frame.render_stateful_widget(table, area, &mut self.list);
     }
 
@@ -316,7 +313,7 @@ fn explain(rule: &RulePlan) -> &'static str {
 }
 
 /// One file as a table row. `current` is the row the arrow is on, whose name
-/// turns cyan, so the checkbox and note keep their own colors.
+/// turns white, so the checkbox and note keep their own colors.
 fn file_row(rule: &RulePlan, home: &Path, current: bool, name_width: usize) -> Row<'static> {
     let (path, size, note) = match (rule.items.first(), rule.skipped.first()) {
         (Some(item), _) => (
@@ -333,12 +330,12 @@ fn file_row(rule: &RulePlan, home: &Path, current: bool, name_width: usize) -> R
     };
     let (folder, name) = path.rsplit_once('/').unwrap_or(("", path.as_str()));
     let name = Span::raw(format::shorten_middle(name, name_width));
-    let name = if current { name.cyan().bold() } else { name };
+    let name = if current { name.white().bold() } else { name };
     let row = Row::new([
         Cell::from(checkbox(rule.selected, !rule.items.is_empty())),
         Cell::from(Line::from(size).right_aligned()),
         Cell::from(name),
-        Cell::from(Span::raw(format::shorten_path(folder, FOLDER_WIDTH.into())).dark_gray()),
+        Cell::from(Span::raw(format::shorten_path(folder, FOLDER_WIDTH.into()))),
         Cell::from(Span::raw(note).yellow()),
     ]);
     if rule.items.is_empty() {
@@ -386,14 +383,12 @@ impl Screen for AppFiles {
         ));
         let block = block
             .title_bottom(if plan.selected_count() == 0 {
-                selected.dark_gray()
+                selected
             } else {
                 selected.green().bold()
             })
             .title_bottom(
-                Line::from(" Items go to the Trash, where Put Back works ")
-                    .dark_gray()
-                    .right_aligned(),
+                Line::from(" Items go to the Trash, where Put Back works ").right_aligned(),
             );
         let [list_area, why_area] =
             Layout::vertical([Constraint::Fill(1), Constraint::Length(3)]).areas(area);
@@ -442,7 +437,7 @@ impl Screen for AppFiles {
 
         if let Some(rule) = plan.rules.get(current) {
             frame.render_widget(
-                Paragraph::new(Line::from(explain(rule)).dark_gray())
+                Paragraph::new(Line::from(explain(rule)))
                     .block(Block::bordered().padding(Padding::horizontal(1))),
                 why_area,
             );

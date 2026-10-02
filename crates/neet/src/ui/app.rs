@@ -216,7 +216,7 @@ impl App {
             screen.draw(frame, body, &context);
         }
         let screen = self.top();
-        let hints = Line::from(format!(" {}", screen.hints())).style(Style::new().dark_gray());
+        let hints = Line::from(format!(" {}", screen.hints())).style(Style::new());
         frame.render_widget(hints, footer);
     }
 

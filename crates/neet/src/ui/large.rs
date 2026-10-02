@@ -125,7 +125,7 @@ fn row(tree: &Tree, id: NodeId, now: SystemTime, name: usize, folder: usize) -> 
     let age = match elapsed {
         Some(elapsed) if elapsed >= DAY * 365 => age.magenta(),
         Some(elapsed) if elapsed >= DAY * 30 => age,
-        _ => age.dark_gray(),
+        _ => age,
     };
 
     let path = display_path(tree, id);
@@ -134,7 +134,7 @@ fn row(tree: &Tree, id: NodeId, now: SystemTime, name: usize, folder: usize) -> 
         Cell::from(Line::from(size).right_aligned()),
         Cell::from(age),
         Cell::from(format::shorten_middle(file, name)),
-        Cell::from(Span::raw(format::shorten_path(parent, folder)).dark_gray()),
+        Cell::from(Span::raw(format::shorten_path(parent, folder))),
     ])
 }
 
@@ -177,20 +177,16 @@ impl Screen for LargeFiles {
         if found.is_empty() {
             frame.render_widget(
                 Paragraph::new("No files match. Press s for a smaller size, or a for any age.")
-                    .dark_gray()
                     .block(block),
                 area,
             );
             return;
         }
         let block = if found.len() > MAX_ROWS {
-            block.title_bottom(
-                Line::from(format!(
-                    " and {} more. Press s for a larger size to see fewer. ",
-                    format::count(u64::try_from(found.len() - MAX_ROWS).unwrap_or(u64::MAX))
-                ))
-                .dark_gray(),
-            )
+            block.title_bottom(Line::from(format!(
+                " and {} more. Press s for a larger size to see fewer. ",
+                format::count(u64::try_from(found.len() - MAX_ROWS).unwrap_or(u64::MAX))
+            )))
         } else {
             block
         };
@@ -227,7 +223,7 @@ impl Screen for LargeFiles {
         .column_spacing(GAP)
         .block(block)
         .highlight_symbol("▸ ")
-        .row_highlight_style(Style::new().bold().cyan());
+        .row_highlight_style(Style::new().bold().white());
         frame.render_stateful_widget(table, area, &mut self.table);
     }
 
@@ -425,13 +421,13 @@ mod tests {
 
         // The first file is selected, so the second shows its own colors.
         assert_eq!(color_of(&mut large, &scan, "300.0 MB"), Color::Reset);
-        assert_eq!(color_of(&mut large, &scan, "2 days ago"), Color::DarkGray);
+        assert_eq!(color_of(&mut large, &scan, "2 days ago"), Color::Reset);
 
         press(&mut large, &scan, KeyCode::Down);
         assert_eq!(color_of(&mut large, &scan, "2.0 GB"), Color::Yellow);
         assert_eq!(color_of(&mut large, &scan, "1 year ago"), Color::Magenta);
-        // The selected row is cyan all the way across.
-        assert_eq!(color_of(&mut large, &scan, "300.0 MB"), Color::Cyan);
+        // The selected row is white all the way across.
+        assert_eq!(color_of(&mut large, &scan, "300.0 MB"), Color::White);
     }
 
     #[test]
