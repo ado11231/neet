@@ -189,9 +189,14 @@ fn draw_folder(frame: &mut Frame, area: Rect, tree: &Tree, browser: &mut Browser
     let folder = tree.get(browser.current);
     let title = format!(" {} ", display_path(tree, browser.current));
     let summary = format!(
-        " {} · {} items · sort: {} ",
+        " {} · {} {} · sort: {} ",
         format::size(folder.total_size),
         format::count(folder.total_items),
+        if folder.total_items == 1 {
+            "item"
+        } else {
+            "items"
+        },
         browser.sort.label()
     );
     let block = Block::bordered()
