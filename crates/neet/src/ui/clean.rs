@@ -1404,8 +1404,15 @@ mod tests {
             .expect("folder should be read")
             .count();
 
-        let mut clean = Clean::start(move || make_plan(&home, None));
+        // Hold the plan back until the first frame, or a fast plan can
+        // finish before it and skip the loading screen.
+        let (go, wait) = mpsc::channel::<()>();
+        let mut clean = Clean::start(move || {
+            let _ = wait.recv();
+            make_plan(&home, None)
+        });
         assert!(render(&mut clean).contains("Finding files"));
+        go.send(()).expect("plan should still be waiting");
         let deadline = Instant::now() + Duration::from_secs(10);
         while !matches!(clean.state, State::Ready(_)) {
             assert!(Instant::now() < deadline, "plan should finish");
