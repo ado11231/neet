@@ -12,13 +12,13 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use crate::rules::{Category, Rule, Source, Tier};
-use crate::safety::{CleanupRoots, SafetyError, ValidatedPath};
+use crate::safety::{CleanupRoots, SafetyError, ValidatedPath, copy_error};
 use crate::size::{HardLinkTracker, allocated_size};
 
 const DAY: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// One file or folder a rule would move to the Trash
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PlanItem {
     pub path: ValidatedPath,
     /// Space it uses on disk. A file with several names is counted once in
@@ -49,15 +49,30 @@ pub enum SkipReason {
     MoveFailed(io::Error),
 }
 
+impl Clone for SkipReason {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Refused(error) => Self::Refused(error.clone()),
+            Self::TooNew => Self::TooNew,
+            Self::Unreadable(error) => Self::Unreadable(copy_error(error)),
+            Self::Overlaps => Self::Overlaps,
+            Self::Link => Self::Link,
+            Self::AppOpen(app) => Self::AppOpen(app.clone()),
+            Self::Replaced => Self::Replaced,
+            Self::MoveFailed(error) => Self::MoveFailed(copy_error(error)),
+        }
+    }
+}
+
 /// A path a rule found but the plan leaves out
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Skipped {
     pub path: PathBuf,
     pub reason: SkipReason,
 }
 
 /// What one rule found
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct RulePlan {
     pub rule: Rule,
     pub items: Vec<PlanItem>,
@@ -74,7 +89,7 @@ impl RulePlan {
 }
 
 /// What every rule found. Making a plan changes nothing.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Plan {
     pub rules: Vec<RulePlan>,
 }
@@ -805,5 +820,19 @@ mod tests {
             super::plan_path(&dir.path().join("Library/Caches/a*"), &roots, now),
             Err(SkipReason::Refused(_))
         ));
+    }
+
+    #[test]
+    fn a_copied_skip_reason_keeps_its_error() {
+        let reason = super::SkipReason::Unreadable(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "no access",
+        ));
+
+        let super::SkipReason::Unreadable(copy) = reason.clone() else {
+            panic!("the copy should be the same kind of reason");
+        };
+        assert_eq!(copy.kind(), std::io::ErrorKind::PermissionDenied);
+        assert_eq!(copy.to_string(), "no access");
     }
 }
