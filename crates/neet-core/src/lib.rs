@@ -8,5 +8,6 @@ pub mod rules;
 pub mod safety;
 pub mod scan;
 pub mod size;
+pub mod tools;
 pub mod trash;
 pub mod tree;
