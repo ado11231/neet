@@ -88,7 +88,7 @@ fn name(item: Item) -> &'static str {
         Item::Clutter(Kind::Installers) => "Installers in Downloads",
         Item::Clutter(Kind::BuildFolders) => "Project build folders",
         Item::Clutter(Kind::DockerImage) => "Docker disk image",
-        Item::Clutter(Kind::SimulatorRuntimes) => "Simulator runtimes",
+        Item::Clutter(Kind::SimulatorRuntimes) => "Simulators",
         Item::Clutter(Kind::TempFiles) => "Temporary files",
     }
 }
@@ -141,7 +141,7 @@ fn about(item: Item) -> &'static str {
             "The disk image Docker Desktop keeps containers and images in. It does not shrink on its own."
         }
         Item::Clutter(Kind::SimulatorRuntimes) => {
-            "iOS and other simulator runtimes Xcode downloaded. They live outside your home folder."
+            "Simulator runtimes Xcode downloaded, which live outside your home folder, and the simulators on them."
         }
         Item::Clutter(Kind::TempFiles) => {
             "Your temporary files and caches in /private/var/folders. Apps use them while they run."
@@ -172,13 +172,13 @@ fn steps(item: Item) -> &'static [&'static str] {
             "neet never empties the Trash, so Put Back always works.",
         ],
         Item::Clutter(Kind::DockerImage) => &[
-            "Press Enter to see what Docker can free.",
-            "neet runs docker system prune --all. Volumes are kept.",
-            "It asks first, in red: this skips the Trash and cannot be undone.",
+            "Press Enter to see what Docker can free, and pick unused volumes.",
+            "neet runs docker system prune --all, after a red question.",
+            "Or press x there to reset Docker: its disk image goes to the Trash.",
         ],
         Item::Clutter(Kind::SimulatorRuntimes) => &[
-            "Press Enter to list every runtime. None start selected.",
-            "neet runs xcrun simctl runtime delete for each one you pick.",
+            "Press Enter to list runtimes, and simulators with none. None start selected.",
+            "neet removes each one you pick with xcrun simctl, simulators included.",
             "It asks first, in red: this skips the Trash and cannot be undone.",
         ],
         Item::Clutter(Kind::TempFiles) => &[

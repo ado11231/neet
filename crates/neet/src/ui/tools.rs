@@ -1,12 +1,14 @@
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::Instant;
 
-use neet_core::tools::{self, Docker, Runtime};
+use neet_core::safety::CleanupRoots;
+use neet_core::tools::{self, Device, Docker, DockerUsage, DockerVolume, Runtime};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
-use ratatui::style::{Style, Stylize};
+use ratatui::style::{Color, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Cell, Clear, Padding, Paragraph, Row, Table, TableState, Wrap};
 
@@ -60,31 +62,59 @@ impl<T, R> Stage<T, R> {
         *self = next;
     }
 
+    fn found(&self) -> Option<&T> {
+        match self {
+            Self::Ready(found) | Self::Asking(found) => Some(found),
+            _ => None,
+        }
+    }
+
+    /// From the question back to what was found
+    fn back_to_ready(&mut self) {
+        if let Self::Asking(_) = self
+            && let Self::Asking(found) = std::mem::replace(self, Self::Failed(String::new()))
+        {
+            *self = Self::Ready(found);
+        }
+    }
+
+    /// From what was found to the question
+    fn ask(&mut self) {
+        if let Self::Ready(_) = self
+            && let Self::Ready(found) = std::mem::replace(self, Self::Failed(String::new()))
+        {
+            *self = Self::Asking(found);
+        }
+    }
+
     /// Asking or running the tool, when keys like `q` must not act
     fn is_busy(&self) -> bool {
         matches!(self, Self::Asking(_) | Self::Working(..))
     }
 }
 
-/// The red question before a tool removes something permanently
-fn ask(frame: &mut Frame, area: Rect, title: &str, lines: Vec<Line<'static>>) {
-    let mut lines = lines;
-    lines.push(Line::default());
-    lines.push(Line::from(vec![
-        Span::raw("y").bold().red(),
-        Span::raw(" remove permanently    "),
-        Span::raw("n").bold(),
-        Span::raw(" or "),
-        Span::raw("Esc").bold(),
-        Span::raw(" go back"),
-    ]));
-    let width = 66.min(area.width);
-    let inner = usize::from(width.saturating_sub(4)).max(1);
+/// The widest a message box gets
+const MESSAGE_WIDTH: u16 = 76;
+
+/// How many rows `lines` take when wrapped to `width`
+fn rows(lines: &[Line], width: u16) -> u16 {
+    let width = usize::from(width).max(1);
     let rows: usize = lines
         .iter()
-        .map(|line| line.width().max(1).div_ceil(inner))
+        .map(|line| line.width().max(1).div_ceil(width))
         .sum();
-    let height = u16::try_from(rows + 3).unwrap_or(u16::MAX).min(area.height);
+    u16::try_from(rows).unwrap_or(u16::MAX)
+}
+
+/// A box in the middle of `area`, just big enough for `lines`, so short
+/// news does not sit in a big empty box
+fn message(frame: &mut Frame, area: Rect, title: &str, lines: Vec<Line<'static>>, color: Color) {
+    let widest = lines.iter().map(Line::width).max().unwrap_or(0);
+    let width = u16::try_from(widest + 6)
+        .unwrap_or(u16::MAX)
+        .clamp(44, MESSAGE_WIDTH)
+        .min(area.width);
+    let height = (rows(&lines, width.saturating_sub(6)) + 4).min(area.height);
     let [area] = Layout::vertical([Constraint::Length(height)])
         .flex(Flex::Center)
         .areas(area);
@@ -95,26 +125,82 @@ fn ask(frame: &mut Frame, area: Rect, title: &str, lines: Vec<Line<'static>>) {
     frame.render_widget(
         Paragraph::new(lines).wrap(Wrap { trim: false }).block(
             Block::bordered()
-                .border_style(Style::new().red())
-                .title(Line::from(format!(" {title} ")).red().bold())
-                .padding(Padding::horizontal(1)),
+                .border_style(Style::new().fg(color))
+                .title(Line::from(format!(" {title} ")).fg(color).bold())
+                .padding(Padding::new(2, 2, 1, 1)),
         ),
         area,
     );
 }
 
-fn failed_box(frame: &mut Frame, area: Rect, title: &str, reason: &str) {
+/// The question before a tool acts, with `y` to go ahead
+fn ask(
+    frame: &mut Frame,
+    area: Rect,
+    title: &str,
+    mut lines: Vec<Line<'static>>,
+    yes: &'static str,
+    color: Color,
+) {
+    lines.push(Line::default());
+    lines.push(Line::from(vec![
+        Span::raw("y").bold().fg(color),
+        Span::raw(format!(" {yes}    ")),
+        Span::raw("n").bold(),
+        Span::raw(" or "),
+        Span::raw("Esc").bold(),
+        Span::raw(" go back"),
+    ]));
+    message(frame, area, title, lines, color);
+}
+
+/// A key to press, as it shows in text
+fn key(name: &'static str) -> Span<'static> {
+    Span::raw(name).cyan().bold()
+}
+
+/// A numbered step
+fn step(number: usize, text: Vec<Span<'static>>) -> Line<'static> {
+    let mut spans = vec![Span::raw(format!("{number}  ")).cyan().bold()];
+    spans.extend(text);
+    Line::from(spans)
+}
+
+/// A labeled line, the label in its own color, so lines line up
+fn labeled(label: &'static str, color: Color, text: Vec<Span<'static>>) -> Line<'static> {
+    let mut spans = vec![Span::raw(format!("{label:<12}")).fg(color).bold()];
+    spans.extend(text);
+    Line::from(spans)
+}
+
+fn tick(text: String) -> Line<'static> {
+    Line::from(vec![Span::raw("✓ ").green().bold(), Span::raw(text)])
+}
+
+fn cross(text: String) -> Line<'static> {
+    Line::from(vec![Span::raw("✗ ").red().bold(), Span::raw(text).red()])
+}
+
+fn back_home() -> Line<'static> {
+    Line::from(vec![
+        Span::raw("Press "),
+        key("Enter"),
+        Span::raw(" to go back to Home."),
+    ])
+}
+
+/// A box of text sized to fit, at the top of `area`. Returns the rest.
+fn about_box(frame: &mut Frame, area: Rect, lines: Vec<Line<'static>>) -> Rect {
+    let height = (rows(&lines, area.width.saturating_sub(4)) + 2).min(area.height);
+    let [about, rest] =
+        Layout::vertical([Constraint::Length(height), Constraint::Fill(1)]).areas(area);
     frame.render_widget(
-        Paragraph::new(reason.to_string())
-            .red()
-            .wrap(Wrap { trim: true })
-            .block(
-                Block::bordered()
-                    .title(format!(" {title} "))
-                    .padding(Padding::horizontal(1)),
-            ),
-        area,
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .block(Block::bordered().padding(Padding::horizontal(1))),
+        about,
     );
+    rest
 }
 
 /// The date part of a time `simctl` gives, such as `2026-09-17`
@@ -122,13 +208,99 @@ fn day(time: &str) -> &str {
     time.split('T').next().unwrap_or(time)
 }
 
-/// What deleting each runtime did: its name, and why it failed if it did
-type Deleted = Vec<(String, Result<(), String>)>;
+/// `count` of `noun`, adding an s when it is not one
+fn counted(count: usize, noun: &str) -> String {
+    if count == 1 {
+        format!("1 {noun}")
+    } else {
+        format!("{count} {noun}s")
+    }
+}
 
-/// Every simulator runtime, to delete with `xcrun simctl` after a red
-/// question. Nothing starts selected.
+/// The simulator runtimes and devices `simctl` knows
+pub struct SimulatorsFound {
+    runtimes: Vec<Runtime>,
+    devices: Vec<Device>,
+}
+
+impl SimulatorsFound {
+    /// Simulators whose runtime is gone, which can never start again
+    fn stranded(&self) -> Vec<&Device> {
+        self.devices
+            .iter()
+            .filter(|device| !device.available)
+            .collect()
+    }
+
+    /// The simulators that run on `runtime`, removed with it
+    fn on(&self, runtime: &Runtime) -> Vec<&Device> {
+        self.devices
+            .iter()
+            .filter(|device| {
+                device.available
+                    && !runtime.runtime_identifier.is_empty()
+                    && device.runtime == runtime.runtime_identifier
+            })
+            .collect()
+    }
+
+    /// One row per runtime, and one for stranded simulators if there are any
+    fn row_count(&self) -> usize {
+        self.runtimes.len() + usize::from(!self.stranded().is_empty())
+    }
+}
+
+fn size_of(devices: &[&Device]) -> u64 {
+    devices.iter().map(|device| device.size).sum()
+}
+
+/// One runtime as a table row, with the simulators on it
+fn runtime_row(runtime: &Runtime, on: &[&Device], chosen: bool) -> Row<'static> {
+    let row = Row::new([
+        Cell::from(checkbox(chosen, runtime.deletable)),
+        Cell::from(runtime.name.clone()),
+        Cell::from(runtime.build.clone()),
+        Cell::from(
+            Line::from(format::size_span(runtime.size, format::size(runtime.size))).right_aligned(),
+        ),
+        Cell::from(
+            runtime
+                .last_used
+                .as_deref()
+                .map_or("never", day)
+                .to_string(),
+        ),
+        Cell::from(if runtime.deletable {
+            Span::raw(format!(
+                "{}, {}",
+                counted(on.len(), "simulator"),
+                format::size(size_of(on))
+            ))
+        } else {
+            Span::raw("simctl will not delete it").italic()
+        }),
+    ]);
+    if runtime.deletable {
+        row
+    } else {
+        row.dark_gray()
+    }
+}
+
+/// What removing did
+pub struct Removal {
+    /// Each runtime's name and size, and why it failed if it did
+    runtimes: Vec<(String, u64, Result<(), String>)>,
+    devices: usize,
+    devices_size: u64,
+    /// Why simulators were not removed
+    device_errors: Vec<String>,
+}
+
+/// Every simulator runtime, and simulators left without one, to delete with
+/// `xcrun simctl` after a red question. Nothing starts selected.
 pub struct Simulators {
-    stage: Stage<Vec<Runtime>, Deleted>,
+    stage: Stage<SimulatorsFound, Removal>,
     chosen: Vec<bool>,
     list: TableState,
 }
@@ -136,11 +308,15 @@ pub struct Simulators {
 impl Simulators {
     pub fn new() -> Self {
         Self::with(Stage::look(|| {
-            tools::runtimes().map_err(|error| format!("simctl could not list runtimes: {error}"))
+            let runtimes = tools::runtimes()
+                .map_err(|error| format!("simctl could not list runtimes: {error}"))?;
+            let devices = tools::devices()
+                .map_err(|error| format!("simctl could not list simulators: {error}"))?;
+            Ok(SimulatorsFound { runtimes, devices })
         }))
     }
 
-    fn with(stage: Stage<Vec<Runtime>, Deleted>) -> Self {
+    fn with(stage: Stage<SimulatorsFound, Removal>) -> Self {
         Self {
             stage,
             chosen: Vec::new(),
@@ -148,15 +324,12 @@ impl Simulators {
         }
     }
 
-    fn runtimes(&self) -> &[Runtime] {
-        match &self.stage {
-            Stage::Ready(runtimes) | Stage::Asking(runtimes) => runtimes,
-            _ => &[],
-        }
-    }
-
-    fn picked(&self) -> Vec<&Runtime> {
-        self.runtimes()
+    fn picked_runtimes(&self) -> Vec<&Runtime> {
+        let Some(found) = self.stage.found() else {
+            return Vec::new();
+        };
+        found
+            .runtimes
             .iter()
             .zip(&self.chosen)
             .filter(|(_, chosen)| **chosen)
@@ -164,68 +337,88 @@ impl Simulators {
             .collect()
     }
 
+    fn stranded_picked(&self) -> bool {
+        self.stage.found().is_some_and(|found| {
+            !found.stranded().is_empty() && self.chosen.get(found.runtimes.len()) == Some(&true)
+        })
+    }
+
+    /// Everything that goes, in bytes
+    fn picked_size(&self) -> u64 {
+        let Some(found) = self.stage.found() else {
+            return 0;
+        };
+        let runtimes: u64 = self
+            .picked_runtimes()
+            .iter()
+            .map(|runtime| runtime.size + size_of(&found.on(runtime)))
+            .sum();
+        let stranded = if self.stranded_picked() {
+            size_of(&found.stranded())
+        } else {
+            0
+        };
+        runtimes + stranded
+    }
+
+    fn nothing_picked(&self) -> bool {
+        self.picked_runtimes().is_empty() && !self.stranded_picked()
+    }
+
     fn draw_list(&mut self, frame: &mut Frame, area: Rect) {
-        let runtimes = self.runtimes().to_vec();
-        self.chosen.resize(runtimes.len(), false);
-        let picked = self.picked();
-        let picked_size: u64 = picked.iter().map(|runtime| runtime.size).sum();
-        let total: u64 = runtimes.iter().map(|runtime| runtime.size).sum();
-        let rows: Vec<Row> = runtimes
+        let Some(found) = self.stage.found() else {
+            return;
+        };
+        let stranded = found.stranded();
+        let mut rows: Vec<Row> = found
+            .runtimes
             .iter()
             .zip(&self.chosen)
-            .map(|(runtime, &chosen)| {
-                let row = Row::new([
-                    Cell::from(checkbox(chosen, runtime.deletable)),
-                    Cell::from(runtime.name.clone()),
-                    Cell::from(runtime.build.clone()),
-                    Cell::from(
-                        Line::from(format::size_span(runtime.size, format::size(runtime.size)))
-                            .right_aligned(),
-                    ),
-                    Cell::from(
-                        runtime
-                            .last_used
-                            .as_deref()
-                            .map_or("never", day)
-                            .to_string(),
-                    ),
-                    Cell::from(if runtime.deletable {
-                        Span::raw("")
-                    } else {
-                        Span::raw("simctl will not delete it").italic()
-                    }),
-                ]);
-                if runtime.deletable {
-                    row
-                } else {
-                    row.dark_gray()
-                }
-            })
+            .map(|(runtime, &chosen)| runtime_row(runtime, &found.on(runtime), chosen))
             .collect();
+        if !stranded.is_empty() {
+            let size = size_of(&stranded);
+            rows.push(Row::new([
+                Cell::from(checkbox(
+                    self.chosen.get(found.runtimes.len()) == Some(&true),
+                    true,
+                )),
+                Cell::from(Span::raw("No runtime").yellow()),
+                Cell::from(""),
+                Cell::from(Line::from(format::size_span(size, format::size(size))).right_aligned()),
+                Cell::from(""),
+                Cell::from(format!(
+                    "{} that cannot start",
+                    counted(stranded.len(), "simulator")
+                )),
+            ]));
+        }
         let header = Row::new([
             Cell::from(""),
             Cell::from("Runtime"),
             Cell::from("Build"),
             Cell::from(Line::from("Size").right_aligned()),
             Cell::from("Last used"),
-            Cell::from(""),
+            Cell::from("Simulators on it"),
         ])
         .bold()
         .bottom_margin(1);
-        let selected = Span::raw(format!(
-            " Selected: {} of {} · {} ",
-            picked.len(),
-            runtimes.len(),
-            format::size(picked_size)
-        ));
+        let total = found
+            .runtimes
+            .iter()
+            .map(|runtime| runtime.size)
+            .sum::<u64>()
+            + size_of(&found.devices.iter().collect::<Vec<_>>());
+        let picked = self.picked_size();
+        let selected = Span::raw(format!(" Selected: {} ", format::size(picked)));
         let table = Table::new(
             rows,
             [
                 Constraint::Length(3),
-                Constraint::Length(16),
-                Constraint::Length(10),
-                Constraint::Length(9),
                 Constraint::Length(12),
+                Constraint::Length(8),
+                Constraint::Length(9),
+                Constraint::Length(11),
                 Constraint::Fill(1),
             ],
         )
@@ -233,8 +426,8 @@ impl Simulators {
         .column_spacing(2)
         .block(
             Block::bordered()
-                .title(format!(" Simulator runtimes · {} ", format::size(total)))
-                .title_bottom(if picked.is_empty() {
+                .title(format!(" Simulators · {} ", format::size(total)))
+                .title_bottom(if picked == 0 {
                     selected
                 } else {
                     selected.red().bold()
@@ -245,119 +438,254 @@ impl Simulators {
         .row_highlight_style(Style::new().bold());
         frame.render_stateful_widget(table, area, &mut self.list);
     }
+
+    fn about(&self) -> Vec<Line<'static>> {
+        let mut lines = vec![
+            labeled(
+                "Runtime",
+                Color::Cyan,
+                vec![Span::raw(
+                    "lets Xcode run simulators of one iOS, watchOS, tvOS, or visionOS version.",
+                )],
+            ),
+            labeled(
+                "Removes",
+                Color::Red,
+                vec![Span::raw(
+                    "the runtimes you select and every simulator on them, apps and data included.",
+                )],
+            ),
+        ];
+        if self
+            .stage
+            .found()
+            .is_some_and(|found| !found.stranded().is_empty())
+        {
+            lines.push(labeled(
+                "No runtime",
+                Color::Yellow,
+                vec![Span::raw(
+                    "simulators whose runtime is gone. They can never start again.",
+                )],
+            ));
+        }
+        lines.push(labeled(
+            "Undo",
+            Color::Green,
+            vec![Span::raw(
+                "Xcode downloads a runtime again in Settings, Components.",
+            )],
+        ));
+        lines.push(Line::default());
+        lines.push(Line::from(vec![
+            Span::raw("Permanently: ").red().bold(),
+            Span::raw("none of it goes to the Trash."),
+        ]));
+        lines
+    }
+
+    fn question(&self) -> Vec<Line<'static>> {
+        let Some(found) = self.stage.found() else {
+            return Vec::new();
+        };
+        let mut lines = vec![Line::from("Permanently remove:").bold(), Line::default()];
+        for runtime in self.picked_runtimes() {
+            let on = found.on(runtime);
+            lines.push(Line::from(vec![
+                Span::raw("•  ").red(),
+                Span::raw(format!("{} runtime", runtime.name)).bold(),
+                Span::raw(format!(", {}", format::size(runtime.size))),
+            ]));
+            if !on.is_empty() {
+                lines.push(Line::from(format!(
+                    "   and {} on it, {}",
+                    counted(on.len(), "simulator"),
+                    format::size(size_of(&on))
+                )));
+            }
+        }
+        if self.stranded_picked() {
+            let stranded = found.stranded();
+            lines.push(Line::from(vec![
+                Span::raw("•  ").red(),
+                Span::raw(format!(
+                    "{} with no runtime",
+                    counted(stranded.len(), "simulator")
+                ))
+                .bold(),
+                Span::raw(format!(", {}", format::size(size_of(&stranded)))),
+            ]));
+        }
+        lines.push(Line::default());
+        lines.push(Line::from(vec![
+            Span::raw("In all  "),
+            Span::raw(format::size(self.picked_size())).red().bold(),
+            Span::raw(". None of it goes to the Trash."),
+        ]));
+        lines
+    }
+
+    fn start_removing(&mut self) {
+        let Some(found) = self.stage.found() else {
+            return;
+        };
+        let runtimes: Vec<(Runtime, Vec<Device>)> = self
+            .picked_runtimes()
+            .into_iter()
+            .map(|runtime| {
+                let on = found.on(runtime).into_iter().cloned().collect();
+                (runtime.clone(), on)
+            })
+            .collect();
+        let stranded: Vec<Device> = if self.stranded_picked() {
+            found.stranded().into_iter().cloned().collect()
+        } else {
+            Vec::new()
+        };
+        self.stage = Stage::Working(
+            Instant::now(),
+            spawn(move || remove_simulators(runtimes, stranded)),
+        );
+    }
+
+    fn done_lines(removal: &Removal) -> (Vec<Line<'static>>, Color) {
+        let freed = removal
+            .runtimes
+            .iter()
+            .filter(|(_, _, result)| result.is_ok())
+            .map(|(_, size, _)| size)
+            .sum::<u64>()
+            + removal.devices_size;
+        let failed = removal
+            .runtimes
+            .iter()
+            .any(|(_, _, result)| result.is_err())
+            || !removal.device_errors.is_empty();
+        let mut lines = vec![if freed > 0 {
+            Line::from(vec![
+                Span::raw("✓ Removed ").green().bold(),
+                Span::raw(format::size(freed)).green().bold(),
+            ])
+        } else {
+            Line::from("Nothing was removed.").yellow().bold()
+        }];
+        lines.push(Line::default());
+        for (name, _, result) in &removal.runtimes {
+            lines.push(match result {
+                Ok(()) => tick(format!("{name} runtime")),
+                Err(reason) => cross(format!("{name} runtime was not removed: {reason}")),
+            });
+        }
+        if removal.devices > 0 {
+            lines.push(tick(counted(removal.devices, "simulator")));
+        }
+        if let Some(reason) = removal.device_errors.first() {
+            lines.push(cross(format!(
+                "{} not removed: {reason}",
+                counted(removal.device_errors.len(), "simulator")
+            )));
+        }
+        lines.push(Line::default());
+        lines.push(Line::from(
+            "Xcode downloads a runtime again in Settings, Components.",
+        ));
+        lines.push(Line::default());
+        lines.push(back_home());
+        (lines, if failed { Color::Yellow } else { Color::Green })
+    }
 }
 
-fn simulators_about(frame: &mut Frame, area: Rect) {
-    let lines = vec![
-        Line::from(
-            "Each runtime lets Xcode run simulators of one iOS, watchOS, tvOS, or visionOS version.",
-        ),
-        Line::default(),
-        Line::from(vec![
-            Span::raw("Permanently: ").red().bold(),
-            Span::raw(
-                "runtimes cannot go to the Trash. neet asks xcrun simctl runtime delete to remove them.",
-            ),
-        ]),
-        Line::from(
-            "Simulators on a deleted runtime stop working until Xcode downloads it again, in Settings, Components.",
-        ),
-        Line::default(),
-        Line::from("Select the ones you do not test on with Space, then press Enter."),
-    ];
-    frame.render_widget(
-        Paragraph::new(lines)
-            .wrap(Wrap { trim: true })
-            .block(Block::bordered().padding(Padding::horizontal(1))),
-        area,
-    );
+/// Removes each runtime, then the simulators on the ones that went, and the
+/// stranded simulators picked
+fn remove_simulators(runtimes: Vec<(Runtime, Vec<Device>)>, stranded: Vec<Device>) -> Removal {
+    let mut removal = Removal {
+        runtimes: Vec::new(),
+        devices: 0,
+        devices_size: 0,
+        device_errors: Vec::new(),
+    };
+    let mut devices = stranded;
+    for (runtime, on) in runtimes {
+        let result = tools::delete_runtime(&runtime.identifier).map_err(|error| error.to_string());
+        // Simulators on a runtime that stays still work.
+        if result.is_ok() {
+            devices.extend(on);
+        }
+        removal.runtimes.push((runtime.name, runtime.size, result));
+    }
+    for device in devices {
+        match tools::delete_device(&device.udid) {
+            Ok(()) => {
+                removal.devices += 1;
+                removal.devices_size += device.size;
+            }
+            Err(error) => removal.device_errors.push(error.to_string()),
+        }
+    }
+    removal
 }
 
 impl Screen for Simulators {
     fn draw(&mut self, frame: &mut Frame, area: Rect, _context: &Context) {
         self.stage.poll();
-        let title = "Simulator runtimes";
+        let title = "Simulators";
         match &self.stage {
             Stage::Looking(started, _) => {
                 return Loading {
                     title,
-                    doing: "Asking xcrun simctl for the runtimes",
+                    doing: "Asking xcrun simctl for runtimes and simulators",
                     progress: format!("{}s", started.elapsed().as_secs()),
                     note: "Nothing is changed while neet looks.",
                 }
                 .draw(frame, area);
             }
-            Stage::Failed(reason) => return failed_box(frame, area, title, reason),
+            Stage::Failed(reason) => {
+                return message(frame, area, title, vec![cross(reason.clone())], Color::Red);
+            }
             Stage::Working(started, _) => {
                 return Loading {
                     title,
-                    doing: "Deleting with xcrun simctl",
+                    doing: "Removing with xcrun simctl",
                     progress: format!("{}s", started.elapsed().as_secs()),
-                    note: "Each runtime is unmounted, then deleted. This can take a minute.",
+                    note: "Each runtime is unmounted and deleted, then its simulators. This can take a minute.",
                 }
                 .draw(frame, area);
             }
-            Stage::Done(deleted) => {
-                let mut lines: Vec<Line> = deleted
-                    .iter()
-                    .map(|(name, result)| match result {
-                        Ok(()) => Line::from(vec![
-                            Span::raw("✓ ").green().bold(),
-                            Span::raw(format!("{name} deleted")),
-                        ]),
-                        Err(reason) => Line::from(vec![
-                            Span::raw("✗ ").red().bold(),
-                            Span::raw(format!("{name} was not deleted: {reason}")),
-                        ]),
-                    })
-                    .collect();
-                lines.push(Line::default());
-                lines.push(Line::from("Press Enter to go back to Home."));
-                frame.render_widget(
-                    Paragraph::new(lines).wrap(Wrap { trim: true }).block(
-                        Block::bordered()
-                            .title(format!(" {title} "))
-                            .padding(Padding::horizontal(1)),
-                    ),
-                    area,
-                );
-                return;
+            Stage::Done(removal) => {
+                let (lines, color) = Self::done_lines(removal);
+                return message(frame, area, title, lines, color);
             }
-            Stage::Ready(runtimes) | Stage::Asking(runtimes) if runtimes.is_empty() => {
-                return failed_box(
+            Stage::Ready(found) | Stage::Asking(found) if found.row_count() == 0 => {
+                return message(
                     frame,
                     area,
                     title,
-                    "There are no simulator runtimes on this Mac.",
+                    vec![
+                        tick("Nothing to remove".to_string()).bold(),
+                        Line::default(),
+                        Line::from("There are no simulator runtimes or simulators on this Mac."),
+                    ],
+                    Color::Green,
                 );
             }
-            Stage::Ready(_) | Stage::Asking(_) => {}
+            Stage::Ready(found) | Stage::Asking(found) => {
+                self.chosen.resize(found.row_count(), false);
+            }
         }
-        let list_height = u16::try_from(self.runtimes().len() + 4).unwrap_or(u16::MAX);
-        let [list, about] =
+        let row_count = self.stage.found().map_or(0, SimulatorsFound::row_count);
+        let list_height = u16::try_from(row_count + 4).unwrap_or(u16::MAX);
+        let [list, rest] =
             Layout::vertical([Constraint::Length(list_height), Constraint::Fill(1)]).areas(area);
         self.draw_list(frame, list);
-        simulators_about(frame, about);
+        about_box(frame, rest, self.about());
         if matches!(self.stage, Stage::Asking(_)) {
-            let picked = self.picked();
-            let size: u64 = picked.iter().map(|runtime| runtime.size).sum();
-            let names: Vec<String> = picked.iter().map(|runtime| runtime.name.clone()).collect();
             ask(
                 frame,
                 area,
                 "Remove permanently",
-                vec![
-                    Line::from(format!(
-                        "Permanently remove {}, {}?",
-                        names.join(", "),
-                        format::size(size)
-                    ))
-                    .bold(),
-                    Line::default(),
-                    Line::from(
-                        "They do not go to the Trash. Simulators that use them stop working until Xcode downloads them again.",
-                    ),
-                ],
+                self.question(),
+                "remove permanently",
+                Color::Red,
             );
         }
     }
@@ -366,23 +694,8 @@ impl Screen for Simulators {
         match &self.stage {
             Stage::Asking(_) => {
                 match key.code {
-                    KeyCode::Char('y') => {
-                        let picked: Vec<Runtime> = self.picked().into_iter().cloned().collect();
-                        self.stage = Stage::Working(
-                            Instant::now(),
-                            spawn(move || {
-                                picked
-                                    .into_iter()
-                                    .map(|runtime| {
-                                        let result = tools::delete_runtime(&runtime.identifier)
-                                            .map_err(|error| error.to_string());
-                                        (runtime.name, result)
-                                    })
-                                    .collect()
-                            }),
-                        );
-                    }
-                    KeyCode::Char('n') => self.back_to_list(),
+                    KeyCode::Char('y') => self.start_removing(),
+                    KeyCode::Char('n') => self.stage.back_to_ready(),
                     _ => {}
                 }
                 return Action::None;
@@ -397,28 +710,25 @@ impl Screen for Simulators {
             Stage::Ready(_) => {}
             _ => return Action::None,
         }
+        let Some(found) = self.stage.found() else {
+            return Action::None;
+        };
         let index = self.list.selected().unwrap_or(0);
-        let last = self.runtimes().len().saturating_sub(1);
+        let last = found.row_count().saturating_sub(1);
+        let selectable = found
+            .runtimes
+            .get(index)
+            .map_or(index < found.row_count(), |runtime| runtime.deletable);
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => self.list.select(Some(index.saturating_sub(1))),
             KeyCode::Down | KeyCode::Char('j') => self.list.select(Some((index + 1).min(last))),
-            KeyCode::Char(' ') => {
-                if self
-                    .runtimes()
-                    .get(index)
-                    .is_some_and(|runtime| runtime.deletable)
-                    && let Some(chosen) = self.chosen.get_mut(index)
-                {
+            KeyCode::Char(' ') if selectable => {
+                self.chosen.resize(found.row_count(), false);
+                if let Some(chosen) = self.chosen.get_mut(index) {
                     *chosen = !*chosen;
                 }
             }
-            KeyCode::Enter if !self.picked().is_empty() => {
-                if let Stage::Ready(runtimes) =
-                    std::mem::replace(&mut self.stage, Stage::Failed(String::new()))
-                {
-                    self.stage = Stage::Asking(runtimes);
-                }
-            }
+            KeyCode::Enter if !self.nothing_picked() => self.stage.ask(),
             _ => {}
         }
         Action::None
@@ -427,7 +737,7 @@ impl Screen for Simulators {
     fn back(&mut self) -> Action {
         match self.stage {
             Stage::Asking(_) => {
-                self.back_to_list();
+                self.stage.back_to_ready();
                 Action::None
             }
             Stage::Working(..) => Action::None,
@@ -439,7 +749,7 @@ impl Screen for Simulators {
     fn hints(&self) -> &'static str {
         match self.stage {
             Stage::Asking(_) => "y remove permanently · n or esc back",
-            Stage::Working(..) => "deleting, please wait",
+            Stage::Working(..) => "removing, please wait",
             Stage::Done(_) => "enter or esc home",
             _ => "↑↓ move · space select · enter remove · esc back · ? help",
         }
@@ -448,9 +758,9 @@ impl Screen for Simulators {
     fn help(&self) -> &'static [(&'static str, &'static str)] {
         &[
             ("↑ ↓  j k", "Move the selection"),
-            ("Space", "Select or clear a runtime"),
-            ("Enter", "Ask before deleting the selected runtimes"),
-            ("y", "In the question: delete them permanently"),
+            ("Space", "Select or clear a row"),
+            ("Enter", "Ask before removing what is selected"),
+            ("y", "In the question: remove it permanently"),
             ("n  Esc", "In the question: go back"),
         ]
     }
@@ -460,20 +770,49 @@ impl Screen for Simulators {
     }
 }
 
-impl Simulators {
-    fn back_to_list(&mut self) {
-        if let Stage::Asking(runtimes) =
-            std::mem::replace(&mut self.stage, Stage::Failed(String::new()))
-        {
-            self.stage = Stage::Ready(runtimes);
-        }
-    }
+/// What Docker holds, and what neet can do about it
+pub struct DockerFound {
+    docker: Docker,
+    /// Volumes no container uses, which the prune keeps unless picked
+    volumes: Vec<DockerVolume>,
+    /// The space Docker Desktop's disk image takes, if it has one
+    image: Option<u64>,
+}
+
+/// Which question is open
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Question {
+    Prune,
+    Reset,
+}
+
+/// What Docker did
+pub enum DockerDone {
+    Pruned {
+        /// The space Docker says it freed, or why the prune failed
+        space: Result<String, String>,
+        /// Each volume picked, and why it failed if it did
+        volumes: Vec<(String, Result<(), String>)>,
+    },
+    /// The space the disk image took, or why it was not moved
+    Reset(Result<u64, String>),
+}
+
+fn cleanup_roots() -> Result<CleanupRoots, String> {
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or_else(|| "HOME is not set.".to_string())?;
+    CleanupRoots::new(&home).map_err(|error| format!("The home folder could not be read: {error}"))
 }
 
 /// Docker's images, containers, volumes, and build cache, to prune with
-/// `docker system prune` after a red question
+/// `docker system prune` after a red question, or to reset by moving its
+/// whole disk image to the Trash
 pub struct DockerSpace {
-    stage: Stage<Docker, Result<String, String>>,
+    stage: Stage<DockerFound, DockerDone>,
+    question: Question,
+    chosen: Vec<bool>,
+    list: TableState,
     note: Option<String>,
 }
 
@@ -482,107 +821,422 @@ impl DockerSpace {
         Self::with(Self::looking())
     }
 
-    fn looking() -> Stage<Docker, Result<String, String>> {
+    fn looking() -> Stage<DockerFound, DockerDone> {
         Stage::look(|| {
-            tools::docker_usage()
-                .map_err(|error| format!("Docker could not say what it holds: {error}"))
+            let docker = tools::docker_usage()
+                .map_err(|error| format!("Docker could not say what it holds: {error}"))?;
+            let volumes = if matches!(docker, Docker::Usage(_)) {
+                tools::unused_volumes().unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+            let image = cleanup_roots()
+                .ok()
+                .and_then(|roots| tools::docker_image(&roots))
+                .map(|(_, size)| size);
+            Ok(DockerFound {
+                docker,
+                volumes,
+                image,
+            })
         })
     }
 
-    fn with(stage: Stage<Docker, Result<String, String>>) -> Self {
-        Self { stage, note: None }
+    fn with(stage: Stage<DockerFound, DockerDone>) -> Self {
+        Self {
+            stage,
+            question: Question::Prune,
+            chosen: Vec::new(),
+            list: TableState::default().with_selected(Some(0)),
+            note: None,
+        }
     }
 
-    fn draw_usage(&self, frame: &mut Frame, area: Rect, usage: &[tools::DockerUsage]) {
-        let rows: Vec<Row> = usage
-            .iter()
-            .map(|line| {
-                let reclaim = if line.reclaimable.starts_with("0B") {
-                    Span::raw(line.reclaimable.clone())
-                } else {
-                    Span::raw(line.reclaimable.clone()).yellow().bold()
-                };
-                Row::new([
-                    Cell::from(line.kind.clone()),
-                    Cell::from(Line::from(line.total_count.clone()).right_aligned()),
-                    Cell::from(Line::from(line.active.clone()).right_aligned()),
-                    Cell::from(Line::from(line.size.clone()).right_aligned()),
-                    Cell::from(reclaim),
-                ])
-            })
-            .collect();
-        let header = Row::new([
-            Cell::from("Kind"),
-            Cell::from(Line::from("Count").right_aligned()),
-            Cell::from(Line::from("In use").right_aligned()),
-            Cell::from(Line::from("Size").right_aligned()),
-            Cell::from("Can be freed"),
-        ])
-        .bold()
-        .bottom_margin(1);
-        let height = u16::try_from(usage.len() + 4).unwrap_or(u16::MAX);
-        let [table, about] =
-            Layout::vertical([Constraint::Length(height), Constraint::Fill(1)]).areas(area);
-        frame.render_widget(
-            Table::new(
-                rows,
-                [
-                    Constraint::Length(14),
-                    Constraint::Length(6),
-                    Constraint::Length(7),
-                    Constraint::Length(10),
-                    Constraint::Fill(1),
-                ],
-            )
-            .header(header)
-            .column_spacing(2)
-            .block(
-                Block::bordered()
-                    .title(" Docker ")
-                    .padding(Padding::horizontal(1)),
-            ),
-            table,
-        );
+    fn image(&self) -> Option<u64> {
+        self.stage.found().and_then(|found| found.image)
+    }
+
+    fn picked_volumes(&self) -> Vec<&DockerVolume> {
+        self.stage.found().map_or_else(Vec::new, |found| {
+            found
+                .volumes
+                .iter()
+                .zip(&self.chosen)
+                .filter(|(_, chosen)| **chosen)
+                .map(|(volume, _)| volume)
+                .collect()
+        })
+    }
+
+    fn reset_line(image: u64) -> Line<'static> {
+        labeled(
+            "Reset",
+            Color::Yellow,
+            vec![
+                key("x"),
+                Span::raw(" quits Docker Desktop and moves its whole disk image, "),
+                Span::raw(format::size(image)).bold(),
+                Span::raw(", to the Trash."),
+            ],
+        )
+    }
+
+    fn not_running_lines(&self) -> Vec<Line<'static>> {
         let mut lines = vec![
-            Line::from("Enter runs docker system prune --all. It removes:").bold(),
+            Line::from("Docker Desktop is not running").yellow().bold(),
+            Line::from("Docker can only say what it holds, and prune, while it runs."),
+            Line::default(),
+            step(
+                1,
+                vec![
+                    Span::raw("Press "),
+                    key("o"),
+                    Span::raw(" to open Docker Desktop"),
+                ],
+            ),
+            step(
+                2,
+                vec![Span::raw(
+                    "Wait for the whale in the menu bar to stop moving",
+                )],
+            ),
+            step(
+                3,
+                vec![Span::raw("Press "), key("r"), Span::raw(" to look again")],
+            ),
+        ];
+        if let Some(image) = self.image() {
+            lines.push(Line::default());
+            lines.push(Line::from(vec![
+                Span::raw("Or press "),
+                key("x"),
+                Span::raw(" to reset Docker without opening it."),
+            ]));
+            lines.push(Line::from(vec![
+                Span::raw("Its disk image, "),
+                Span::raw(format::size(image)).bold(),
+                Span::raw(", goes to the Trash."),
+            ]));
+        }
+        if let Some(note) = &self.note {
+            lines.push(Line::default());
+            lines.push(Line::from(note.clone()).cyan());
+        }
+        lines
+    }
+
+    fn draw_usage(&mut self, frame: &mut Frame, area: Rect) {
+        let Some(found) = self.stage.found() else {
+            return;
+        };
+        let Docker::Usage(usage) = &found.docker else {
+            return;
+        };
+        let volumes = found.volumes.clone();
+        let image = found.image;
+        let usage_height = u16::try_from(usage.len() + 4).unwrap_or(u16::MAX);
+        let [table, rest] =
+            Layout::vertical([Constraint::Length(usage_height), Constraint::Fill(1)]).areas(area);
+        frame.render_widget(usage_table(usage), table);
+
+        let rest = if volumes.is_empty() {
+            rest
+        } else {
+            let height = u16::try_from(volumes.len() + 2).unwrap_or(u16::MAX);
+            let [list, rest] =
+                Layout::vertical([Constraint::Length(height), Constraint::Fill(1)]).areas(rest);
+            self.chosen.resize(volumes.len(), false);
+            let picked = self.picked_volumes().len();
+            frame.render_stateful_widget(
+                volume_table(&volumes, &self.chosen, picked),
+                list,
+                &mut self.list,
+            );
+            rest
+        };
+
+        let mut lines = vec![
             Line::from(vec![
-                Span::raw("1. ").red(),
-                Span::raw("Stopped containers."),
+                key("Enter"),
+                Span::raw(" runs "),
+                Span::raw("docker system prune --all").bold(),
             ]),
-            Line::from(vec![
-                Span::raw("2. ").red(),
-                Span::raw("Networks no container uses."),
-            ]),
-            Line::from(vec![
-                Span::raw("3. ").red(),
-                Span::raw(
-                    "Every image no container uses. Docker downloads them again when needed.",
-                ),
-            ]),
-            Line::from(vec![Span::raw("4. ").red(), Span::raw("The build cache.")]),
+            Line::default(),
+            labeled(
+                "Removes",
+                Color::Red,
+                vec![Span::raw(
+                    "stopped containers, unused networks, images no container uses, and the build cache",
+                )],
+            ),
+            labeled(
+                "Keeps",
+                Color::Green,
+                vec![Span::raw(
+                    "running containers and their images, and volumes you do not select",
+                )],
+            ),
+        ];
+        if let Some(image) = image {
+            lines.push(Self::reset_line(image));
+        }
+        lines.push(Line::default());
+        lines.push(Line::from(vec![
+            Span::raw("Permanently: ").red().bold(),
+            Span::raw("what the prune removes skips the Trash."),
+        ]));
+        if let Some(note) = &self.note {
+            lines.push(Line::default());
+            lines.push(Line::from(note.clone()).cyan());
+        }
+        about_box(frame, rest, lines);
+    }
+
+    fn prune_question(&self) -> Vec<Line<'static>> {
+        let mut lines = vec![
+            Line::from("Run docker system prune --all?").bold(),
+            Line::default(),
+            Line::from(
+                "Stopped containers, unused networks, every unused image, and the build cache are removed permanently.",
+            ),
+        ];
+        let volumes = self.picked_volumes();
+        if volumes.is_empty() {
+            lines.push(Line::from("Volumes are kept."));
+        } else {
+            lines.push(Line::default());
+            lines.push(Line::from("And these volumes, with their data:").bold());
+            for volume in volumes {
+                lines.push(Line::from(vec![
+                    Span::raw("•  ").red(),
+                    Span::raw(volume.name.clone()).bold(),
+                    Span::raw(format!(", {}", volume.size)),
+                ]));
+            }
+        }
+        lines
+    }
+
+    fn reset_question(&self) -> Vec<Line<'static>> {
+        let size = self.image().map_or_else(String::new, format::size);
+        vec![
+            Line::from(format!(
+                "Quit Docker Desktop and move its disk image, {size}, to the Trash?"
+            ))
+            .bold(),
+            Line::default(),
+            Line::from("Every image, container, and volume goes with it, databases included."),
+            Line::from(
+                "Docker Desktop starts empty next time and downloads images again as needed.",
+            ),
             Line::default(),
             Line::from(vec![
-                Span::raw("Kept: ").green().bold(),
-                Span::raw(
-                    "running containers, the images they use, and every volume, where databases keep their data.",
-                ),
+                Span::raw("Undo: ").green().bold(),
+                Span::raw("Put Back Docker.raw before opening Docker Desktop again."),
             ]),
-            Line::from(vec![
-                Span::raw("Permanently: ").red().bold(),
-                Span::raw("none of it goes to the Trash."),
-            ]),
-        ];
-        if let Some(note) = &self.note {
-            lines.insert(0, Line::from(note.clone()).yellow());
-            lines.insert(1, Line::default());
-        }
-        frame.render_widget(
-            Paragraph::new(lines)
-                .wrap(Wrap { trim: true })
-                .block(Block::bordered().padding(Padding::horizontal(1))),
-            about,
-        );
+        ]
     }
+
+    fn start(&mut self) {
+        let work = match self.question {
+            Question::Prune => {
+                let volumes: Vec<String> = self
+                    .picked_volumes()
+                    .iter()
+                    .map(|volume| volume.name.clone())
+                    .collect();
+                spawn(move || {
+                    let space = tools::docker_prune().map_err(|error| error.to_string());
+                    let volumes = volumes
+                        .into_iter()
+                        .map(|name| {
+                            let result =
+                                tools::remove_volume(&name).map_err(|error| error.to_string());
+                            (name, result)
+                        })
+                        .collect();
+                    DockerDone::Pruned { space, volumes }
+                })
+            }
+            Question::Reset => spawn(|| {
+                DockerDone::Reset(
+                    cleanup_roots()
+                        .and_then(|roots| tools::reset_docker(&roots).map_err(|e| e.to_string())),
+                )
+            }),
+        };
+        self.stage = Stage::Working(Instant::now(), work);
+    }
+
+    fn done_lines(done: &DockerDone) -> (Vec<Line<'static>>, Color) {
+        let mut lines = Vec::new();
+        let mut color = Color::Green;
+        match done {
+            DockerDone::Pruned { space, volumes } => {
+                match space {
+                    Ok(space) if space.starts_with("0B") && volumes.is_empty() => {
+                        color = Color::Yellow;
+                        lines.push(Line::from("Docker had nothing to free").yellow().bold());
+                        lines.push(Line::default());
+                        lines.push(Line::from(
+                            "What is left belongs to running containers, or sits in volumes.",
+                        ));
+                        lines.push(Line::from(vec![
+                            Span::raw("To clear all of it, press "),
+                            key("r"),
+                            Span::raw(", then "),
+                            key("x"),
+                            Span::raw(" to reset Docker."),
+                        ]));
+                    }
+                    Ok(space) => {
+                        lines.push(Line::from(vec![
+                            Span::raw("✓ Docker freed ").green().bold(),
+                            Span::raw(space.clone()).green().bold(),
+                        ]));
+                    }
+                    Err(reason) => {
+                        color = Color::Red;
+                        lines.push(cross(format!("The prune failed: {reason}")));
+                    }
+                }
+                if !volumes.is_empty() {
+                    lines.push(Line::default());
+                }
+                for (name, result) in volumes {
+                    lines.push(match result {
+                        Ok(()) => tick(format!("Volume {name} removed")),
+                        Err(reason) => {
+                            color = Color::Yellow;
+                            cross(format!("Volume {name} was not removed: {reason}"))
+                        }
+                    });
+                }
+                if color == Color::Green {
+                    lines.push(Line::default());
+                    lines.push(Line::from(
+                        "Docker's disk image gives the space back to macOS over a few minutes.",
+                    ));
+                }
+            }
+            DockerDone::Reset(Ok(size)) => {
+                lines.push(tick("Docker is reset".to_string()).bold());
+                lines.push(Line::default());
+                lines.push(Line::from(vec![
+                    Span::raw("Its disk image, "),
+                    Span::raw(format::size(*size)).bold(),
+                    Span::raw(", is in the Trash."),
+                ]));
+                lines.push(Line::from("Empty the Trash to free the space."));
+                lines.push(Line::from(
+                    "Docker Desktop makes a new, empty disk image when it opens.",
+                ));
+                lines.push(Line::default());
+                lines.push(Line::from(vec![
+                    Span::raw("Undo: ").green().bold(),
+                    Span::raw("Put Back Docker.raw before opening Docker Desktop again."),
+                ]));
+            }
+            DockerDone::Reset(Err(reason)) => {
+                color = Color::Red;
+                lines.push(cross(format!("Docker was not reset: {reason}")));
+                lines.push(Line::default());
+                lines.push(Line::from("Nothing was moved."));
+            }
+        }
+        lines.push(Line::default());
+        lines.push(back_home());
+        (lines, color)
+    }
+}
+
+/// The volumes no container uses, to pick for the prune
+fn volume_table(volumes: &[DockerVolume], chosen: &[bool], picked: usize) -> Table<'static> {
+    let rows: Vec<Row> = volumes
+        .iter()
+        .zip(chosen)
+        .map(|(volume, &chosen)| {
+            Row::new([
+                Cell::from(checkbox(chosen, true)),
+                Cell::from(Line::from(Span::raw(volume.size.clone()).yellow()).right_aligned()),
+                Cell::from(volume.name.clone()),
+            ])
+        })
+        .collect();
+    let bottom = if picked == 0 {
+        Span::raw(" Space selects one to remove with the prune ")
+    } else {
+        Span::raw(format!(
+            " {} removed permanently, data included ",
+            counted(picked, "volume")
+        ))
+        .red()
+        .bold()
+    };
+    Table::new(
+        rows,
+        [
+            Constraint::Length(3),
+            Constraint::Length(10),
+            Constraint::Fill(1),
+        ],
+    )
+    .column_spacing(2)
+    .block(
+        Block::bordered()
+            .title(" Volumes no container uses ")
+            .title_bottom(bottom)
+            .padding(Padding::horizontal(1)),
+    )
+    .highlight_symbol("▸ ")
+    .row_highlight_style(Style::new().bold())
+}
+
+/// `docker system df`, as a table
+fn usage_table(usage: &[DockerUsage]) -> Table<'static> {
+    let rows: Vec<Row> = usage
+        .iter()
+        .map(|line| {
+            let reclaim = if line.reclaimable.starts_with("0B") {
+                Span::raw(line.reclaimable.clone())
+            } else {
+                Span::raw(line.reclaimable.clone()).yellow().bold()
+            };
+            Row::new([
+                Cell::from(line.kind.clone()),
+                Cell::from(Line::from(line.total_count.clone()).right_aligned()),
+                Cell::from(Line::from(line.active.clone()).right_aligned()),
+                Cell::from(Line::from(line.size.clone()).right_aligned()),
+                Cell::from(reclaim),
+            ])
+        })
+        .collect();
+    let header = Row::new([
+        Cell::from("Kind"),
+        Cell::from(Line::from("Count").right_aligned()),
+        Cell::from(Line::from("In use").right_aligned()),
+        Cell::from(Line::from("Size").right_aligned()),
+        Cell::from("Can be freed"),
+    ])
+    .bold()
+    .bottom_margin(1);
+    Table::new(
+        rows,
+        [
+            Constraint::Length(14),
+            Constraint::Length(6),
+            Constraint::Length(7),
+            Constraint::Length(10),
+            Constraint::Fill(1),
+        ],
+    )
+    .header(header)
+    .column_spacing(2)
+    .block(
+        Block::bordered()
+            .title(" Docker ")
+            .padding(Padding::horizontal(1)),
+    )
 }
 
 impl Screen for DockerSpace {
@@ -597,84 +1251,71 @@ impl Screen for DockerSpace {
                 note: "Nothing is changed while neet looks.",
             }
             .draw(frame, area),
-            Stage::Failed(reason) => failed_box(frame, area, title, reason),
-            Stage::Ready(Docker::NotInstalled) | Stage::Asking(Docker::NotInstalled) => {
-                failed_box(frame, area, title, "Docker is not installed.");
-            }
-            Stage::Ready(Docker::NotRunning) | Stage::Asking(Docker::NotRunning) => {
-                let mut lines = vec![
-                    Line::from("Docker Desktop is not running, so Docker cannot say what it holds or remove anything.").yellow(),
+            Stage::Failed(reason) => message(
+                frame,
+                area,
+                title,
+                vec![
+                    cross(reason.clone()),
                     Line::default(),
-                    Line::from("1. Press o to open Docker Desktop."),
-                    Line::from("2. Wait until it says it is running."),
-                    Line::from("3. Press r to look again."),
-                ];
-                if let Some(note) = &self.note {
-                    lines.push(Line::default());
-                    lines.push(Line::from(note.clone()));
-                }
-                frame.render_widget(
-                    Paragraph::new(lines).wrap(Wrap { trim: true }).block(
-                        Block::bordered()
-                            .title(format!(" {title} "))
-                            .padding(Padding::horizontal(1)),
-                    ),
-                    area,
-                );
-            }
-            Stage::Ready(Docker::Usage(usage)) => self.draw_usage(frame, area, usage),
-            Stage::Asking(Docker::Usage(usage)) => {
-                self.draw_usage(frame, area, usage);
-                ask(
-                    frame,
-                    area,
-                    "Remove permanently",
-                    vec![
-                        Line::from("Run docker system prune --all?").bold(),
-                        Line::default(),
-                        Line::from(
-                            "Stopped containers, unused networks, every unused image, and the build cache are removed permanently. Volumes are kept.",
-                        ),
-                    ],
-                );
-            }
+                    Line::from(vec![
+                        Span::raw("Press "),
+                        key("r"),
+                        Span::raw(" to look again."),
+                    ]),
+                ],
+                Color::Red,
+            ),
             Stage::Working(started, _) => Loading {
                 title,
-                doing: "Running docker system prune --all",
+                doing: match self.question {
+                    Question::Prune => "Running docker system prune --all",
+                    Question::Reset => "Quitting Docker Desktop, then moving its disk image",
+                },
                 progress: format!("{}s", started.elapsed().as_secs()),
                 note: "This can take a minute.",
             }
             .draw(frame, area),
-            Stage::Done(result) => {
-                let lines = match result {
-                    Ok(space) => vec![
-                        Line::from(vec![
-                            Span::raw("✓ ").green().bold(),
-                            Span::raw("Docker freed "),
-                            Span::raw(space.clone()).green().bold(),
-                            Span::raw("."),
-                        ]),
-                        Line::default(),
-                        Line::from(
-                            "Docker's disk image can take a few minutes to give the space back to macOS.",
-                        ),
-                        Line::default(),
-                        Line::from("Press Enter to go back to Home."),
-                    ],
-                    Err(reason) => vec![
-                        Line::from(format!("✗ The prune failed: {reason}")).red(),
-                        Line::default(),
-                        Line::from("Press Enter to go back to Home."),
-                    ],
-                };
-                frame.render_widget(
-                    Paragraph::new(lines).wrap(Wrap { trim: true }).block(
-                        Block::bordered()
-                            .title(format!(" {title} "))
-                            .padding(Padding::horizontal(1)),
+            Stage::Done(done) => {
+                let (lines, color) = Self::done_lines(done);
+                message(frame, area, title, lines, color);
+            }
+            Stage::Ready(found) | Stage::Asking(found) => {
+                match found.docker {
+                    Docker::NotInstalled => message(
+                        frame,
+                        area,
+                        title,
+                        vec![Line::from(
+                            "Docker is not installed, so there is nothing to clear.",
+                        )],
+                        Color::Reset,
                     ),
-                    area,
-                );
+                    Docker::NotRunning => {
+                        message(frame, area, title, self.not_running_lines(), Color::Yellow);
+                    }
+                    Docker::Usage(_) => self.draw_usage(frame, area),
+                }
+                if matches!(self.stage, Stage::Asking(_)) {
+                    match self.question {
+                        Question::Prune => ask(
+                            frame,
+                            area,
+                            "Remove permanently",
+                            self.prune_question(),
+                            "remove permanently",
+                            Color::Red,
+                        ),
+                        Question::Reset => ask(
+                            frame,
+                            area,
+                            "Reset Docker",
+                            self.reset_question(),
+                            "reset Docker",
+                            Color::Yellow,
+                        ),
+                    }
+                }
             }
         }
     }
@@ -684,41 +1325,63 @@ impl Screen for DockerSpace {
         match &self.stage {
             Stage::Asking(_) => {
                 match key.code {
-                    KeyCode::Char('y') => {
-                        self.stage = Stage::Working(
-                            Instant::now(),
-                            spawn(|| tools::docker_prune().map_err(|error| error.to_string())),
-                        );
-                    }
-                    KeyCode::Char('n') => self.back_to_usage(),
+                    KeyCode::Char('y') => self.start(),
+                    KeyCode::Char('n') => self.stage.back_to_ready(),
                     _ => {}
                 }
                 return Action::None;
             }
             Stage::Done(_) => {
-                return if key.code == KeyCode::Enter {
-                    Action::Home
-                } else {
-                    Action::None
+                return match key.code {
+                    KeyCode::Enter => Action::Home,
+                    KeyCode::Char('r') => {
+                        self.chosen.clear();
+                        self.stage = Self::looking();
+                        Action::None
+                    }
+                    _ => Action::None,
                 };
             }
             Stage::Looking(..) | Stage::Working(..) => return Action::None,
             Stage::Failed(_) | Stage::Ready(_) => {}
         }
+        let (usage, volumes) = match self.stage.found() {
+            Some(found) => (
+                matches!(found.docker, Docker::Usage(_)),
+                found.volumes.len(),
+            ),
+            None => (false, 0),
+        };
+        let index = self.list.selected().unwrap_or(0);
         match key.code {
-            KeyCode::Char('r') => self.stage = Self::looking(),
+            KeyCode::Char('r') => {
+                self.chosen.clear();
+                self.stage = Self::looking();
+            }
             KeyCode::Char('o') => {
                 self.note = Some(match tools::start_docker() {
                     Ok(()) => "Opening Docker Desktop. Press r once it is running.".to_string(),
                     Err(error) => format!("Docker Desktop could not be opened: {error}"),
                 });
             }
-            KeyCode::Enter => {
-                if matches!(self.stage, Stage::Ready(Docker::Usage(_)))
-                    && let Stage::Ready(docker) =
-                        std::mem::replace(&mut self.stage, Stage::Failed(String::new()))
-                {
-                    self.stage = Stage::Asking(docker);
+            KeyCode::Char('x') if self.image().is_some() => {
+                self.question = Question::Reset;
+                self.stage.ask();
+            }
+            KeyCode::Enter if usage => {
+                self.question = Question::Prune;
+                self.stage.ask();
+            }
+            KeyCode::Up | KeyCode::Char('k') if volumes > 0 => {
+                self.list.select(Some(index.saturating_sub(1)));
+            }
+            KeyCode::Down | KeyCode::Char('j') if volumes > 0 => {
+                self.list.select(Some((index + 1).min(volumes - 1)));
+            }
+            KeyCode::Char(' ') if volumes > 0 => {
+                self.chosen.resize(volumes, false);
+                if let Some(chosen) = self.chosen.get_mut(index) {
+                    *chosen = !*chosen;
                 }
             }
             _ => {}
@@ -729,7 +1392,7 @@ impl Screen for DockerSpace {
     fn back(&mut self) -> Action {
         match self.stage {
             Stage::Asking(_) => {
-                self.back_to_usage();
+                self.stage.back_to_ready();
                 Action::None
             }
             Stage::Working(..) => Action::None,
@@ -739,37 +1402,52 @@ impl Screen for DockerSpace {
     }
 
     fn hints(&self) -> &'static str {
-        match self.stage {
+        let reset = self.image().is_some();
+        match &self.stage {
+            Stage::Asking(_) if self.question == Question::Reset => {
+                "y reset Docker · n or esc back"
+            }
             Stage::Asking(_) => "y remove permanently · n or esc back",
-            Stage::Working(..) => "pruning, please wait",
-            Stage::Done(_) => "enter or esc home",
-            Stage::Ready(Docker::Usage(_)) => "enter prune · r look again · esc back · ? help",
-            _ => "o open Docker Desktop · r look again · esc back · ? help",
+            Stage::Working(..) => "working, please wait",
+            Stage::Done(_) => "enter home · r look again · esc home",
+            Stage::Ready(found) => match (&found.docker, found.volumes.is_empty(), reset) {
+                (Docker::Usage(_), false, true) => {
+                    "↑↓ move · space select · enter prune · x reset · r look again · esc back · ? help"
+                }
+                (Docker::Usage(_), false, false) => {
+                    "↑↓ move · space select · enter prune · r look again · esc back · ? help"
+                }
+                (Docker::Usage(_), true, true) => {
+                    "enter prune · x reset · r look again · esc back · ? help"
+                }
+                (Docker::Usage(_), true, false) => "enter prune · r look again · esc back · ? help",
+                (Docker::NotRunning, _, true) => {
+                    "o open Docker Desktop · x reset · r look again · esc back · ? help"
+                }
+                (Docker::NotRunning, _, false) => {
+                    "o open Docker Desktop · r look again · esc back · ? help"
+                }
+                (Docker::NotInstalled, ..) => "esc back · ? help",
+            },
+            _ => "r look again · esc back · ? help",
         }
     }
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
         &[
             ("Enter", "Ask before running docker system prune --all"),
+            ("↑ ↓  j k", "Move between unused volumes"),
+            ("Space", "Select a volume to remove with the prune"),
+            ("x", "Ask before resetting Docker to the Trash"),
             ("o", "Open Docker Desktop"),
             ("r", "Ask Docker again"),
-            ("y", "In the question: remove permanently"),
+            ("y", "In the question: go ahead"),
             ("n  Esc", "In the question: go back"),
         ]
     }
 
     fn is_dialog(&self) -> bool {
         self.stage.is_busy()
-    }
-}
-
-impl DockerSpace {
-    fn back_to_usage(&mut self) {
-        if let Stage::Asking(docker) =
-            std::mem::replace(&mut self.stage, Stage::Failed(String::new()))
-        {
-            self.stage = Stage::Ready(docker);
-        }
     }
 }
 
@@ -782,7 +1460,7 @@ mod tests {
     use ratatui::crossterm::event::KeyModifiers;
 
     fn render(screen: &mut dyn Screen) -> String {
-        let mut terminal = Terminal::new(TestBackend::new(110, 24)).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(110, 30)).unwrap();
         let scan = ScanStatus::Failed(String::new());
         let context = Context {
             scan: &scan,
@@ -830,18 +1508,35 @@ mod tests {
         }
     }
 
+    fn device(name: &str, runtime: &str, available: bool, size: u64) -> Device {
+        Device {
+            udid: "89B174CA-DC9E-4D90".to_string(),
+            name: name.to_string(),
+            runtime: format!(
+                "com.apple.CoreSimulator.SimRuntime.{}",
+                runtime.replace([' ', '.'], "-")
+            ),
+            available,
+            size,
+        }
+    }
+
     #[test]
     fn nothing_is_deleted_without_a_selection_and_a_yes() {
-        let mut screen = Simulators::with(Stage::Ready(vec![
-            runtime("iOS 18.6", 8_800_000_000),
-            runtime("iOS 26.5", 8_500_000_000),
-        ]));
+        let mut screen = Simulators::with(Stage::Ready(SimulatorsFound {
+            runtimes: vec![
+                runtime("iOS 18.6", 8_800_000_000),
+                runtime("iOS 26.5", 8_500_000_000),
+            ],
+            devices: vec![device("iPhone 16 Pro", "iOS 18.6", true, 2_100_000_000)],
+        }));
 
         let text = render(&mut screen);
         assert!(text.contains("iOS 18.6"));
         assert!(text.contains("8.8 GB"));
         assert!(text.contains("2026-09-17"));
-        assert!(text.contains("Selected: 0 of 2"));
+        assert!(text.contains("1 simulator, 2.1 GB"));
+        assert!(text.contains("Selected: 0 B"));
 
         // Nothing selected, so Enter does not ask.
         press(&mut screen, KeyCode::Enter);
@@ -849,7 +1544,10 @@ mod tests {
 
         press(&mut screen, KeyCode::Char(' '));
         press(&mut screen, KeyCode::Enter);
-        assert!(render(&mut screen).contains("Permanently remove iOS 18.6, 8.8 GB?"));
+        let text = render(&mut screen);
+        assert!(text.contains("iOS 18.6 runtime, 8.8 GB"));
+        assert!(text.contains("and 1 simulator on it, 2.1 GB"));
+        assert!(text.contains("10.9 GB"));
         assert!(screen.is_dialog());
 
         // n goes back without deleting.
@@ -861,32 +1559,142 @@ mod tests {
     }
 
     #[test]
+    fn simulators_with_no_runtime_get_their_own_row() {
+        let mut screen = Simulators::with(Stage::Ready(SimulatorsFound {
+            runtimes: Vec::new(),
+            devices: vec![
+                device("iPhone 16 Pro", "iOS 18.6", false, 2_000_000_000),
+                device("iPhone 16", "iOS 18.6", false, 1_000_000_000),
+            ],
+        }));
+
+        let text = render(&mut screen);
+        assert!(text.contains("No runtime"));
+        assert!(text.contains("2 simulators that cannot start"));
+
+        press(&mut screen, KeyCode::Char(' '));
+        press(&mut screen, KeyCode::Enter);
+        let text = render(&mut screen);
+        assert!(text.contains("2 simulators with no runtime, 3.0 GB"));
+    }
+
+    #[test]
+    fn no_simulators_says_so_in_a_small_box() {
+        let mut screen = Simulators::with(Stage::Ready(SimulatorsFound {
+            runtimes: Vec::new(),
+            devices: Vec::new(),
+        }));
+
+        assert!(render(&mut screen).contains("Nothing to remove"));
+        press(&mut screen, KeyCode::Enter);
+        assert!(matches!(screen.stage, Stage::Ready(_)));
+    }
+
+    #[test]
+    fn removing_shows_what_went_with_a_tick() {
+        let mut screen = Simulators::with(Stage::Done(Removal {
+            runtimes: vec![("iOS 18.6".to_string(), 8_800_000_000, Ok(()))],
+            devices: 6,
+            devices_size: 2_100_000_000,
+            device_errors: Vec::new(),
+        }));
+
+        let text = render(&mut screen);
+        assert!(text.contains("✓ Removed 10.9 GB"));
+        assert!(text.contains("✓ iOS 18.6 runtime"));
+        assert!(text.contains("✓ 6 simulators"));
+        assert!(matches!(press(&mut screen, KeyCode::Enter), Action::Home));
+    }
+
+    fn docker(docker: Docker, volumes: Vec<DockerVolume>, image: Option<u64>) -> DockerSpace {
+        DockerSpace::with(Stage::Ready(DockerFound {
+            docker,
+            volumes,
+            image,
+        }))
+    }
+
+    #[test]
     fn docker_shows_what_can_be_freed_and_asks_first() {
-        let usage = tools::DockerUsage {
+        let usage = DockerUsage {
             kind: "Images".to_string(),
             total_count: "9".to_string(),
             active: "2".to_string(),
             size: "1.808GB".to_string(),
             reclaimable: "1.105GB (61%)".to_string(),
         };
-        let mut screen = DockerSpace::with(Stage::Ready(Docker::Usage(vec![usage])));
+        let volume = DockerVolume {
+            name: "influxdb-storage".to_string(),
+            size: "2.812GB".to_string(),
+        };
+        let mut screen = docker(
+            Docker::Usage(vec![usage]),
+            vec![volume],
+            Some(9_400_000_000),
+        );
 
         let text = render(&mut screen);
         assert!(text.contains("1.105GB (61%)"));
-        assert!(text.contains("every volume"));
+        assert!(text.contains("influxdb-storage"));
+        assert!(text.contains("volumes you do not select"));
 
+        // Volumes are kept unless picked.
         press(&mut screen, KeyCode::Enter);
-        assert!(render(&mut screen).contains("Run docker system prune --all?"));
+        let text = render(&mut screen);
+        assert!(text.contains("Run docker system prune --all?"));
+        assert!(text.contains("Volumes are kept."));
+        press(&mut screen, KeyCode::Char('n'));
+        assert!(matches!(screen.stage, Stage::Ready(_)));
+
+        press(&mut screen, KeyCode::Char(' '));
+        press(&mut screen, KeyCode::Enter);
+        let text = render(&mut screen);
+        assert!(text.contains("And these volumes, with their data:"));
+        assert!(text.contains("influxdb-storage, 2.812GB"));
         press(&mut screen, KeyCode::Char('n'));
         assert!(matches!(screen.stage, Stage::Ready(_)));
     }
 
     #[test]
     fn docker_says_to_open_docker_desktop_when_it_is_not_running() {
-        let mut screen = DockerSpace::with(Stage::Ready(Docker::NotRunning));
+        let mut screen = docker(Docker::NotRunning, Vec::new(), None);
 
-        assert!(render(&mut screen).contains("Press o to open Docker Desktop"));
+        let text = render(&mut screen);
+        assert!(text.contains("Press o to open Docker Desktop"));
+        assert!(!text.contains("reset Docker"));
         press(&mut screen, KeyCode::Enter);
-        assert!(matches!(screen.stage, Stage::Ready(Docker::NotRunning)));
+        press(&mut screen, KeyCode::Char('x'));
+        assert!(matches!(screen.stage, Stage::Ready(_)));
+        assert!(!screen.hints().contains("enter prune"));
+    }
+
+    #[test]
+    fn docker_reset_asks_first_and_names_the_trash() {
+        let mut screen = docker(Docker::NotRunning, Vec::new(), Some(9_400_000_000));
+
+        assert!(render(&mut screen).contains("reset Docker without opening it"));
+        press(&mut screen, KeyCode::Char('x'));
+        let text = render(&mut screen);
+        assert!(text.contains("Reset Docker"));
+        assert!(text.contains("move its disk image, 9.4 GB, to the Trash?"));
+        assert!(screen.is_dialog());
+        press(&mut screen, KeyCode::Char('n'));
+        assert!(matches!(screen.stage, Stage::Ready(_)));
+    }
+
+    #[test]
+    fn docker_done_shows_a_tick() {
+        let mut screen = DockerSpace::with(Stage::Done(DockerDone::Pruned {
+            space: Ok("1.2GB".to_string()),
+            volumes: vec![("influxdb-storage".to_string(), Ok(()))],
+        }));
+        let text = render(&mut screen);
+        assert!(text.contains("✓ Docker freed 1.2GB"));
+        assert!(text.contains("✓ Volume influxdb-storage removed"));
+
+        let mut screen = DockerSpace::with(Stage::Done(DockerDone::Reset(Ok(9_400_000_000))));
+        let text = render(&mut screen);
+        assert!(text.contains("✓ Docker is reset"));
+        assert!(text.contains("9.4 GB"));
     }
 }
