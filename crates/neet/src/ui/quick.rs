@@ -8,13 +8,13 @@ use neet_core::clutter::{self, Finding, Kind};
 use neet_core::tree::{NodeId, Tree};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::{Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Cell, Padding, Paragraph, Row, Table, TableState, Wrap};
 
 use super::app::{Action, Context, Screen};
-use super::clean::{Clean, display_path};
+use super::clean::{Clean, display_path, rows_used};
 use super::disk::Disk;
 use super::format;
 use super::loading::scanning;
@@ -98,7 +98,7 @@ fn name(item: Item) -> &'static str {
 enum Who {
     /// neet moves it to the Trash
     Neet,
-    /// neet asks the item's own tool to remove it, which is for good
+    /// neet asks the item's own tool to remove it, which is permanent
     Tool,
     You,
     /// macOS clears it on its own
@@ -118,7 +118,7 @@ fn who(item: Item) -> Who {
 fn who_span(who: Who) -> Span<'static> {
     match who {
         Who::Neet => Span::raw("neet").green(),
-        Who::Tool => Span::raw("neet, for good").red(),
+        Who::Tool => Span::raw("neet, permanently").red(),
         Who::You => Span::raw("you").yellow(),
         Who::Mac => Span::raw("macOS").blue(),
     }
@@ -174,12 +174,12 @@ fn steps(item: Item) -> &'static [&'static str] {
         Item::Clutter(Kind::DockerImage) => &[
             "Press Enter to see what Docker can free.",
             "neet runs docker system prune --all. Volumes are kept.",
-            "It asks first, in red: this is for good, not the Trash.",
+            "It asks first, in red: this skips the Trash and cannot be undone.",
         ],
         Item::Clutter(Kind::SimulatorRuntimes) => &[
             "Press Enter to list every runtime. None start selected.",
             "neet runs xcrun simctl runtime delete for each one you pick.",
-            "It asks first, in red: this is for good, not the Trash.",
+            "It asks first, in red: this skips the Trash and cannot be undone.",
         ],
         Item::Clutter(Kind::TempFiles) => &[
             "macOS removes old ones on its own.",
@@ -405,7 +405,7 @@ impl QuickClean {
                 .padding(Padding::horizontal(1)),
         )
         .highlight_symbol("▸ ")
-        .row_highlight_style(Style::new().bold().white());
+        .row_highlight_style(Style::new().bold());
         frame.render_stateful_widget(table, area, &mut self.table);
     }
 
@@ -505,22 +505,30 @@ impl QuickClean {
                 format::count(u64::try_from(entries.len() - lines.len()).unwrap_or(u64::MAX))
             )));
         }
+        let block = Block::bordered()
+            .title(" Largest ")
+            .padding(Padding::horizontal(1));
         if lines.is_empty() {
-            lines.push(Line::from(match item {
+            // With no list, the reason sits in the middle of the box
+            let inner = block.inner(area);
+            frame.render_widget(block, area);
+            let why = Line::from(match item {
                 Item::Clutter(Kind::SimulatorRuntimes | Kind::TempFiles) => {
                     "Outside your home folder, so there is no list to show."
                 }
                 _ => "Nothing to list.",
-            }));
+            });
+            let height = rows_used(std::slice::from_ref(&why), usize::from(inner.width));
+            let [middle] = Layout::vertical([Constraint::Length(
+                u16::try_from(height).unwrap_or(u16::MAX),
+            )])
+            .flex(Flex::Center)
+            .areas(inner);
+            let why = Paragraph::new(why).centered().wrap(Wrap { trim: true });
+            frame.render_widget(why, middle);
+            return;
         }
-        frame.render_widget(
-            Paragraph::new(lines).block(
-                Block::bordered()
-                    .title(" Largest ")
-                    .padding(Padding::horizontal(1)),
-            ),
-            area,
-        );
+        frame.render_widget(Paragraph::new(lines).block(block), area);
     }
 }
 
@@ -745,7 +753,7 @@ mod tests {
         assert!(screen.contains("17.0 GB"));
         assert!(screen.contains("looking…"));
         assert!(screen.contains("you can free 2.0 MB more"));
-        assert!(screen.contains("neet, for good"));
+        assert!(screen.contains("neet, permanently"));
         assert!(screen.contains("macOS"));
         assert!(screen.contains("Press Enter to open Deep Clean"));
     }

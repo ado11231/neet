@@ -251,7 +251,7 @@ impl Screen for Pick {
         .column_spacing(2)
         .block(block)
         .highlight_symbol("▸ ")
-        .row_highlight_style(Style::new().bold().white());
+        .row_highlight_style(Style::new().bold());
         frame.render_stateful_widget(table, area, &mut self.list);
     }
 
