@@ -96,12 +96,37 @@ impl<T, R> Stage<T, R> {
 /// The widest a message box gets
 const MESSAGE_WIDTH: u16 = 76;
 
-/// How many rows `lines` take when wrapped to `width`
+/// How many rows `lines` take when wrapped at spaces to `width`, as the
+/// paragraph wraps them, so a box is never too short for its last line
 fn rows(lines: &[Line], width: u16) -> u16 {
     let width = usize::from(width).max(1);
     let rows: usize = lines
         .iter()
-        .map(|line| line.width().max(1).div_ceil(width))
+        .map(|line| {
+            let text: String = line
+                .spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect();
+            let mut rows = 1;
+            let mut used = 0;
+            for word in text.split(' ') {
+                let word = word.chars().count();
+                let needed = if used == 0 { word } else { used + 1 + word };
+                if needed <= width {
+                    used = needed;
+                } else {
+                    // A word longer than the row is broken across rows.
+                    rows += 1;
+                    used = word;
+                    while used > width {
+                        rows += 1;
+                        used -= width;
+                    }
+                }
+            }
+            rows
+        })
         .sum();
     u16::try_from(rows).unwrap_or(u16::MAX)
 }
@@ -874,7 +899,7 @@ impl DockerSpace {
             Color::Yellow,
             vec![
                 key("x"),
-                Span::raw(" quits Docker Desktop and moves its whole disk image, "),
+                Span::raw(" stops Docker Desktop and moves its whole disk image, "),
                 Span::raw(format::size(image)).bold(),
                 Span::raw(", to the Trash."),
             ],
@@ -1021,7 +1046,7 @@ impl DockerSpace {
         let size = self.image().map_or_else(String::new, format::size);
         vec![
             Line::from(format!(
-                "Quit Docker Desktop and move its disk image, {size}, to the Trash?"
+                "Stop Docker Desktop and move its disk image, {size}, to the Trash?"
             ))
             .bold(),
             Line::default(),
@@ -1270,7 +1295,7 @@ impl Screen for DockerSpace {
                 title,
                 doing: match self.question {
                     Question::Prune => "Running docker system prune --all",
-                    Question::Reset => "Quitting Docker Desktop, then moving its disk image",
+                    Question::Reset => "Stopping Docker Desktop, then moving its disk image",
                 },
                 progress: format!("{}s", started.elapsed().as_secs()),
                 note: "This can take a minute.",
@@ -1696,5 +1721,14 @@ mod tests {
         let text = render(&mut screen);
         assert!(text.contains("✓ Docker is reset"));
         assert!(text.contains("9.4 GB"));
+    }
+
+    #[test]
+    fn a_long_failure_shows_its_last_line() {
+        let mut screen = DockerSpace::with(Stage::Failed(
+            "Docker could not say what it holds: failed to start: dial unix /Users/someone/.docker/run/docker.sock: connect: no such file or directory, and more words after it".to_string(),
+        ));
+
+        assert!(render(&mut screen).contains("Press r to look again."));
     }
 }
