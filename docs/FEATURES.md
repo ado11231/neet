@@ -57,9 +57,8 @@
 | Open app check | A rule cannot be selected while its app is open. | Done |
 | Recent file check | A rule can skip anything changed in the last few days. | Done |
 | Your own rules | Loads extra rules from `~/.config/neet/rules/`. They can never reach outside the allowed folders, and never start selected. | Done |
-| Clean one item | Press `d` in Disk or Large Files to clean the selected item, with the same checks. | Done |
 | Project build folders | Moves build folders in your code projects, `target/` beside a `Cargo.toml` and `node_modules/`, to the Trash from Quick Clean. You pick which, then review. | Done |
-| Simulator runtimes and Docker | From Quick Clean, runs `xcrun simctl runtime delete` for the runtimes you pick, or `docker system prune --all`, after a red question. For good, not the Trash. | Done |
+| Simulator runtimes and Docker | From Quick Clean, runs `xcrun simctl runtime delete` for the runtimes you pick, or `docker system prune --all`, after a red question. Permanent, not the Trash. | Done |
 | Installers in Downloads | Moves `.dmg`, `.pkg`, `.iso`, and `.xip` files in Downloads to the Trash from Quick Clean. You pick which, then review. | Done |
 
 ### Risk Levels
@@ -152,7 +151,7 @@
 
 | Feature | Why |
 | --- | --- |
-| Deleting files for good, or emptying the Trash | Everything goes to the Trash, so it can be put back. |
+| Deleting files permanently, or emptying the Trash | Everything goes to the Trash, so it can be put back. |
 | Cleaning without a review | You always see every path first. |
 | Removing Apple's apps | macOS needs them. |
 | Deleting duplicate files automatically | Only you know which copy matters. |

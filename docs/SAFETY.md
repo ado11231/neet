@@ -21,7 +21,7 @@
 
 ## The Promises
 
-1. Nothing is deleted for good, and neet never empties the Trash. The one exception is [simulator runtimes and Docker data](#tools-neet-runs), which only their own tool can remove, after a separate question that says so.
+1. Nothing is deleted permanently, and neet never empties the Trash. The one exception is [simulator runtimes and Docker data](#tools-neet-runs), which only their own tool can remove, after a separate question that says so.
 2. You see every path, and confirm, before anything moves.
 3. Cleanup only removes items inside a short, fixed list of folders. App removal, and build folders and installers, each have their own narrow check.
 4. Your own files, cloud files, passwords, and keys are never touched. The one exception: project build folders and installers, which can be in Documents, Desktop, or Downloads.
@@ -199,7 +199,7 @@ min_age_days = 0
 ## Tools neet Runs
 
 * Simulator runtimes and Docker's images cannot go to the Trash: macOS keeps runtimes in secure storage, and Docker keeps images inside its own disk image. neet asks their own tool to remove them, from Quick Clean.
-* This is the only way neet removes anything for good. Both can be downloaded again.
+* This is the only way neet removes anything permanently. Both can be downloaded again.
 
 | Tool | Command | Removes |
 | --- | --- | --- |
@@ -209,7 +209,7 @@ min_age_days = 0
 * Before either runs, neet:
   1. Lists exactly what the tool reports: each runtime with its version, build, size, and when it was last used, or Docker's images, containers, volumes, and build cache with what can be reclaimed.
   2. Starts with nothing selected for runtimes.
-  3. Asks in a red box that says the removal is for good and does not go to the Trash. Only `y` goes ahead.
+  3. Asks in a red box that says the removal is permanent and does not go to the Trash. Only `y` goes ahead.
 * Only a runtime ID made of letters, digits, and hyphens is passed to `simctl`, so it can never be `all` or an option.
 * Neither command uses admin rights. neet never starts Docker on its own; `o` opens Docker Desktop only when you press it.
 
