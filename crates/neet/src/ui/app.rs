@@ -7,8 +7,6 @@ use neet_core::disk::{self, DiskSpace};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::Style;
-use ratatui::text::Line;
 
 use super::clean::Estimate;
 use super::help::Help;
@@ -198,8 +196,12 @@ impl App {
     }
 
     pub fn draw(&mut self, frame: &mut Frame) {
+        let hints = super::visual::hints(self.top().hints());
+        let footer_height =
+            super::visual::wrapped_rows(std::slice::from_ref(&hints), frame.area().width);
         let [body, footer] =
-            Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(frame.area());
+            Layout::vertical([Constraint::Fill(1), Constraint::Length(footer_height)])
+                .areas(frame.area());
         // Draw from the topmost full screen up, so overlays sit on what is below them.
         let base = self
             .stack
@@ -215,9 +217,10 @@ impl App {
         for screen in &mut self.stack[base..] {
             screen.draw(frame, body, &context);
         }
-        let screen = self.top();
-        let hints = Line::from(format!(" {}", screen.hints())).style(Style::new());
-        frame.render_widget(hints, footer);
+        frame.render_widget(
+            ratatui::widgets::Paragraph::new(hints).wrap(ratatui::widgets::Wrap { trim: false }),
+            footer,
+        );
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {

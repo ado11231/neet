@@ -9,9 +9,9 @@ use neet_core::tree::{NodeId, Tree};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
-use ratatui::style::{Color, Style, Stylize};
+use ratatui::style::{Color, Stylize};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Cell, Padding, Paragraph, Row, Table, TableState, Wrap};
+use ratatui::widgets::{Cell, Padding, Paragraph, Row, Table, TableState, Wrap};
 
 use super::app::{Action, Context, Screen};
 use super::clean::{Clean, display_path, rows_used};
@@ -120,7 +120,7 @@ fn who_span(who: Who) -> Span<'static> {
         Who::Neet => Span::raw("neet").green(),
         Who::Tool => Span::raw("neet, permanently").red(),
         Who::You => Span::raw("you").yellow(),
-        Who::Mac => Span::raw("macOS").blue(),
+        Who::Mac => Span::raw("macOS").light_blue(),
     }
 }
 
@@ -135,17 +135,15 @@ fn about(item: Item) -> &'static str {
             "Disk images and installers in Downloads. Once an app is installed, its installer is rarely needed."
         }
         Item::Clutter(Kind::BuildFolders) => {
-            "node_modules folders, and Rust target folders, in your projects. They come back when you install or build again."
+            "Project node_modules and Rust target folders. Recreated on install or build."
         }
         Item::Clutter(Kind::DockerImage) => {
             "The disk image Docker Desktop keeps containers and images in. It does not shrink on its own."
         }
         Item::Clutter(Kind::SimulatorRuntimes) => {
-            "Simulator runtimes Xcode downloaded, which live outside your home folder, and the simulators on them."
+            "Xcode runtimes and their simulators, outside the home folder."
         }
-        Item::Clutter(Kind::TempFiles) => {
-            "Your temporary files and caches in /private/var/folders. Apps use them while they run."
-        }
+        Item::Clutter(Kind::TempFiles) => "Temporary app files in /private/var/folders.",
     }
 }
 
@@ -153,33 +151,33 @@ fn about(item: Item) -> &'static str {
 fn steps(item: Item) -> &'static [&'static str] {
     match item {
         Item::Rules => &[
-            "Press Enter to open Deep Clean.",
-            "Choose rules with Space, then review every path.",
-            "Confirm, and the files go to the Trash.",
+            "Enter: open Deep Clean.",
+            "Space: select rules. Review every path.",
+            "Confirm: move files to Trash.",
         ],
         Item::Clutter(Kind::BuildFolders) => &[
-            "Press Enter to list every build folder.",
-            "All start selected. Clear any you are working in.",
-            "Review, confirm, and they go to the Trash.",
+            "Enter: list build folders.",
+            "All selected. Deselect active projects.",
+            "Review and confirm: move to Trash.",
         ],
         Item::Clutter(Kind::Installers) => &[
-            "Press Enter to list every installer.",
-            "All start selected. Clear any you still need.",
-            "Review, confirm, and they go to the Trash.",
+            "Enter: list installers.",
+            "All selected. Deselect installers to keep.",
+            "Review and confirm: move to Trash.",
         ],
         Item::Clutter(Kind::Trash) => &[
             "Empty the Trash in Finder, or right click it in the Dock.",
             "neet never empties the Trash, so Put Back always works.",
         ],
         Item::Clutter(Kind::DockerImage) => &[
-            "Press Enter to see what Docker can free, and pick unused volumes.",
-            "neet runs docker system prune --all, after a red question.",
-            "Or press x there to reset Docker: its disk image goes to the Trash.",
+            "Enter: review Docker usage and unused volumes.",
+            "Confirm: run docker system prune --all.",
+            "x: reset Docker. Move its disk image to Trash.",
         ],
         Item::Clutter(Kind::SimulatorRuntimes) => &[
-            "Press Enter to list runtimes, and simulators with none. None start selected.",
-            "neet removes each one you pick with xcrun simctl, simulators included.",
-            "It asks first, in red: this skips the Trash and cannot be undone.",
+            "Enter: list runtimes and orphaned simulators. None selected.",
+            "Select runtimes to remove with their simulators.",
+            "Confirm permanent removal. Skips Trash; cannot undo.",
         ],
         Item::Clutter(Kind::TempFiles) => &[
             "macOS removes old ones on its own.",
@@ -323,6 +321,7 @@ impl QuickClean {
             _ => 0,
         };
         let largest = statuses.iter().map(size_of).max().unwrap_or(0);
+        let columns = quick_columns(&statuses, area.width);
         let mut neet_total = 0;
         let mut your_total = 0;
         let rows: Vec<Row> = ITEMS
@@ -350,17 +349,11 @@ impl QuickClean {
                             found,
                         )
                     }
-                    Status::Looking => (
-                        Span::raw("looking…").dark_gray(),
-                        Span::raw(""),
-                        String::new(),
-                    ),
-                    Status::Nothing => {
-                        (Span::raw("none").dark_gray(), Span::raw(""), String::new())
-                    }
+                    Status::Looking => (Span::raw("scanning").cyan(), Span::raw(""), String::new()),
+                    Status::Nothing => (Span::raw("none"), Span::raw(""), String::new()),
                 };
-                Row::new([
-                    Cell::from(name(item)),
+                columns.row([
+                    Cell::from(format::shorten_middle(name(item), columns.width(0))),
                     Cell::from(Line::from(size).right_aligned()),
                     Cell::from(bar),
                     Cell::from(Line::from(found).right_aligned()),
@@ -368,64 +361,48 @@ impl QuickClean {
                 ])
             })
             .collect();
-        let header = Row::new([
-            Cell::from("Item"),
-            Cell::from(Line::from("Size").right_aligned()),
-            Cell::from(""),
-            Cell::from(Line::from("Found").right_aligned()),
-            Cell::from("Cleared by"),
-        ])
-        .bold()
-        .bottom_margin(1);
+        let header = columns
+            .row([
+                Cell::from("Item"),
+                Cell::from(Line::from("Size").right_aligned()),
+                Cell::from(""),
+                Cell::from(Line::from("Found").right_aligned()),
+                Cell::from("Cleared by"),
+            ])
+            .style(super::visual::HEADING)
+            .bottom_margin(1);
         let summary = Line::from(vec![
-            Span::raw(" neet can clear "),
+            Span::raw(" Cleanup: "),
             Span::raw(format!("~{}", format::size(neet_total)))
                 .green()
                 .bold(),
-            Span::raw(" · you can free "),
+            Span::raw(" · Manual: "),
             Span::raw(format::size(your_total)).yellow().bold(),
-            Span::raw(" more "),
+            Span::raw(" "),
         ]);
-        let table = Table::new(
-            rows,
-            [
-                Constraint::Length(24),
-                Constraint::Length(10),
-                Constraint::Length(u16::try_from(SHARE_BAR).unwrap_or(u16::MAX)),
-                Constraint::Length(7),
-                Constraint::Fill(1),
-            ],
-        )
-        .header(header)
-        .column_spacing(2)
-        .block(
-            Block::bordered()
-                .title(" Quick Clean ")
-                .title_bottom(summary.right_aligned())
-                .padding(Padding::horizontal(1)),
-        )
-        .highlight_symbol("▸ ")
-        .row_highlight_style(Style::new().bold());
+        let table = Table::new(rows, columns.widths())
+            .header(header)
+            .column_spacing(2)
+            .block(
+                super::visual::block()
+                    .title(" Quick Clean ")
+                    .title_bottom(summary.right_aligned())
+                    .padding(Padding::horizontal(1)),
+            )
+            .highlight_symbol("▸ ")
+            .row_highlight_style(super::visual::SELECTED);
         frame.render_stateful_widget(table, area, &mut self.table);
     }
 
     /// What the selected row is and how to clear it, numbered
     fn draw_about(&self, frame: &mut Frame, area: Rect) {
         let item = self.selected();
-        let mut lines = vec![
-            Line::from(vec![
-                Span::raw("Cleared by ").bold(),
-                who_span(who(item)).bold(),
-            ]),
-            Line::from(about(item)),
-            Line::default(),
-            Line::from("How").bold(),
-        ];
+        let mut lines = Vec::new();
         let color = match who(item) {
             Who::Neet => Color::Green,
             Who::Tool => Color::Red,
             Who::You => Color::Yellow,
-            Who::Mac => Color::Blue,
+            Who::Mac => Color::LightBlue,
         };
         for (number, step) in steps(item).iter().enumerate() {
             lines.push(Line::from(vec![
@@ -433,9 +410,17 @@ impl QuickClean {
                 Span::raw(*step),
             ]));
         }
+        let mut expanded = lines.clone();
+        expanded.push(Line::default());
+        expanded.push(Line::from(about(item)));
+        if super::visual::wrapped_rows(&expanded, area.width.saturating_sub(4))
+            <= area.height.saturating_sub(2)
+        {
+            lines = expanded;
+        }
         frame.render_widget(
             Paragraph::new(lines).wrap(Wrap { trim: true }).block(
-                Block::bordered()
+                super::visual::block()
                     .title(format!(" {} ", name(item)))
                     .padding(Padding::horizontal(1)),
             ),
@@ -505,7 +490,7 @@ impl QuickClean {
                 format::count(u64::try_from(entries.len() - lines.len()).unwrap_or(u64::MAX))
             )));
         }
-        let block = Block::bordered()
+        let block = super::visual::block()
             .title(" Largest ")
             .padding(Padding::horizontal(1));
         if lines.is_empty() {
@@ -514,7 +499,7 @@ impl QuickClean {
             frame.render_widget(block, area);
             let why = Line::from(match item {
                 Item::Clutter(Kind::SimulatorRuntimes | Kind::TempFiles) => {
-                    "Outside your home folder, so there is no list to show."
+                    "Outside home. No scan details."
                 }
                 _ => "Nothing to list.",
             });
@@ -532,31 +517,53 @@ impl QuickClean {
     }
 }
 
+fn quick_columns(statuses: &[Status], width: u16) -> super::visual::Columns<5> {
+    let sizes = format::column_width(
+        "Size",
+        statuses.iter().map(|status| {
+            let size = format::size(match status {
+                Status::Found { size, .. } => *size,
+                _ => 0,
+            });
+            format!("~{size}")
+        }),
+    )
+    .max(8);
+    let counts = format::column_width(
+        "Found",
+        statuses.iter().filter_map(|status| match status {
+            Status::Found {
+                count: Some(count), ..
+            } => Some(format::count(u64::try_from(*count).unwrap_or(u64::MAX))),
+            _ => None,
+        }),
+    );
+    super::visual::Columns::new(
+        width,
+        [(18, 1), (sizes, 0), (14, 0), (counts, 0), (17, 0)],
+        &[2],
+        true,
+    )
+}
+
 impl Screen for QuickClean {
     fn draw(&mut self, frame: &mut Frame, area: Rect, context: &Context) {
         let tree = match context.scan {
             ScanStatus::Done { scan, .. } => &scan.tree,
             ScanStatus::Running(progress) => {
-                scanning(
-                    "Quick Clean",
-                    "What can be cleared shows here when the scan finishes.",
-                    *progress,
-                )
-                .draw(frame, area);
+                scanning("Quick Clean", "Finding cleanup candidates.", *progress).draw(frame, area);
                 return;
             }
             ScanStatus::Failed(reason) => {
                 frame.render_widget(
-                    Paragraph::new(format!(
-                        "The scan failed, so there is nothing to show. {reason}"
-                    ))
-                    .red()
-                    .wrap(Wrap { trim: true })
-                    .block(
-                        Block::bordered()
-                            .title(" Quick Clean ")
-                            .padding(Padding::horizontal(1)),
-                    ),
+                    Paragraph::new(format!("Scan failed: {reason}"))
+                        .red()
+                        .wrap(Wrap { trim: true })
+                        .block(
+                            super::visual::block()
+                                .title(" Quick Clean ")
+                                .padding(Padding::horizontal(1)),
+                        ),
                     area,
                 );
                 return;
@@ -643,14 +650,14 @@ impl Screen for QuickClean {
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
         &[
-            ("↑ ↓  j k", "Move the selection"),
+            ("↑ ↓  j k", "Move selection"),
             ("g  G", "Jump to the first or last row"),
             (
                 "Enter  →  l",
                 "Rows neet clears: pick what to remove. Trash: show in Disk",
             ),
             ("d", "Show the largest item in Disk"),
-            ("Esc", "Go back to Home"),
+            ("Esc", "Back to Home"),
             ("q", "Quit"),
         ]
     }
@@ -739,11 +746,11 @@ mod tests {
         assert!(screen.contains("1.0 MB"));
         assert!(screen.contains("300.0 KB") || screen.contains("303.1 KB"));
         assert!(screen.contains("17.0 GB"));
-        assert!(screen.contains("looking…"));
-        assert!(screen.contains("you can free 2.0 MB more"));
+        assert!(screen.contains("scanning"));
+        assert!(screen.contains("Manual: 2.0 MB"));
         assert!(screen.contains("neet, permanently"));
         assert!(screen.contains("macOS"));
-        assert!(screen.contains("Press Enter to open Deep Clean"));
+        assert!(screen.contains("Enter: open Deep Clean"));
     }
 
     #[test]
@@ -755,7 +762,7 @@ mod tests {
         press(&mut screen, &scan, KeyCode::Down);
         let text = render(&mut screen, &scan);
         assert!(text.contains("~/code/web/node_modules"));
-        assert!(text.contains("Press Enter to list every build folder"));
+        assert!(text.contains("Enter: list build folders"));
         assert!(matches!(
             press(&mut screen, &scan, KeyCode::Enter),
             Action::Open(_)
@@ -801,5 +808,17 @@ mod tests {
             press(&mut screen, &scan, KeyCode::Enter),
             Action::Open(_)
         ));
+    }
+    #[test]
+    fn layout_stays_readable_across_terminal_sizes() {
+        use crate::ui::visual::tests as view;
+        let (_dir, scan) = done();
+        let mut screen = quick();
+        for (width, height) in view::SIZES {
+            let buffer = view::render("quick", &mut screen, &context(&scan), width, height);
+            view::aligned(&buffer, "Size", "~8.6 GB");
+            assert!(view::text(&buffer).contains("neet, permanently"));
+            assert!(view::text(&buffer).contains("macOS"));
+        }
     }
 }

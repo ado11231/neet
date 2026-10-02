@@ -14,6 +14,7 @@ mod review;
 mod scan;
 mod skipped;
 mod tools;
+mod visual;
 
 use std::io;
 use std::path::PathBuf;

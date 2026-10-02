@@ -7,10 +7,9 @@ use neet_core::tree::{NodeId, NodeKind, Tree};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::Color;
-use ratatui::style::{Style, Stylize};
+use ratatui::style::Stylize;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, List, ListItem, ListState, Padding, Paragraph, Wrap};
+use ratatui::widgets::{Cell, Padding, Paragraph, Row, Table, TableState, Wrap};
 
 use super::app::{Action, Context, Screen};
 use super::format;
@@ -52,7 +51,7 @@ impl Sort {
 struct Browser {
     current: NodeId,
     rows: Vec<NodeId>,
-    list: ListState,
+    list: TableState,
     sort: Sort,
     /// For saying whether the selected item can be cleaned
     roots: Option<CleanupRoots>,
@@ -63,7 +62,7 @@ impl Browser {
         let mut browser = Self {
             current: tree.root(),
             rows: Vec::new(),
-            list: ListState::default(),
+            list: TableState::default(),
             sort: Sort::Size,
             roots: CleanupRoots::new(&tree.path(tree.root())).ok(),
         };
@@ -160,29 +159,66 @@ pub(super) fn display_path(tree: &Tree, id: NodeId) -> String {
     }
 }
 
-fn row(tree: &Tree, id: NodeId, parent_total: u64) -> ListItem<'static> {
+fn columns(width: u16, tree: &Tree, rows: &[NodeId], selected: bool) -> super::visual::Columns<4> {
+    let sizes = format::column_width(
+        "Size",
+        rows.iter().map(|&id| format::size(tree.get(id).total_size)),
+    )
+    .max(9);
+    super::visual::Columns::new(
+        width,
+        [(12, 0), (sizes, 0), (4, 0), (16, 1)],
+        &[0],
+        selected,
+    )
+}
+
+fn header(columns: &super::visual::Columns<4>) -> Row<'static> {
+    columns
+        .row([
+            Cell::from(""),
+            Cell::from(Line::from("Size").right_aligned()),
+            Cell::from(Line::from("%").right_aligned()),
+            Cell::from("Name"),
+        ])
+        .style(super::visual::HEADING)
+        .bottom_margin(1)
+}
+
+fn row(
+    tree: &Tree,
+    id: NodeId,
+    parent_total: u64,
+    columns: &super::visual::Columns<4>,
+) -> Row<'static> {
     let node = tree.get(id);
-    let name = Span::raw(display_name(tree, id));
+    let name = Span::raw(format::shorten_middle(
+        &display_name(tree, id),
+        columns.width(3),
+    ));
     let name = if node.kind == NodeKind::Directory {
-        name.blue().bold()
+        name.light_blue().bold()
     } else {
         name
     };
-    ListItem::new(Line::from(vec![
-        Span::raw(format::bar(node.total_size, parent_total, BAR_WIDTH))
-            .fg(bar_color(node.total_size)),
-        Span::raw(" "),
-        format::size_span(
-            node.total_size,
-            format!("{:>9}", format::size(node.total_size)),
+    columns.row([
+        Cell::from(format::size_bar(node.total_size, parent_total, BAR_WIDTH)),
+        Cell::from(
+            Line::from(format::size_span(
+                node.total_size,
+                format::size(node.total_size),
+            ))
+            .right_aligned(),
         ),
-        Span::raw(" "),
-        Span::raw(format!(
-            "{:>3}%  ",
-            format::percent(node.total_size, parent_total)
-        )),
-        name,
-    ]))
+        Cell::from(
+            Line::from(format!(
+                "{}%",
+                format::percent(node.total_size, parent_total)
+            ))
+            .right_aligned(),
+        ),
+        Cell::from(name),
+    ])
 }
 
 fn draw_folder(frame: &mut Frame, area: Rect, tree: &Tree, browser: &mut Browser) {
@@ -199,28 +235,31 @@ fn draw_folder(frame: &mut Frame, area: Rect, tree: &Tree, browser: &mut Browser
         },
         browser.sort.label()
     );
-    let block = Block::bordered()
+    let block = super::visual::block()
         .title(title)
-        .title(Line::from(summary).right_aligned())
+        .title_bottom(Line::from(summary).right_aligned())
         .padding(Padding::horizontal(1));
 
     if browser.rows.is_empty() {
         frame.render_widget(Paragraph::new("Empty folder.").block(block), area);
         return;
     }
+    let columns = columns(area.width, tree, &browser.rows, true);
     let items = browser
         .rows
         .iter()
-        .map(|&id| row(tree, id, folder.total_size));
-    let list = List::new(items)
+        .map(|&id| row(tree, id, folder.total_size, &columns));
+    let table = Table::new(items, columns.widths())
+        .header(header(&columns))
+        .column_spacing(2)
         .block(block)
         .highlight_symbol("▸ ")
-        .highlight_style(Style::new().bold());
-    frame.render_stateful_widget(list, area, &mut browser.list);
+        .row_highlight_style(super::visual::SELECTED);
+    frame.render_stateful_widget(table, area, &mut browser.list);
 }
 
 fn draw_preview(frame: &mut Frame, area: Rect, tree: &Tree, browser: &Browser) {
-    let block = Block::bordered().padding(Padding::horizontal(1));
+    let block = super::visual::block().padding(Padding::horizontal(1));
     let Some(id) = browser.selected() else {
         frame.render_widget(block, area);
         return;
@@ -234,19 +273,11 @@ fn draw_preview(frame: &mut Frame, area: Rect, tree: &Tree, browser: &Browser) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let header = about(tree, id, browser);
-    // Each header line wraps, so count how many rows it takes.
-    let width = usize::from(inner.width.max(1));
-    let height: usize = header
-        .iter()
-        .map(|line| line.width().max(1).div_ceil(width))
-        .sum();
-    let [top, rest] = Layout::vertical([
-        Constraint::Length(u16::try_from(height).unwrap_or(u16::MAX)),
-        Constraint::Fill(1),
-    ])
-    .areas(inner);
-    frame.render_widget(Paragraph::new(header).wrap(Wrap { trim: false }), top);
+    let details = about(tree, id, browser);
+    let height = super::visual::wrapped_rows(&details, inner.width);
+    let [top, rest] =
+        Layout::vertical([Constraint::Length(height), Constraint::Fill(1)]).areas(inner);
+    frame.render_widget(Paragraph::new(details).wrap(Wrap { trim: false }), top);
 
     if node.kind != NodeKind::Directory || rest.height < 3 {
         return;
@@ -263,19 +294,21 @@ fn draw_preview(frame: &mut Frame, area: Rect, tree: &Tree, browser: &Browser) {
         Paragraph::new(vec![Line::default(), Line::from(title)]),
         heading,
     );
-    let items = rows.iter().map(|&child| row(tree, child, node.total_size));
-    frame.render_widget(List::new(items), list);
-}
-
-/// The bar color for an item of `bytes`, matching the size colors.
-fn bar_color(bytes: u64) -> Color {
-    if bytes >= format::HUGE {
-        Color::Red
-    } else if bytes >= format::HUGE / 5 {
-        Color::Yellow
-    } else {
-        Color::Cyan
-    }
+    // This table is already inside the preview border and has no selection gutter.
+    let columns = columns(list.width.saturating_add(4), tree, &rows, false);
+    let items = rows
+        .iter()
+        .map(|&child| row(tree, child, node.total_size, &columns));
+    frame.render_widget(
+        Table::new(items, columns.widths())
+            .column_spacing(2)
+            .header(if list.height >= 4 {
+                header(&columns)
+            } else {
+                Row::default()
+            }),
+        list,
+    );
 }
 
 /// What the selected item is, how big, and whether neet can clean it.
@@ -327,25 +360,22 @@ fn about(tree: &Tree, id: NodeId, browser: &Browser) -> Vec<Line<'static>> {
 /// Whether neet cleans an item, in one colored line.
 fn cleanable(path: &std::path::Path, roots: Option<&CleanupRoots>) -> Line<'static> {
     let Some(roots) = roots else {
-        return Line::from("neet could not read the home folder, so nothing can be cleaned.");
+        return Line::from("Home unavailable. Cleanup blocked.");
     };
     match roots.validate_deletable(path) {
         Ok(_) => Line::from(vec![
             Span::raw("✓ ").green().bold(),
-            Span::raw("In a folder neet cleans.").green(),
+            Span::raw("Inside cleanup folders.").green(),
         ]),
         Err(SafetyError::IsRoot) => Line::from(vec![
             Span::raw("◆ ").yellow(),
-            Span::raw("A cleanup folder. neet cleans the items inside.").yellow(),
+            Span::raw("Cleanup root. Only contents can be moved.").yellow(),
         ]),
         Err(SafetyError::Protected) => Line::from(vec![
             Span::raw("✗ ").red().bold(),
-            Span::raw("Protected. neet never moves anything in it.").red(),
+            Span::raw("Protected. Removal blocked.").red(),
         ]),
-        Err(_) => Line::from(vec![
-            Span::raw("· "),
-            Span::raw("Outside the folders neet cleans."),
-        ]),
+        Err(_) => Line::from(vec![Span::raw("· "), Span::raw("Outside cleanup folders.")]),
     }
 }
 
@@ -481,27 +511,20 @@ impl Screen for Disk {
             }
             ScanStatus::Running(progress) => progress,
             ScanStatus::Failed(reason) => {
-                let block = Block::bordered()
+                let block = super::visual::block()
                     .title(" Disk ")
                     .padding(Padding::horizontal(1));
                 frame.render_widget(
-                    Paragraph::new(format!(
-                        "The scan failed, so there is nothing to show. {reason}"
-                    ))
-                    .red()
-                    .wrap(ratatui::widgets::Wrap { trim: true })
-                    .block(block),
+                    Paragraph::new(format!("Scan failed: {reason}"))
+                        .red()
+                        .wrap(ratatui::widgets::Wrap { trim: true })
+                        .block(block),
                     area,
                 );
                 return;
             }
         };
-        scanning(
-            "Disk",
-            "Your folders show here when the scan finishes.",
-            *progress,
-        )
-        .draw(frame, area);
+        scanning("Disk", "Loading folders by size.", *progress).draw(frame, area);
     }
 
     fn handle_key(&mut self, key: KeyEvent, context: &Context) -> Action {
@@ -529,12 +552,12 @@ impl Screen for Disk {
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
         &[
-            ("↑ ↓  j k", "Move the selection"),
+            ("↑ ↓  j k", "Move selection"),
             ("→  Enter  l", "Open the selected folder"),
             ("←  h", "Go up to the parent folder"),
             ("s", "Sort by size, name, or items"),
             ("g  G", "Jump to the first or last row"),
-            ("Esc", "Go back to Home"),
+            ("Esc", "Back to Home"),
             ("q", "Quit"),
         ]
     }
@@ -698,7 +721,7 @@ mod tests {
 
         let screen = render(&mut Disk::new(), &scan, 80);
 
-        assert!(screen.contains("Scanning your home folder"));
+        assert!(screen.contains("Scanning home"));
         assert!(screen.contains("42 items · 2.0 MB so far"));
     }
 
@@ -724,8 +747,8 @@ mod tests {
             .unwrap();
         let buffer = terminal.backend().buffer();
 
-        // The first row sits below the top border, after the padding.
-        let arrow = &buffer[(2, 1)];
+        // The first row follows the border, header, and header spacing.
+        let arrow = &buffer[(2, 3)];
         assert_eq!(arrow.symbol(), "▸");
         assert!(arrow.modifier.contains(ratatui::style::Modifier::BOLD));
         assert!(!arrow.modifier.contains(ratatui::style::Modifier::REVERSED));
@@ -741,10 +764,10 @@ mod tests {
         let roots = CleanupRoots::new(dir.path()).expect("roots should be made");
         let status = |path: &str| cleanable(&dir.path().join(path), Some(&roots)).to_string();
 
-        assert!(status("Library/Caches/app").contains("In a folder neet cleans"));
-        assert!(status("Library/Caches").contains("A cleanup folder"));
+        assert!(status("Library/Caches/app").contains("Inside cleanup folders"));
+        assert!(status("Library/Caches").contains("Cleanup root"));
         assert!(status("Documents").contains("Protected"));
-        assert!(status("notes").contains("Outside the folders neet cleans"));
+        assert!(status("notes").contains("Outside cleanup folders"));
     }
 
     #[test]
@@ -758,5 +781,30 @@ mod tests {
         assert!(meaning(&tree, caches).is_some_and(|text| text.contains("make again")));
         assert!(meaning(&tree, library).is_some());
         assert_eq!(meaning(&tree, other), None);
+    }
+    #[test]
+    fn layout_stays_readable_across_terminal_sizes() {
+        use crate::ui::visual::tests as view;
+        let scan = ScanStatus::Done {
+            scan: Scan {
+                tree: sample(),
+                errors: Vec::new(),
+                other_disks: Vec::new(),
+            },
+            elapsed: std::time::Duration::ZERO,
+        };
+        let context = Context {
+            scan: &scan,
+            disk: None,
+            cleanable: None,
+            plan: None,
+        };
+        let mut screen = Disk::new();
+        for (width, height) in view::SIZES {
+            let buffer = view::render("disk", &mut screen, &context, width, height);
+            view::aligned(&buffer, "Size", "100 B");
+            view::aligned(&buffer, "%", "94%");
+            assert!(view::text(&buffer).contains("apple.txt"));
+        }
     }
 }

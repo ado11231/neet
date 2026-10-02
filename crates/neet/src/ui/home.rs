@@ -1,9 +1,9 @@
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Style, Stylize};
+use ratatui::style::Stylize;
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, List, ListItem, ListState, Padding, Paragraph, Wrap};
+use ratatui::widgets::{List, ListItem, ListState, Padding, Paragraph, Wrap};
 
 use super::app::{Action, Context, Screen};
 use super::apps::RemoveApp;
@@ -44,37 +44,37 @@ impl Entry {
 const ENTRIES: &[Entry] = &[
     Entry {
         label: "Quick Clean",
-        about: "Start here: everything taking space that can be cleared, and how to clear it.",
+        about: "Find reclaimable space. Select a cleanup action.",
         target: Target::Screen(|| Box::new(QuickClean::new())),
     },
     Entry {
         label: "Deep Clean",
-        about: "Every cache and log rule, one by one: choose what goes to the Trash, and review every path.",
+        about: "Select cache and log rules. Review paths before moving to Trash.",
         target: Target::Screen(|| Box::new(Clean::new())),
     },
     Entry {
         label: "Remove App",
-        about: "Review an app and its files before removing it.",
+        about: "Select an app. Review its files before removal.",
         target: Target::Screen(|| Box::new(RemoveApp::new())),
     },
     Entry {
         label: "Large Files",
-        about: "Find large and old files, and open them in Disk.",
+        about: "Find large or old files. Inspect them in Disk.",
         target: Target::Screen(|| Box::new(LargeFiles::new())),
     },
     Entry {
         label: "Disk",
-        about: "Browse your folders by size.",
+        about: "Browse folders by size.",
         target: Target::Screen(|| Box::new(Disk::new())),
     },
     Entry {
         label: "Startup",
-        about: "See programs that start on their own, and turn them off in a way you can undo.",
+        about: "Manage startup programs.",
         target: Target::Soon,
     },
     Entry {
         label: "SSH",
-        about: "See hosts and key details, fix permissions, and manage agent keys and known hosts.",
+        about: "Manage hosts, keys, and permissions.",
         target: Target::Soon,
     },
     Entry {
@@ -89,7 +89,7 @@ const ENTRIES: &[Entry] = &[
     },
     Entry {
         label: "Settings",
-        about: "See what keeps the Mac awake, and change power and display settings.",
+        about: "Manage power and display settings.",
         target: Target::Soon,
     },
     Entry {
@@ -147,25 +147,26 @@ impl Home {
                 _ if index >= 9 => "  ".to_string(),
                 _ => format!("{} ", index + 1),
             };
-            let mut spans = vec![Span::raw(number), Span::raw(format!("{:<14}", entry.label))];
+            let mut spans = vec![
+                Span::raw(number).cyan(),
+                Span::raw(format!("{:<14}", entry.label)),
+            ];
             if let Some(summary) = summary(entry.label, context) {
-                spans.push(Span::raw(summary));
+                spans.push(Span::raw(summary).cyan());
             }
             if matches!(entry.target, Target::Soon) {
-                spans.push(Span::raw("soon").italic());
-                ListItem::new(Line::from(spans)).dark_gray()
-            } else {
-                ListItem::new(Line::from(spans))
+                spans.push(Span::raw("soon").yellow().italic());
             }
+            ListItem::new(Line::from(spans))
         });
         let list = List::new(items)
             .block(
-                Block::bordered()
+                super::visual::block()
                     .title(" neet ")
                     .padding(Padding::horizontal(1)),
             )
             .highlight_symbol("▸ ")
-            .highlight_style(Style::new().bold().white());
+            .highlight_style(super::visual::SELECTED);
         frame.render_stateful_widget(list, area, &mut self.list);
     }
 
@@ -174,7 +175,7 @@ impl Home {
         let disk = context.disk;
         let entry = &ENTRIES[self.selected()];
         let mut lines = vec![
-            Line::from(entry.label).bold(),
+            Line::from(entry.label).style(super::visual::HEADING),
             Line::from(entry.about),
             Line::default(),
         ];
@@ -184,7 +185,7 @@ impl Home {
         let text = Text::from(lines);
         let info = Paragraph::new(text)
             .wrap(Wrap { trim: true })
-            .block(Block::bordered().padding(Padding::horizontal(1)));
+            .block(super::visual::block().padding(Padding::horizontal(1)));
         frame.render_widget(info, area);
     }
 }
@@ -195,7 +196,7 @@ fn summary(label: &str, context: &Context) -> Option<String> {
         "Disk" => context
             .disk
             .map(|disk| format!("{} used", format::size(disk.used()))),
-        "Quick Clean" => Some("start here".to_string()),
+        "Quick Clean" => Some("overview".to_string()),
         "Deep Clean" => Some(context.cleanable.map_or_else(
             || "finding…".to_string(),
             |size| format!("~{} found", format::size(size)),
@@ -215,7 +216,7 @@ const MIN_PURGEABLE: u64 = 100_000_000;
 /// can clear space on its own, a last line says why Finder shows more free.
 fn disk_lines(disk: Option<DiskSpace>) -> Vec<Line<'static>> {
     let Some(disk) = disk else {
-        return vec![Line::from("Disk space could not be read.")];
+        return vec![Line::from("Disk space unavailable.")];
     };
     let used = format::percent(disk.used(), disk.total);
     let gauge = Span::raw(format::bar(disk.used(), disk.total, GAUGE_WIDTH));
@@ -234,7 +235,7 @@ fn disk_lines(disk: Option<DiskSpace>) -> Vec<Line<'static>> {
     ];
     if let Some(purgeable) = disk.purgeable.filter(|size| *size >= MIN_PURGEABLE) {
         lines.push(Line::from(format!(
-            "Finder shows {} free, counting {} macOS clears when needed.",
+            "Finder: {} free · {} purgeable by macOS.",
             format::size(disk.available.saturating_add(purgeable)),
             format::size(purgeable)
         )));
@@ -255,7 +256,7 @@ fn paths(count: usize) -> String {
 fn scan_lines(scan: &ScanStatus) -> Vec<Line<'static>> {
     match scan {
         ScanStatus::Running(progress) => vec![
-            Line::from("Scanning your home folder…").cyan(),
+            Line::from("Scanning home…").cyan(),
             Line::from(format!(
                 "{} items · {}",
                 format::count(progress.entries),
@@ -268,7 +269,7 @@ fn scan_lines(scan: &ScanStatus) -> Vec<Line<'static>> {
             // An incomplete scan missed whatever it could not read.
             let at_least = if scan.is_complete() { "" } else { "at least " };
             let mut lines = vec![Line::from(format!(
-                "Home folder: {at_least}{} in {} items, scanned in {}s.",
+                "Home: {at_least}{} · {} items · {}s",
                 format::size(total),
                 format::count(entries),
                 elapsed.as_secs()
@@ -281,25 +282,17 @@ fn scan_lines(scan: &ScanStatus) -> Vec<Line<'static>> {
             let unreadable = scan.errors.len() - blocked;
             if blocked > 0 {
                 lines.push(
-                    Line::from(format!(
-                        "Incomplete: macOS blocked {}. Press s to see how to allow them.",
-                        paths(blocked)
-                    ))
-                    .yellow(),
+                    Line::from(format!("Blocked: {} · s permissions", paths(blocked))).yellow(),
                 );
             }
             if unreadable > 0 {
                 lines.push(
-                    Line::from(format!(
-                        "Incomplete: {} could not be read. Press s to see them.",
-                        paths(unreadable)
-                    ))
-                    .yellow(),
+                    Line::from(format!("Unreadable: {} · s details", paths(unreadable))).yellow(),
                 );
             }
             if !scan.other_disks.is_empty() {
                 lines.push(Line::from(format!(
-                    "Skipped {} folders on other disks. Press s to see them.",
+                    "Other disks: {} folders skipped · s details",
                     scan.other_disks.len()
                 )));
             }
@@ -357,7 +350,7 @@ impl Screen for Home {
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
         &[
-            ("↑ ↓  j k", "Move the selection"),
+            ("↑ ↓  j k", "Move selection"),
             ("Enter  →  l", "Open the selected screen"),
             ("1 to 9", "Open that row"),
             ("s", "See what the scan skipped"),
@@ -457,7 +450,7 @@ mod tests {
         assert!(screen.contains("1,234 items · 5.0 MB"));
         assert!(screen.contains("80% used"));
         assert!(screen.contains("100.0 GB free of 500.0 GB"));
-        assert!(screen.contains("Finder shows 107.4 GB free, counting 7.4 GB"));
+        assert!(screen.contains("Finder: 107.4 GB free · 7.4 GB"));
         assert!(screen.contains("400.0 GB used"));
         assert!(screen.contains("~18.4 GB found"));
     }
@@ -476,7 +469,7 @@ mod tests {
             .join("\n")
         };
 
-        assert!(text(Some(7_400_000_000)).contains("counting 7.4 GB macOS clears when needed"));
+        assert!(text(Some(7_400_000_000)).contains("7.4 GB purgeable by macOS"));
         assert!(!text(Some(50_000_000)).contains("Finder"));
         assert!(!text(None).contains("Finder"));
     }
@@ -507,8 +500,26 @@ mod tests {
 
         let text: Vec<String> = scan_lines(&scan).iter().map(ToString::to_string).collect();
 
-        assert!(text[0].starts_with("Home folder: at least "));
-        assert!(text[1].contains("macOS blocked 2 paths"));
-        assert!(text[2].contains("1 path could not be read"));
+        assert!(text[0].starts_with("Home: at least "));
+        assert!(text[1].contains("Blocked: 2 paths"));
+        assert!(text[2].contains("Unreadable: 1 path"));
+    }
+    #[test]
+    fn layout_stays_readable_across_terminal_sizes() {
+        use crate::ui::visual::tests as view;
+        let scan = crate::ui::scan::ScanStatus::Failed(String::new());
+        let context = Context {
+            scan: &scan,
+            disk: None,
+            cleanable: None,
+            plan: None,
+        };
+        let mut screen = Home::new();
+        for (width, height) in view::SIZES {
+            let buffer = view::render("home", &mut screen, &context, width, height);
+            assert!(view::text(&buffer).contains("Quick Clean"));
+            let (x, y) = view::position(&buffer, "soon");
+            assert_eq!(buffer[(x, y)].fg, ratatui::style::Color::Yellow);
+        }
     }
 }

@@ -10,7 +10,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Style, Stylize};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Cell, Clear, Padding, Paragraph, Row, Table, TableState, Wrap};
+use ratatui::widgets::{Cell, Clear, Padding, Paragraph, Row, Table, TableState, Wrap};
 
 use super::app::{Action, Context, Screen};
 use super::clean::checkbox;
@@ -99,36 +99,7 @@ const MESSAGE_WIDTH: u16 = 76;
 /// How many rows `lines` take when wrapped at spaces to `width`, as the
 /// paragraph wraps them, so a box is never too short for its last line
 fn rows(lines: &[Line], width: u16) -> u16 {
-    let width = usize::from(width).max(1);
-    let rows: usize = lines
-        .iter()
-        .map(|line| {
-            let text: String = line
-                .spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect();
-            let mut rows = 1;
-            let mut used = 0;
-            for word in text.split(' ') {
-                let word = word.chars().count();
-                let needed = if used == 0 { word } else { used + 1 + word };
-                if needed <= width {
-                    used = needed;
-                } else {
-                    // A word longer than the row is broken across rows.
-                    rows += 1;
-                    used = word;
-                    while used > width {
-                        rows += 1;
-                        used -= width;
-                    }
-                }
-            }
-            rows
-        })
-        .sum();
-    u16::try_from(rows).unwrap_or(u16::MAX)
+    super::visual::wrapped_rows(lines, width)
 }
 
 /// A box in the middle of `area`, just big enough for `lines`, so short
@@ -149,7 +120,7 @@ fn message(frame: &mut Frame, area: Rect, title: &str, lines: Vec<Line<'static>>
     frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(lines).wrap(Wrap { trim: false }).block(
-            Block::bordered()
+            super::visual::block()
                 .border_style(Style::new().fg(color))
                 .title(Line::from(format!(" {title} ")).fg(color).bold())
                 .padding(Padding::new(2, 2, 1, 1)),
@@ -222,7 +193,7 @@ fn about_box(frame: &mut Frame, area: Rect, lines: Vec<Line<'static>>) -> Rect {
     frame.render_widget(
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })
-            .block(Block::bordered().padding(Padding::horizontal(1))),
+            .block(super::visual::block().padding(Padding::horizontal(1))),
         about,
     );
     rest
@@ -280,8 +251,13 @@ fn size_of(devices: &[&Device]) -> u64 {
 }
 
 /// One runtime as a table row, with the simulators on it
-fn runtime_row(runtime: &Runtime, on: &[&Device], chosen: bool) -> Row<'static> {
-    let row = Row::new([
+fn runtime_row(
+    runtime: &Runtime,
+    on: &[&Device],
+    chosen: bool,
+    columns: &super::visual::Columns<6>,
+) -> Row<'static> {
+    columns.row([
         Cell::from(checkbox(chosen, runtime.deletable)),
         Cell::from(runtime.name.clone()),
         Cell::from(runtime.build.clone()),
@@ -302,14 +278,9 @@ fn runtime_row(runtime: &Runtime, on: &[&Device], chosen: bool) -> Row<'static> 
                 format::size(size_of(on))
             ))
         } else {
-            Span::raw("simctl will not delete it").italic()
+            Span::raw("Removal blocked").yellow()
         }),
-    ]);
-    if runtime.deletable {
-        row
-    } else {
-        row.dark_gray()
-    }
+    ])
 }
 
 /// What removing did
@@ -394,16 +365,30 @@ impl Simulators {
         let Some(found) = self.stage.found() else {
             return;
         };
+        let sizes = format::column_width(
+            "Size",
+            found
+                .runtimes
+                .iter()
+                .map(|runtime| format::size(runtime.size)),
+        )
+        .max(9);
+        let columns = super::visual::Columns::new(
+            area.width,
+            [(3, 0), (16, 1), (8, 0), (sizes, 0), (11, 0), (18, 1)],
+            &[2, 4],
+            true,
+        );
         let stranded = found.stranded();
         let mut rows: Vec<Row> = found
             .runtimes
             .iter()
             .zip(&self.chosen)
-            .map(|(runtime, &chosen)| runtime_row(runtime, &found.on(runtime), chosen))
+            .map(|(runtime, &chosen)| runtime_row(runtime, &found.on(runtime), chosen, &columns))
             .collect();
         if !stranded.is_empty() {
             let size = size_of(&stranded);
-            rows.push(Row::new([
+            rows.push(columns.row([
                 Cell::from(checkbox(
                     self.chosen.get(found.runtimes.len()) == Some(&true),
                     true,
@@ -418,16 +403,17 @@ impl Simulators {
                 )),
             ]));
         }
-        let header = Row::new([
-            Cell::from(""),
-            Cell::from("Runtime"),
-            Cell::from("Build"),
-            Cell::from(Line::from("Size").right_aligned()),
-            Cell::from("Last used"),
-            Cell::from("Simulators on it"),
-        ])
-        .bold()
-        .bottom_margin(1);
+        let header = columns
+            .row([
+                Cell::from(""),
+                Cell::from("Runtime"),
+                Cell::from("Build"),
+                Cell::from(Line::from("Size").right_aligned()),
+                Cell::from("Last used"),
+                Cell::from("Simulators on it"),
+            ])
+            .style(super::visual::HEADING)
+            .bottom_margin(1);
         let total = found
             .runtimes
             .iter()
@@ -436,31 +422,21 @@ impl Simulators {
             + size_of(&found.devices.iter().collect::<Vec<_>>());
         let picked = self.picked_size();
         let selected = Span::raw(format!(" Selected: {} ", format::size(picked)));
-        let table = Table::new(
-            rows,
-            [
-                Constraint::Length(3),
-                Constraint::Length(12),
-                Constraint::Length(8),
-                Constraint::Length(9),
-                Constraint::Length(11),
-                Constraint::Fill(1),
-            ],
-        )
-        .header(header)
-        .column_spacing(2)
-        .block(
-            Block::bordered()
-                .title(format!(" Simulators · {} ", format::size(total)))
-                .title_bottom(if picked == 0 {
-                    selected
-                } else {
-                    selected.red().bold()
-                })
-                .padding(Padding::horizontal(1)),
-        )
-        .highlight_symbol("▸ ")
-        .row_highlight_style(Style::new().bold());
+        let table = Table::new(rows, columns.widths())
+            .header(header)
+            .column_spacing(2)
+            .block(
+                super::visual::block()
+                    .title(format!(" Simulators · {} ", format::size(total)))
+                    .title_bottom(if picked == 0 {
+                        selected
+                    } else {
+                        selected.red().bold()
+                    })
+                    .padding(Padding::horizontal(1)),
+            )
+            .highlight_symbol("▸ ")
+            .row_highlight_style(super::visual::SELECTED);
         frame.render_stateful_widget(table, area, &mut self.list);
     }
 
@@ -481,6 +457,21 @@ impl Simulators {
                 )],
             ),
         ];
+        if let Some(runtime) = self
+            .stage
+            .found()
+            .and_then(|found| found.runtimes.get(self.list.selected().unwrap_or(0)))
+        {
+            lines.push(
+                Line::from(format!(
+                    "{} · Build {} · Last used {}",
+                    runtime.name,
+                    runtime.build,
+                    runtime.last_used.as_deref().map_or("never", day)
+                ))
+                .cyan(),
+            );
+        }
         if self
             .stage
             .found()
@@ -658,9 +649,9 @@ impl Screen for Simulators {
             Stage::Looking(started, _) => {
                 return Loading {
                     title,
-                    doing: "Asking xcrun simctl for runtimes and simulators",
+                    doing: "Loading runtimes and simulators",
                     progress: format!("{}s", started.elapsed().as_secs()),
-                    note: "Nothing is changed while neet looks.",
+                    note: "Read-only scan.",
                 }
                 .draw(frame, area);
             }
@@ -782,7 +773,7 @@ impl Screen for Simulators {
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
         &[
-            ("↑ ↓  j k", "Move the selection"),
+            ("↑ ↓  j k", "Move selection"),
             ("Space", "Select or clear a row"),
             ("Enter", "Ask before removing what is selected"),
             ("y", "In the question: remove it permanently"),
@@ -899,7 +890,7 @@ impl DockerSpace {
             Color::Yellow,
             vec![
                 key("x"),
-                Span::raw(" stops Docker Desktop and moves its whole disk image, "),
+                Span::raw(": stop Docker; move disk image, "),
                 Span::raw(format::size(image)).bold(),
                 Span::raw(", to the Trash."),
             ],
@@ -911,24 +902,14 @@ impl DockerSpace {
             Line::from("Docker Desktop is not running").yellow().bold(),
             Line::from("Docker can only say what it holds, and prune, while it runs."),
             Line::default(),
-            step(
-                1,
-                vec![
-                    Span::raw("Press "),
-                    key("o"),
-                    Span::raw(" to open Docker Desktop"),
-                ],
-            ),
+            step(1, vec![key("o"), Span::raw(": open Docker Desktop")]),
             step(
                 2,
                 vec![Span::raw(
                     "Wait for the whale in the menu bar to stop moving",
                 )],
             ),
-            step(
-                3,
-                vec![Span::raw("Press "), key("r"), Span::raw(" to look again")],
-            ),
+            step(3, vec![key("r"), Span::raw(": refresh")]),
         ];
         if let Some(image) = self.image() {
             lines.push(Line::default());
@@ -962,54 +943,44 @@ impl DockerSpace {
         let usage_height = u16::try_from(usage.len() + 4).unwrap_or(u16::MAX);
         let [table, rest] =
             Layout::vertical([Constraint::Length(usage_height), Constraint::Fill(1)]).areas(area);
-        frame.render_widget(usage_table(usage), table);
+        frame.render_widget(usage_table(usage, table.width), table);
 
         let rest = if volumes.is_empty() {
             rest
         } else {
-            let height = u16::try_from(volumes.len() + 2).unwrap_or(u16::MAX);
+            let height = u16::try_from(volumes.len() + 4)
+                .unwrap_or(u16::MAX)
+                .min(rest.height / 2);
             let [list, rest] =
                 Layout::vertical([Constraint::Length(height), Constraint::Fill(1)]).areas(rest);
             self.chosen.resize(volumes.len(), false);
             let picked = self.picked_volumes().len();
             frame.render_stateful_widget(
-                volume_table(&volumes, &self.chosen, picked),
+                volume_table(&volumes, &self.chosen, picked, list.width),
                 list,
                 &mut self.list,
             );
             rest
         };
 
-        let mut lines = vec![
-            Line::from(vec![
-                key("Enter"),
-                Span::raw(" runs "),
-                Span::raw("docker system prune --all").bold(),
-            ]),
-            Line::default(),
+        let mut lines = vec![Line::from("Permanently: prune skips Trash.").red().bold()];
+        if let Some(image) = image {
+            lines.push(Self::reset_line(image));
+        }
+        lines.extend([
             labeled(
                 "Removes",
                 Color::Red,
                 vec![Span::raw(
-                    "stopped containers, unused networks, images no container uses, and the build cache",
+                    "stopped containers, unused networks/images, build cache",
                 )],
             ),
             labeled(
                 "Keeps",
                 Color::Green,
-                vec![Span::raw(
-                    "running containers and their images, and volumes you do not select",
-                )],
+                vec![Span::raw("running containers/images; unselected volumes")],
             ),
-        ];
-        if let Some(image) = image {
-            lines.push(Self::reset_line(image));
-        }
-        lines.push(Line::default());
-        lines.push(Line::from(vec![
-            Span::raw("Permanently: ").red().bold(),
-            Span::raw("what the prune removes skips the Trash."),
-        ]));
+        ]);
         if let Some(note) = &self.note {
             lines.push(Line::default());
             lines.push(Line::from(note.clone()).cyan());
@@ -1178,20 +1149,27 @@ impl DockerSpace {
 }
 
 /// The volumes no container uses, to pick for the prune
-fn volume_table(volumes: &[DockerVolume], chosen: &[bool], picked: usize) -> Table<'static> {
+fn volume_table(
+    volumes: &[DockerVolume],
+    chosen: &[bool],
+    picked: usize,
+    width: u16,
+) -> Table<'static> {
+    let sizes = format::column_width("Size", volumes.iter().map(|volume| volume.size.clone()));
+    let columns = super::visual::Columns::new(width, [(3, 0), (sizes, 0), (16, 1)], &[], true);
     let rows: Vec<Row> = volumes
         .iter()
         .zip(chosen)
         .map(|(volume, &chosen)| {
-            Row::new([
+            columns.row([
                 Cell::from(checkbox(chosen, true)),
                 Cell::from(Line::from(Span::raw(volume.size.clone()).yellow()).right_aligned()),
-                Cell::from(volume.name.clone()),
+                Cell::from(format::shorten_middle(&volume.name, columns.width(2))),
             ])
         })
         .collect();
     let bottom = if picked == 0 {
-        Span::raw(" Space selects one to remove with the prune ")
+        Span::raw(" Space: select volumes to remove ")
     } else {
         Span::raw(format!(
             " {} removed permanently, data included ",
@@ -1200,27 +1178,43 @@ fn volume_table(volumes: &[DockerVolume], chosen: &[bool], picked: usize) -> Tab
         .red()
         .bold()
     };
-    Table::new(
-        rows,
-        [
-            Constraint::Length(3),
-            Constraint::Length(10),
-            Constraint::Fill(1),
-        ],
-    )
-    .column_spacing(2)
-    .block(
-        Block::bordered()
-            .title(" Volumes no container uses ")
-            .title_bottom(bottom)
-            .padding(Padding::horizontal(1)),
-    )
-    .highlight_symbol("▸ ")
-    .row_highlight_style(Style::new().bold())
+    Table::new(rows, columns.widths())
+        .header(
+            columns
+                .row([
+                    Cell::from(""),
+                    Cell::from(Line::from("Size").right_aligned()),
+                    Cell::from("Volume"),
+                ])
+                .style(super::visual::HEADING)
+                .bottom_margin(1),
+        )
+        .column_spacing(2)
+        .block(
+            super::visual::block()
+                .title(" Unused volumes ")
+                .title_bottom(bottom)
+                .padding(Padding::horizontal(1)),
+        )
+        .highlight_symbol("▸ ")
+        .row_highlight_style(super::visual::SELECTED)
 }
 
 /// `docker system df`, as a table
-fn usage_table(usage: &[DockerUsage]) -> Table<'static> {
+fn usage_table(usage: &[DockerUsage], width: u16) -> Table<'static> {
+    let counts = format::column_width("Count", usage.iter().map(|line| line.total_count.clone()));
+    let active = format::column_width("In use", usage.iter().map(|line| line.active.clone()));
+    let sizes = format::column_width("Size", usage.iter().map(|line| line.size.clone()));
+    let reclaim = format::column_width(
+        "Reclaimable",
+        usage.iter().map(|line| line.reclaimable.clone()),
+    );
+    let columns = super::visual::Columns::new(
+        width,
+        [(11, 1), (counts, 0), (active, 0), (sizes, 0), (reclaim, 0)],
+        &[],
+        false,
+    );
     let rows: Vec<Row> = usage
         .iter()
         .map(|line| {
@@ -1229,41 +1223,33 @@ fn usage_table(usage: &[DockerUsage]) -> Table<'static> {
             } else {
                 Span::raw(line.reclaimable.clone()).yellow().bold()
             };
-            Row::new([
+            columns.row([
                 Cell::from(line.kind.clone()),
                 Cell::from(Line::from(line.total_count.clone()).right_aligned()),
                 Cell::from(Line::from(line.active.clone()).right_aligned()),
                 Cell::from(Line::from(line.size.clone()).right_aligned()),
-                Cell::from(reclaim),
+                Cell::from(Line::from(reclaim).right_aligned()),
             ])
         })
         .collect();
-    let header = Row::new([
-        Cell::from("Kind"),
-        Cell::from(Line::from("Count").right_aligned()),
-        Cell::from(Line::from("In use").right_aligned()),
-        Cell::from(Line::from("Size").right_aligned()),
-        Cell::from("Can be freed"),
-    ])
-    .bold()
-    .bottom_margin(1);
-    Table::new(
-        rows,
-        [
-            Constraint::Length(14),
-            Constraint::Length(6),
-            Constraint::Length(7),
-            Constraint::Length(10),
-            Constraint::Fill(1),
-        ],
-    )
-    .header(header)
-    .column_spacing(2)
-    .block(
-        Block::bordered()
-            .title(" Docker ")
-            .padding(Padding::horizontal(1)),
-    )
+    let header = columns
+        .row([
+            Cell::from("Kind"),
+            Cell::from(Line::from("Count").right_aligned()),
+            Cell::from(Line::from("In use").right_aligned()),
+            Cell::from(Line::from("Size").right_aligned()),
+            Cell::from(Line::from("Reclaimable").right_aligned()),
+        ])
+        .style(super::visual::HEADING)
+        .bottom_margin(1);
+    Table::new(rows, columns.widths())
+        .header(header)
+        .column_spacing(2)
+        .block(
+            super::visual::block()
+                .title(" Docker ")
+                .padding(Padding::horizontal(1)),
+        )
 }
 
 impl Screen for DockerSpace {
@@ -1275,7 +1261,7 @@ impl Screen for DockerSpace {
                 title,
                 doing: "Asking Docker what it holds",
                 progress: format!("{}s", started.elapsed().as_secs()),
-                note: "Nothing is changed while neet looks.",
+                note: "Read-only scan.",
             }
             .draw(frame, area),
             Stage::Failed(reason) => message(
@@ -1435,7 +1421,7 @@ impl Screen for DockerSpace {
                 "y reset Docker · n or esc back"
             }
             Stage::Asking(_) => "y remove permanently · n or esc back",
-            Stage::Working(..) => "working, please wait",
+            Stage::Working(..) => "Working…",
             Stage::Done(_) => "enter home · r look again · esc home",
             Stage::Ready(found) => match (&found.docker, found.volumes.is_empty(), reset) {
                 (Docker::Usage(_), false, true) => {
@@ -1663,7 +1649,7 @@ mod tests {
         let text = render(&mut screen);
         assert!(text.contains("1.105GB (61%)"));
         assert!(text.contains("influxdb-storage"));
-        assert!(text.contains("volumes you do not select"));
+        assert!(text.contains("unselected volumes"));
 
         // Volumes are kept unless picked.
         press(&mut screen, KeyCode::Enter);
@@ -1687,7 +1673,7 @@ mod tests {
         let mut screen = docker(Docker::NotRunning, Vec::new(), None);
 
         let text = render(&mut screen);
-        assert!(text.contains("Press o to open Docker Desktop"));
+        assert!(text.contains("o: open Docker Desktop"));
         assert!(!text.contains("reset Docker"));
         press(&mut screen, KeyCode::Enter);
         press(&mut screen, KeyCode::Char('x'));
@@ -1732,5 +1718,53 @@ mod tests {
         ));
 
         assert!(render(&mut screen).contains("Press r to look again."));
+    }
+    #[test]
+    fn layout_stays_readable_across_terminal_sizes() {
+        use crate::ui::visual::tests as view;
+        let scan = ScanStatus::Failed(String::new());
+        let context = Context {
+            scan: &scan,
+            disk: None,
+            cleanable: None,
+            plan: None,
+        };
+        let mut sims = Simulators::with(Stage::Ready(SimulatorsFound {
+            runtimes: vec![runtime("iOS 18.6", 8_800_000_000)],
+            devices: vec![device("iPhone 16 Pro", "iOS 18.6", true, 2_100_000_000)],
+        }));
+        let usage = DockerUsage {
+            kind: "Images".into(),
+            total_count: "1234567".into(),
+            active: "2".into(),
+            size: "1.808GB".into(),
+            reclaimable: "1.105GB (61%)".into(),
+        };
+        let mut docker = docker(
+            Docker::Usage(vec![usage]),
+            vec![DockerVolume {
+                name: "influxdb-storage".into(),
+                size: "2.812GB".into(),
+            }],
+            Some(9_400_000_000),
+        );
+        for (width, height) in view::SIZES {
+            let buffer = view::render("simulators", &mut sims, &context, width, height);
+            view::aligned(&buffer, "Size", "8.8 GB");
+            assert!(view::text(&buffer).contains("Permanently"));
+            let buffer = view::render("docker", &mut docker, &context, width, height);
+            view::aligned(&buffer, "Count", "1234567");
+            view::aligned(&buffer, "Reclaimable", "1.105GB (61%)");
+            assert!(view::text(&buffer).contains("influxdb-storage"));
+        }
+        press(&mut sims, KeyCode::Char(' '));
+        press(&mut sims, KeyCode::Enter);
+        press(&mut docker, KeyCode::Enter);
+        for (width, height) in view::SIZES {
+            let buffer = view::render("simulator-confirm", &mut sims, &context, width, height);
+            assert!(view::text(&buffer).contains("remove permanently"));
+            let buffer = view::render("docker-confirm", &mut docker, &context, width, height);
+            assert!(view::text(&buffer).contains("remove permanently"));
+        }
     }
 }

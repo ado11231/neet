@@ -14,7 +14,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
 use ratatui::style::Stylize;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Cell, Clear, Padding, Paragraph, Row, Table, TableState, Wrap};
+use ratatui::widgets::{Cell, Clear, Padding, Paragraph, Row, Table, TableState, Wrap};
 
 use super::app::{Action, Context, Screen};
 use super::format;
@@ -317,16 +317,19 @@ impl Clean {
             ]),
             Line::from(format!("> {typed}█")).cyan(),
         ];
-        let [area] = Layout::vertical([Constraint::Length(7)])
-            .flex(Flex::Center)
-            .areas(area);
+        let [area] = Layout::vertical([Constraint::Length(
+            super::visual::wrapped_rows(&lines, area.width.min(64).saturating_sub(4))
+                .saturating_add(2),
+        )])
+        .flex(Flex::Center)
+        .areas(area);
         let [area] = Layout::horizontal([Constraint::Length(64)])
             .flex(Flex::Center)
             .areas(area);
         frame.render_widget(Clear, area);
         frame.render_widget(
             Paragraph::new(lines).wrap(Wrap { trim: false }).block(
-                Block::bordered()
+                super::visual::block()
                     .title(" Select an expert rule ")
                     .padding(Padding::horizontal(1)),
             ),
@@ -361,9 +364,9 @@ fn tier_span(tier: Tier) -> Span<'static> {
 
 fn tier_meaning(tier: Tier) -> &'static str {
     match tier {
-        Tier::Safe => "The files come back, and the only cost is time. Selected from the start.",
-        Tier::Caution => "You may need to download, index, or sign in again. You select it.",
-        Tier::Expert => "The files may not exist anywhere else. You type its ID to select it.",
+        Tier::Safe => "Recreated as needed. Selected by default.",
+        Tier::Caution => "May require downloads, indexing, or sign-in. Select manually.",
+        Tier::Expert => "May contain unique files. Type the rule ID to select.",
     }
 }
 
@@ -414,32 +417,33 @@ pub(super) fn checkbox(selected: bool, selectable: bool) -> Span<'static> {
     match (selectable, selected) {
         (false, _) => Span::raw("   "),
         (true, true) => Span::raw("[✓]").green().bold(),
-        (true, false) => Span::raw("[ ]").dark_gray(),
+        (true, false) => Span::raw("[ ]"),
     }
 }
 
 /// One rule as a table row. `current` is the row the arrow is on, whose
-/// name turns white, so the checkbox and risk keep their own colors.
-fn rule_row(rule: &RulePlan, current: bool) -> Row<'static> {
+/// name turns bold, so the checkbox and risk keep their own colors.
+fn rule_row(rule: &RulePlan, current: bool, columns: &super::visual::Columns<5>) -> Row<'static> {
     let items = rule.items.len();
     let name = Span::raw(rule.rule.name.clone());
-    let name = if current { name.white().bold() } else { name };
+    let name = if current { name.bold() } else { name };
     if items == 0 {
-        return Row::new([
+        return columns.row([
             Cell::from(checkbox(false, false)),
             Cell::from(name),
             Cell::from(tier_span(rule.rule.tier)),
             Cell::from(Line::from("none").right_aligned()),
             Cell::from(Line::from("·").right_aligned()),
-        ])
-        .dark_gray();
+        ]);
     }
-    Row::new([
+    columns.row([
         Cell::from(checkbox(rule.selected, true)),
         Cell::from(name),
         Cell::from(tier_span(rule.rule.tier)),
         Cell::from(Line::from(count(items)).right_aligned()),
-        Cell::from(Line::from(format::size(rule.size())).right_aligned()),
+        Cell::from(
+            Line::from(format::size_span(rule.size(), format::size(rule.size()))).right_aligned(),
+        ),
     ])
 }
 
@@ -451,26 +455,10 @@ fn field(label: &str, value: Span<'static>) -> Line<'static> {
 /// How many screen rows `lines` take when wrapped to `width` at spaces, as
 /// the details are
 pub(super) fn rows_used(lines: &[Line], width: usize) -> usize {
-    let width = width.max(1);
-    lines
-        .iter()
-        .map(|line| {
-            let text = line.to_string();
-            let mut rows = 1;
-            let mut used = 0;
-            for word in text.split(' ') {
-                let length = word.chars().count();
-                let needed = if used == 0 { length } else { used + 1 + length };
-                if needed <= width {
-                    used = needed;
-                } else {
-                    rows += 1 + length.saturating_sub(1) / width;
-                    used = length % width;
-                }
-            }
-            rows
-        })
-        .sum()
+    usize::from(super::visual::wrapped_rows(
+        lines,
+        u16::try_from(width).unwrap_or(u16::MAX),
+    ))
 }
 
 /// The folder every path found or skipped is in, when they share one
@@ -515,7 +503,7 @@ fn skipped_lines(rule: &RulePlan, home: &Path, width: usize) -> Vec<Line<'static
             continue;
         }
         for path in paths {
-            let room = width.saturating_sub(reason.chars().count() + 13);
+            let room = width.saturating_sub(format::display_width(&reason) + 13);
             lines.push(Line::from(format!(
                 "{:>9}  {}  {reason}",
                 "",
@@ -567,7 +555,7 @@ fn about(rule: &RulePlan, home: &Path) -> Vec<Line<'static>> {
         },
         |folder| display_path(home, folder),
     );
-    lines.push(field("Folder", Span::raw(folder).blue()));
+    lines.push(field("Folder", Span::raw(folder).light_blue()));
     lines
 }
 
@@ -657,7 +645,7 @@ impl Clean {
 
         frame.render_widget(
             Paragraph::new(top).wrap(Wrap { trim: false }).block(
-                Block::bordered()
+                super::visual::block()
                     .title(format!(" {} ", rule.rule.name))
                     .padding(Padding::horizontal(1)),
             ),
@@ -676,11 +664,9 @@ impl Clean {
         };
         frame.render_widget(
             Paragraph::new(found_lines(rule, home, room, width)).block(
-                Block::bordered()
+                super::visual::block()
                     .title(Line::from(title).bold())
-                    .title_bottom(
-                        Line::from(" Items go to the Trash, where Put Back works ").right_aligned(),
-                    )
+                    .title_bottom(Line::from(" Trash · restore with Put Back ").right_aligned())
                     .padding(Padding::horizontal(1)),
             ),
             found_area,
@@ -689,7 +675,7 @@ impl Clean {
         if !skipped.is_empty() {
             frame.render_widget(
                 Paragraph::new(skipped).block(
-                    Block::bordered()
+                    super::visual::block()
                         .title(
                             Line::from(format!(
                                 " Skipped · {} left in place ",
@@ -706,7 +692,7 @@ impl Clean {
         if chart_area.height >= 3 {
             frame.render_widget(
                 Paragraph::new(chart).block(
-                    Block::bordered()
+                    super::visual::block()
                         .title(Line::from(" Where the space is ").bold())
                         .padding(Padding::horizontal(1)),
                 ),
@@ -844,7 +830,7 @@ fn selection(planned: &Planned) -> Paragraph<'static> {
         .iter()
         .filter(|rule| rule.selected && !rule.items.is_empty())
         .collect();
-    let block = Block::bordered()
+    let block = super::visual::block()
         .title(" Selected ")
         .padding(Padding::horizontal(1));
     if chosen.is_empty() {
@@ -889,42 +875,62 @@ fn selection(planned: &Planned) -> Paragraph<'static> {
 }
 
 /// Every rule as a table, largest first, with `summary` on the bottom edge
-fn rules_table(planned: &Planned, current: usize, summary: Line<'static>) -> Table<'static> {
+fn rules_table(
+    planned: &Planned,
+    current: usize,
+    summary: Line<'static>,
+    width: u16,
+) -> Table<'static> {
+    let counts = format::column_width(
+        "Items",
+        planned
+            .plan
+            .rules
+            .iter()
+            .map(|rule| count(rule.items.len())),
+    );
+    let sizes = format::column_width(
+        "Size",
+        planned
+            .plan
+            .rules
+            .iter()
+            .map(|rule| format::size(rule.size())),
+    );
+    let columns = super::visual::Columns::new(
+        width,
+        [(3, 0), (12, 1), (7, 0), (counts, 0), (sizes, 0)],
+        &[],
+        true,
+    );
     let rows: Vec<Row> = planned
         .plan
         .rules
         .iter()
         .enumerate()
-        .map(|(index, rule)| rule_row(rule, index == current))
+        .map(|(index, rule)| rule_row(rule, index == current, &columns))
         .collect();
-    let header = Row::new([
-        Cell::from(""),
-        Cell::from("Rule"),
-        Cell::from("Risk"),
-        Cell::from(Line::from("Items").right_aligned()),
-        Cell::from(Line::from("Size").right_aligned()),
-    ])
-    .bold()
-    .bottom_margin(1);
-    Table::new(
-        rows,
-        [
-            Constraint::Length(3),
-            Constraint::Fill(1),
-            Constraint::Length(7),
-            Constraint::Length(8),
-            Constraint::Length(8),
-        ],
-    )
-    .header(header)
-    .column_spacing(2)
-    .block(
-        Block::bordered()
-            .title(" Deep Clean ")
-            .title_bottom(summary)
-            .padding(Padding::horizontal(1)),
-    )
-    .highlight_symbol("▸ ")
+    let header = columns
+        .row([
+            Cell::from(""),
+            Cell::from("Rule"),
+            Cell::from("Risk"),
+            Cell::from(Line::from("Items").right_aligned()),
+            Cell::from(Line::from("Size").right_aligned()),
+        ])
+        .style(super::visual::HEADING)
+        .bottom_margin(1);
+    Table::new(rows, columns.widths())
+        .header(header)
+        .column_spacing(2)
+        .block(
+            super::visual::block()
+                .title(" Deep Clean ")
+                .title_bottom(summary)
+                .padding(Padding::horizontal(1)),
+        )
+        .highlight_symbol("▸ ")
+        .row_highlight_style(super::visual::SELECTED)
 }
 
 impl Screen for Clean {
@@ -940,7 +946,7 @@ impl Screen for Clean {
                     title: "Deep Clean",
                     doing: "Finding files the rules cover",
                     progress: format!("{}s", started.elapsed().as_secs()),
-                    note: "Nothing is changed while neet looks. This happens once, and again when you press r.",
+                    note: "Read-only scan. This happens once, and again when you press r.",
                 }
                 .draw(frame, area);
                 return;
@@ -950,13 +956,13 @@ impl Screen for Clean {
                     title: "Deep Clean",
                     doing: "Finding files the rules cover",
                     progress: format!("{}s", started.elapsed().as_secs()),
-                    note: "Nothing is changed while neet looks.",
+                    note: "Read-only scan.",
                 }
                 .draw(frame, area);
                 return;
             }
             State::Failed(reason) => {
-                let block = Block::bordered()
+                let block = super::visual::block()
                     .title(" Deep Clean ")
                     .padding(Padding::horizontal(1));
                 frame.render_widget(
@@ -992,7 +998,7 @@ impl Screen for Clean {
         };
 
         let current = self.selected();
-        let table = rules_table(planned, current, summary);
+        let table = rules_table(planned, current, summary, list_area.width);
         frame.render_stateful_widget(table, list_area, &mut self.list);
 
         let Some(rule) = planned.plan.rules.get(current) else {
@@ -1071,7 +1077,7 @@ impl Screen for Clean {
             ),
             ("Enter", "Review every path the selected rules found"),
             ("r", "Look again, such as after removing files yourself"),
-            ("Esc", "Go back to Home"),
+            ("Esc", "Back to Home"),
             ("q", "Quit"),
         ]
     }
@@ -1460,5 +1466,23 @@ mod tests {
 
         assert!(screen.contains("1 rule problems"));
         assert!(screen.contains("Not loaded:"));
+    }
+    #[test]
+    fn layout_stays_readable_across_terminal_sizes() {
+        use crate::ui::visual::tests as view;
+        let scan = crate::ui::scan::ScanStatus::Failed(String::new());
+        let context = Context {
+            scan: &scan,
+            disk: None,
+            cleanable: None,
+            plan: None,
+        };
+        let dir = fake_home();
+        let mut screen = Clean::ready(planned(&dir));
+        for (width, height) in view::SIZES {
+            let buffer = view::render("clean", &mut screen, &context, width, height);
+            view::aligned(&buffer, "Size", "4.1 KB");
+            assert!(view::text(&buffer).contains("Risk"));
+        }
     }
 }

@@ -1,7 +1,8 @@
 use std::time::Duration;
 
 use ratatui::style::Stylize;
-use ratatui::text::Span;
+use ratatui::text::{Line, Span};
+use unicode_segmentation::UnicodeSegmentation;
 
 /// Sizes from here are red, and from a fifth of it yellow.
 pub const HUGE: u64 = 5_000_000_000;
@@ -95,50 +96,79 @@ pub fn percent(part: u64, total: u64) -> u64 {
     u64::try_from(u128::from(part) * 100 / u128::from(total)).unwrap_or(100)
 }
 
-/// Shortens `text` to `width` characters by cutting out its middle, so a
+/// Shortens `text` to `width` terminal cells by cutting out its middle, so a
 /// file name keeps its start and its extension.
 pub fn shorten_middle(text: &str, width: usize) -> String {
-    let chars: Vec<char> = text.chars().collect();
-    if chars.len() <= width {
+    if display_width(text) <= width {
         return text.to_string();
     }
     if width == 0 {
         return String::new();
     }
     let keep = width - 1;
-    let end = keep / 2;
-    let start = keep - end;
-    let head: String = chars[..start].iter().collect();
-    let tail: String = chars[chars.len() - end..].iter().collect();
+    let tail = suffix(text, keep / 2);
+    let mut head = String::new();
+    let room = keep - display_width(&tail);
+    for part in text.graphemes(true) {
+        if display_width(&head) + display_width(part) > room {
+            break;
+        }
+        head.push_str(part);
+    }
     format!("{head}…{tail}")
 }
 
-/// Shortens a folder path to `width` characters by cutting out its middle.
-/// Keeps where it starts, such as `~/Library`, and the part nearest the file.
+/// Terminal cells occupied by text, including wide and combining characters.
+pub fn display_width(text: &str) -> usize {
+    Line::from(text).width()
+}
+
+fn suffix(text: &str, width: usize) -> String {
+    let mut used = 0;
+    let parts: Vec<&str> = text
+        .graphemes(true)
+        .rev()
+        .take_while(|part| {
+            used += display_width(part);
+            used <= width
+        })
+        .collect();
+    parts.into_iter().rev().collect()
+}
+
+/// Shortens a folder path without splitting a grapheme or exceeding its cells.
 pub fn shorten_path(path: &str, width: usize) -> String {
-    let chars: Vec<char> = path.chars().collect();
-    if chars.len() <= width {
+    if display_width(path) <= width {
         return path.to_string();
     }
     if width == 0 {
         return String::new();
     }
-    // The first two parts, such as `~/Library/`, when they leave room for the end
     let head: String = path.split_inclusive('/').take(2).collect();
-    let head_len = head.chars().count();
-    let head = if head_len < chars.len() && head_len + 1 + 12 <= width {
+    let head = if display_width(&head) + 13 <= width {
         head
     } else {
         String::new()
     };
-    let keep = width - head.chars().count() - 1;
-    let tail: String = chars[chars.len() - keep..].iter().collect();
-    // Start the end at a whole folder name when there is one
+    let tail = suffix(path, width - display_width(&head) - 1);
     let tail = match tail.find('/') {
-        Some(slash) if slash + 1 < tail.len() => tail[slash..].to_string(),
-        _ => tail,
+        Some(slash) if slash + 1 < tail.len() => &tail[slash..],
+        _ => &tail,
     };
     format!("{head}…{tail}")
+}
+
+/// Room for a header and the widest formatted value beneath it.
+pub fn column_width(header: &str, values: impl IntoIterator<Item = String>) -> u16 {
+    u16::try_from(
+        values
+            .into_iter()
+            .map(|value| display_width(&value))
+            .chain([display_width(header)])
+            .max()
+            .unwrap_or(0),
+    )
+    .unwrap_or(u16::MAX)
 }
 
 #[cfg(test)]
@@ -201,5 +231,27 @@ mod tests {
         // Too narrow to keep the start as well
         assert_eq!(shorten_path("~/Library/Containers/Docker", 12), "…/Docker");
         assert_eq!(shorten_path("anything", 1), "…");
+    }
+
+    #[test]
+    fn shortening_respects_terminal_cells_and_graphemes() {
+        use super::display_width;
+        for text in [
+            "日本語の長い名前.zip",
+            "cafe\u{301}-backup.tar",
+            "👩‍💻-project-backup.zip",
+        ] {
+            for width in 0..30 {
+                for shortened in [shorten_middle(text, width), shorten_path(text, width)] {
+                    assert!(
+                        display_width(&shortened) <= width,
+                        "{shortened:?} exceeds {width}"
+                    );
+                    assert!(!shortened.starts_with('\u{301}'));
+                    assert!(!shortened.ends_with('\u{200d}'));
+                }
+            }
+        }
+        assert_eq!(shorten_middle("日本語.zip", 9), "日本….zip");
     }
 }

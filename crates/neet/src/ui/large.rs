@@ -7,9 +7,9 @@ use neet_core::tree::{NodeId, Tree};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
-use ratatui::style::{Style, Stylize};
+use ratatui::style::Stylize;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Cell, Padding, Paragraph, Row, Table, TableState, Wrap};
+use ratatui::widgets::{Cell, Padding, Paragraph, Row, Table, TableState, Wrap};
 
 use super::app::{Action, Context, Screen};
 use super::clean::rows_used;
@@ -113,6 +113,29 @@ impl LargeFiles {
     /// The two filters, every choice shown and the current one marked, so
     /// `s` and `a` say what they do
     fn draw_filters(&self, frame: &mut Frame, area: Rect) {
+        if area.width < 100 {
+            let lines = vec![
+                Line::from(vec![
+                    Span::raw("Size ≥ "),
+                    Span::raw(SIZES[self.size].1).cyan().bold(),
+                    Span::raw("    s change"),
+                ]),
+                Line::from(vec![
+                    Span::raw("Unchanged: "),
+                    Span::raw(AGES[self.age].1).cyan().bold(),
+                    Span::raw("    a change"),
+                ]),
+            ];
+            frame.render_widget(
+                Paragraph::new(lines).block(
+                    super::visual::block()
+                        .title(" Large Files ")
+                        .padding(Padding::horizontal(1)),
+                ),
+                area,
+            );
+            return;
+        }
         let choices = |labels: Vec<String>, current: usize, key: &'static str, label: &str| {
             let mut spans = vec![Span::raw(format!("{label:<11}")).bold()];
             for (index, text) in labels.into_iter().enumerate() {
@@ -147,7 +170,7 @@ impl LargeFiles {
         ];
         frame.render_widget(
             Paragraph::new(lines).block(
-                Block::bordered()
+                super::visual::block()
                     .title(" Large Files ")
                     .padding(Padding::horizontal(1)),
             ),
@@ -175,7 +198,7 @@ impl LargeFiles {
                 format::count(u64::try_from(MAX_ROWS).unwrap_or(u64::MAX))
             )));
         }
-        let block = Block::bordered()
+        let block = super::visual::block()
             .title(" Files, largest first ")
             .title_bottom(Line::from(summary).right_aligned())
             .padding(Padding::horizontal(1));
@@ -190,52 +213,40 @@ impl LargeFiles {
             return;
         }
 
-        // The name and folder share what is left after the fixed columns,
-        // the border, the padding, and the selection arrow.
-        let fixed = 2 + 2 + 2 + SIZE_WIDTH + BAR_WIDTH + AGE_WIDTH + GAP * 4;
-        let rest = area.width.saturating_sub(fixed);
-        let name = rest * 2 / 5;
-        let folder = rest - name;
+        let sizes = format::column_width(
+            "Size",
+            found.iter().map(|&id| format::size(tree.get(id).own_size)),
+        )
+        .max(SIZE_WIDTH);
+        let columns = super::visual::Columns::new(
+            area.width,
+            [(sizes, 0), (BAR_WIDTH, 0), (AGE_WIDTH, 0), (18, 2), (18, 3)],
+            &[1, 4, 2],
+            true,
+        );
         let largest = found.first().map_or(0, |&id| tree.get(id).own_size);
         let now = SystemTime::now();
         let rows: Vec<Row> = found
             .iter()
             .take(MAX_ROWS)
-            .map(|&id| {
-                row(
-                    tree,
-                    id,
-                    now,
-                    largest,
-                    usize::from(name),
-                    usize::from(folder),
-                )
-            })
+            .map(|&id| row(tree, id, now, largest, &columns))
             .collect();
-        let header = Row::new([
-            Cell::from(Line::from("Size").right_aligned()),
-            Cell::from(""),
-            Cell::from("Last changed"),
-            Cell::from("Name"),
-            Cell::from("Folder"),
-        ])
-        .bold()
-        .bottom_margin(1);
-        let table = Table::new(
-            rows,
-            [
-                Constraint::Length(SIZE_WIDTH),
-                Constraint::Length(BAR_WIDTH),
-                Constraint::Length(AGE_WIDTH),
-                Constraint::Length(name),
-                Constraint::Length(folder),
-            ],
-        )
-        .header(header)
-        .column_spacing(GAP)
-        .block(block)
-        .highlight_symbol("▸ ")
-        .row_highlight_style(Style::new().bold());
+        let header = columns
+            .row([
+                Cell::from(Line::from("Size").right_aligned()),
+                Cell::from(""),
+                Cell::from("Last changed"),
+                Cell::from("Name"),
+                Cell::from("Folder"),
+            ])
+            .style(super::visual::HEADING)
+            .bottom_margin(1);
+        let table = Table::new(rows, columns.widths())
+            .header(header)
+            .column_spacing(GAP)
+            .block(block)
+            .highlight_symbol("▸ ")
+            .row_highlight_style(super::visual::SELECTED);
         frame.render_stateful_widget(table, area, &mut self.table);
     }
 
@@ -297,7 +308,7 @@ impl LargeFiles {
             Layout::vertical([Constraint::Length(height), Constraint::Fill(1)]).areas(area);
         frame.render_widget(
             Paragraph::new(lines).wrap(Wrap { trim: true }).block(
-                Block::bordered()
+                super::visual::block()
                     .title(Line::from(format!(" {name} ")).bold())
                     .title_bottom(Line::from(" Enter shows it in Disk ").right_aligned())
                     .padding(Padding::horizontal(1)),
@@ -309,7 +320,7 @@ impl LargeFiles {
 
     /// Where the files found are, by folder, largest first
     fn draw_where(frame: &mut Frame, area: Rect, tree: &Tree, found: &[NodeId]) {
-        let block = Block::bordered()
+        let block = super::visual::block()
             .title(" Where they are ")
             .padding(Padding::horizontal(1));
         let groups = by_folder(tree, found);
@@ -407,10 +418,9 @@ fn kind_of(name: &str) -> (&'static str, Option<&'static str>) {
             "Archive",
             Some("Often safe to delete once it has been unpacked."),
         ),
-        "mov" | "mp4" | "m4v" | "mkv" | "avi" | "webm" => (
-            "Video",
-            Some("Your own media. Back it up before you remove it."),
-        ),
+        "mov" | "mp4" | "m4v" | "mkv" | "avi" | "webm" => {
+            ("Video", Some("Personal media. Back up before removal."))
+        }
         "raw" | "img" | "vmdk" | "vdi" | "qcow2" | "sparseimage" | "sparsebundle" => (
             "Virtual disk",
             Some("Used by a virtual machine or Docker. Free it from the app that made it."),
@@ -442,8 +452,7 @@ fn row(
     id: NodeId,
     now: SystemTime,
     largest: u64,
-    name: usize,
-    folder: usize,
+    columns: &super::visual::Columns<5>,
 ) -> Row<'static> {
     let node = tree.get(id);
     let size = format::size_span(node.own_size, format::size(node.own_size));
@@ -461,7 +470,7 @@ fn row(
 
     let path = display_path(tree, id);
     let (parent, file) = path.rsplit_once('/').unwrap_or(("", path.as_str()));
-    Row::new([
+    columns.row([
         Cell::from(Line::from(size).right_aligned()),
         Cell::from(format::size_bar(
             node.own_size,
@@ -469,8 +478,8 @@ fn row(
             usize::from(BAR_WIDTH),
         )),
         Cell::from(age),
-        Cell::from(format::shorten_middle(file, name)),
-        Cell::from(Span::raw(format::shorten_path(parent, folder))),
+        Cell::from(format::shorten_middle(file, columns.width(3))),
+        Cell::from(Span::raw(format::shorten_path(parent, columns.width(4)))),
     ])
 }
 
@@ -479,25 +488,18 @@ impl Screen for LargeFiles {
         let scan = match context.scan {
             ScanStatus::Done { scan, .. } => scan,
             ScanStatus::Running(progress) => {
-                scanning(
-                    "Large Files",
-                    "Large files show here when the scan finishes.",
-                    *progress,
-                )
-                .draw(frame, area);
+                scanning("Large Files", "Finding large files.", *progress).draw(frame, area);
                 return;
             }
             ScanStatus::Failed(reason) => {
-                let block = Block::bordered()
+                let block = super::visual::block()
                     .title(" Large Files ")
                     .padding(Padding::horizontal(1));
                 frame.render_widget(
-                    Paragraph::new(format!(
-                        "The scan failed, so there is nothing to show. {reason}"
-                    ))
-                    .red()
-                    .wrap(Wrap { trim: true })
-                    .block(block),
+                    Paragraph::new(format!("Scan failed: {reason}"))
+                        .red()
+                        .wrap(Wrap { trim: true })
+                        .block(block),
                     area,
                 );
                 return;
@@ -513,10 +515,43 @@ impl Screen for LargeFiles {
         } else {
             (area, None)
         };
+        let (left, compact) = if side.is_none() && area.height >= 18 {
+            let [left, detail] =
+                Layout::vertical([Constraint::Fill(1), Constraint::Length(5)]).areas(left);
+            (left, Some(detail))
+        } else {
+            (left, None)
+        };
         let [filters, table] =
             Layout::vertical([Constraint::Length(4), Constraint::Fill(1)]).areas(left);
         self.draw_filters(frame, filters);
         self.draw_table(frame, table, tree, &found);
+        if let Some(compact) = compact {
+            let details = self
+                .table
+                .selected()
+                .and_then(|index| found.get(index))
+                .map(|&id| {
+                    let node = tree.get(id);
+                    let age = node
+                        .modified
+                        .and_then(|time| SystemTime::now().duration_since(time).ok())
+                        .map_or_else(|| "unknown".to_string(), format::age);
+                    vec![
+                        Line::from(display_path(tree, id)).light_blue(),
+                        Line::from(format!("Changed: {age}")),
+                    ]
+                })
+                .unwrap_or_default();
+            frame.render_widget(
+                Paragraph::new(details).wrap(Wrap { trim: false }).block(
+                    super::visual::block()
+                        .title(" Selected ")
+                        .padding(Padding::horizontal(1)),
+                ),
+                compact,
+            );
+        }
         if let Some(side) = side {
             self.draw_side(frame, side, tree, &found);
         }
@@ -559,7 +594,7 @@ impl Screen for LargeFiles {
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
         &[
-            ("↑ ↓  j k", "Move the selection"),
+            ("↑ ↓  j k", "Move selection"),
             ("g  G", "Jump to the first or last file"),
             ("s", "Change the smallest size: 10 MB to 5 GB"),
             ("a", "Change how long files must be unchanged"),
@@ -727,7 +762,7 @@ mod tests {
         let scan = ScanStatus::Running(neet_core::scan::Progress::default());
         let screen = render(&mut LargeFiles::new(), &scan);
 
-        assert!(screen.contains("Large files show here when the scan finishes"));
+        assert!(screen.contains("Finding large files"));
     }
 
     #[test]
@@ -800,5 +835,23 @@ mod tests {
         assert_eq!(kind_of("Docker.raw").0, "Virtual disk");
         assert_eq!(kind_of("notes").0, "File");
         assert_eq!(kind_of("notes").1, None);
+    }
+    #[test]
+    fn layout_stays_readable_across_terminal_sizes() {
+        use crate::ui::visual::tests as view;
+        let scan = done();
+        let context = Context {
+            scan: &scan,
+            disk: None,
+            cleanable: None,
+            plan: None,
+        };
+        let mut screen = LargeFiles::new();
+        for (width, height) in view::SIZES {
+            let buffer = view::render("large", &mut screen, &context, width, height);
+            view::aligned(&buffer, "Size", "2.0 GB");
+            assert!(view::text(&buffer).contains("backup.zip"));
+            assert!(view::text(&buffer).contains("Changed"));
+        }
     }
 }

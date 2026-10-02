@@ -13,9 +13,9 @@ use neet_core::safety::CleanupRoots;
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Style, Stylize};
+use ratatui::style::Stylize;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Cell, Padding, Paragraph, Row, Table, TableState, Wrap};
+use ratatui::widgets::{Cell, Padding, Paragraph, Row, Table, TableState, Wrap};
 
 use super::app::{Action, Context, Screen};
 use super::clean::{Planned, checkbox, display_path, skip_reason};
@@ -180,7 +180,13 @@ impl RemoveApp {
         Action::Open(Box::new(AppFiles::start(roots.clone(), app.clone())))
     }
 
-    fn app_row(&self, app: &App, home: Option<&Path>, largest: u64) -> Row<'static> {
+    fn app_row(
+        &self,
+        app: &App,
+        home: Option<&Path>,
+        largest: u64,
+        columns: &super::visual::Columns<5>,
+    ) -> Row<'static> {
         let folder = app
             .path
             .parent()
@@ -192,7 +198,7 @@ impl RemoveApp {
         let folder = if folder.starts_with('~') {
             Span::raw(folder).magenta()
         } else {
-            Span::raw(folder).blue()
+            Span::raw(folder).light_blue()
         };
         let id = app.bundle_id.clone().unwrap_or_default();
         let (size, bar) = match self.sizes.get(&app.path) {
@@ -200,21 +206,26 @@ impl RemoveApp {
                 format::size_span(size, format::size(size)),
                 size_bar(size, largest),
             ),
-            None if self.measuring.is_some() => (Span::raw("…").dark_gray(), Span::raw("")),
+            None if self.measuring.is_some() => (Span::raw("…").cyan(), Span::raw("")),
             None => (Span::raw(""), Span::raw("")),
         };
         match app.refused {
-            // Plain text, so the whole row stays gray
-            Some(refusal) => Row::new([
-                Cell::from(app.name.clone()),
-                Cell::from(Line::from(size.content).right_aligned()),
+            // Keep the refusal readable even when the row cannot be opened.
+            Some(refusal) => columns.row([
+                Cell::from(
+                    Span::raw(format::shorten_middle(
+                        &format!("{} [blocked]", app.name),
+                        columns.width(0),
+                    ))
+                    .yellow(),
+                ),
+                Cell::from(Line::from(size).right_aligned()),
                 Cell::from(""),
                 Cell::from(folder.content),
-                Cell::from(Span::raw(format!("not removable: {refusal}")).italic()),
-            ])
-            .dark_gray(),
-            None => Row::new([
-                Cell::from(app.name.clone()),
+                Cell::from(Span::raw(format!("Blocked: {refusal}")).yellow()),
+            ]),
+            None => columns.row([
+                Cell::from(format::shorten_middle(&app.name, columns.width(0))),
                 Cell::from(Line::from(size).right_aligned()),
                 Cell::from(bar),
                 Cell::from(folder),
@@ -222,6 +233,27 @@ impl RemoveApp {
             ]),
         }
     }
+}
+
+/// Keep the selected path and metadata available when secondary columns disappear.
+fn draw_selected(frame: &mut Frame, area: Rect, details: Vec<Line<'static>>) -> Rect {
+    if details.is_empty() {
+        return area;
+    }
+    let height = super::visual::wrapped_rows(&details, area.width.saturating_sub(4))
+        .saturating_add(2)
+        .min(area.height.saturating_sub(6));
+    let [table, detail] =
+        Layout::vertical([Constraint::Fill(1), Constraint::Length(height)]).areas(area);
+    frame.render_widget(
+        Paragraph::new(details).wrap(Wrap { trim: false }).block(
+            super::visual::block()
+                .title(" Selected ")
+                .padding(Padding::horizontal(1)),
+        ),
+        detail,
+    );
+    table
 }
 
 /// A bar of `size` against the largest app, colored like the size
@@ -239,7 +271,7 @@ fn size_bar(size: u64, largest: u64) -> Span<'static> {
 impl Screen for RemoveApp {
     fn draw(&mut self, frame: &mut Frame, area: Rect, _context: &Context) {
         self.poll();
-        let block = Block::bordered().padding(Padding::horizontal(1));
+        let block = super::visual::block().padding(Padding::horizontal(1));
         if let Some(reason) = &self.failed {
             let block = block.title(" Remove App ");
             frame.render_widget(Paragraph::new(reason.clone()).red().block(block), area);
@@ -256,20 +288,51 @@ impl Screen for RemoveApp {
             .filter_map(|app| self.sizes.get(&app.path))
             .sum();
         let largest = self.sizes.values().copied().max().unwrap_or(0);
+        let sizes =
+            format::column_width("Size", self.sizes.values().map(|&size| format::size(size)))
+                .max(4);
+        let columns = super::visual::Columns::new(
+            area.width,
+            [(18, 2), (sizes, 0), (12, 0), (16, 0), (18, 1)],
+            &[2, 4, 3],
+            true,
+        );
+        let detail = self
+            .list
+            .selected()
+            .and_then(|index| self.apps.get(index))
+            .map(|app| {
+                let status = app.refused.as_ref().map_or_else(
+                    || app.bundle_id.clone().unwrap_or_default(),
+                    |why| format!("Blocked: {why}"),
+                );
+                let status = Span::raw(status);
+                Line::from(vec![
+                    Span::raw(app.path.display().to_string()).light_blue(),
+                    Span::raw(" · "),
+                    if app.refused.is_some() {
+                        status.yellow()
+                    } else {
+                        status.cyan()
+                    },
+                ])
+            });
+        let area = draw_selected(frame, area, detail.into_iter().collect());
         let rows: Vec<Row> = self
             .apps
             .iter()
-            .map(|app| self.app_row(app, home.as_deref(), largest))
+            .map(|app| self.app_row(app, home.as_deref(), largest, &columns))
             .collect();
-        let header = Row::new([
-            Cell::from("Name"),
-            Cell::from(Line::from("Size").right_aligned()),
-            Cell::from(""),
-            Cell::from("Folder"),
-            Cell::from("Bundle ID"),
-        ])
-        .bold()
-        .bottom_margin(1);
+        let header = columns
+            .row([
+                Cell::from("Name"),
+                Cell::from(Line::from("Size").right_aligned()),
+                Cell::from(""),
+                Cell::from("Folder"),
+                Cell::from("Bundle ID"),
+            ])
+            .style(super::visual::HEADING)
+            .bottom_margin(1);
         let measuring = if self.measuring.is_some() {
             " · measuring…"
         } else {
@@ -277,7 +340,7 @@ impl Screen for RemoveApp {
         };
         let summary = Line::from(vec![
             Span::raw(format!(
-                " {} apps you can remove take ",
+                " {} removable · ",
                 format::count(u64::try_from(removable.len()).unwrap_or(u64::MAX))
             )),
             format::size_span(total, format::size(total)).bold(),
@@ -293,26 +356,17 @@ impl Screen for RemoveApp {
             },
             |note| Line::from(format!(" {note} ")).yellow(),
         );
-        let table = Table::new(
-            rows,
-            [
-                Constraint::Fill(2),
-                Constraint::Length(9),
-                Constraint::Length(u16::try_from(APP_BAR).unwrap_or(u16::MAX)),
-                Constraint::Length(16),
-                Constraint::Fill(3),
-            ],
-        )
-        .header(header)
-        .column_spacing(2)
-        .block(
-            block
-                .title(" Remove App ")
-                .title_bottom(summary)
-                .title_bottom(note.right_aligned()),
-        )
-        .highlight_symbol("▸ ")
-        .row_highlight_style(Style::new().bold());
+        let table = Table::new(rows, columns.widths())
+            .header(header)
+            .column_spacing(2)
+            .block(
+                block
+                    .title(" Remove App ")
+                    .title_bottom(summary)
+                    .title(note.right_aligned()),
+            )
+            .highlight_symbol("▸ ")
+            .row_highlight_style(super::visual::SELECTED);
         frame.render_stateful_widget(table, area, &mut self.list);
     }
 
@@ -338,11 +392,11 @@ impl Screen for RemoveApp {
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
         &[
-            ("↑ ↓  j k", "Move the selection"),
+            ("↑ ↓  j k", "Move selection"),
             ("g  G", "Jump to the first or last app"),
             ("Enter  →  l", "List the app and its files"),
             ("s", "Sort by size or by name"),
-            ("Esc", "Go back to Home"),
+            ("Esc", "Back to Home"),
             ("q", "Quit"),
         ]
     }
@@ -359,9 +413,6 @@ enum State {
 
 /// Width of the folder column, such as `~/Library/Application Support`
 const FOLDER_WIDTH: u16 = 30;
-
-/// Width of the note column, such as `shared with other apps`
-const NOTE_WIDTH: u16 = 22;
 
 /// One app and the files that belong to it, each selected as SAFETY.md
 /// says. `Enter` opens the same review as Clean.
@@ -448,22 +499,23 @@ fn explain(rule: &RulePlan) -> &'static str {
         .unwrap_or(Mark::None);
     match mark {
         Mark::None if rule.rule.name == "The app" => "The app itself.",
-        Mark::None => "Files the app makes again when it needs them. Selected from the start.",
-        Mark::MayBeYourData => {
-            "May hold things you made or saved in the app. Look inside before selecting it."
-        }
-        Mark::Settings => "The app's settings. Keep them if you may install the app again.",
+        Mark::None => "Recreated by the app. Selected by default.",
+        Mark::MayBeYourData => "May contain saved work. Inspect before selecting.",
+        Mark::Settings => "App settings. Keep for reinstallation.",
         Mark::SharedWithOtherApps => "Other apps from the same maker may use it too.",
         Mark::StartsOnItsOwn => "Starts a helper program on its own, such as when you log in.",
-        Mark::MatchedByName => {
-            "Found by the app's name, not its bundle ID, so it may belong to something else."
-        }
+        Mark::MatchedByName => "Matched by name only. Verify ownership before selecting.",
     }
 }
 
 /// One file as a table row. `current` is the row the arrow is on, whose name
-/// turns white, so the checkbox and note keep their own colors.
-fn file_row(rule: &RulePlan, home: &Path, current: bool, name_width: usize) -> Row<'static> {
+/// turns bold, so the checkbox and note keep their own colors.
+fn file_row(
+    rule: &RulePlan,
+    home: &Path,
+    current: bool,
+    columns: &super::visual::Columns<5>,
+) -> Row<'static> {
     let (path, size, note) = match (rule.items.first(), rule.skipped.first()) {
         (Some(item), _) => (
             display_path(home, item.path.path()),
@@ -478,36 +530,34 @@ fn file_row(rule: &RulePlan, home: &Path, current: bool, name_width: usize) -> R
         (None, None) => (String::new(), Span::raw(""), String::new()),
     };
     let (folder, name) = path.rsplit_once('/').unwrap_or(("", path.as_str()));
-    let name = Span::raw(format::shorten_middle(name, name_width));
-    let name = if current { name.white().bold() } else { name };
-    let row = Row::new([
+    let name = Span::raw(format::shorten_middle(name, columns.width(2)));
+    let name = if current { name.bold() } else { name };
+    columns.row([
         Cell::from(checkbox(rule.selected, !rule.items.is_empty())),
         Cell::from(Line::from(size).right_aligned()),
         Cell::from(name),
-        Cell::from(Span::raw(format::shorten_path(folder, FOLDER_WIDTH.into())).blue()),
+        Cell::from(Span::raw(format::shorten_path(folder, columns.width(3))).light_blue()),
         Cell::from(Span::raw(note).yellow()),
-    ]);
-    if rule.items.is_empty() {
-        row.dark_gray()
-    } else {
-        row
-    }
+    ])
 }
 
 impl Screen for AppFiles {
     fn draw(&mut self, frame: &mut Frame, area: Rect, _context: &Context) {
         self.poll();
-        let title = format!(" {} ({}) ", self.name, self.bundle_id);
-        let block = Block::bordered()
+        let title = format!(
+            " {} ",
+            format::shorten_middle(&self.name, usize::from(area.width.saturating_sub(30)))
+        );
+        let block = super::visual::block()
             .title(title)
             .padding(Padding::horizontal(1));
         let planned = match &self.state {
             State::Planning { started, .. } => {
                 Loading {
                     title: &self.name,
-                    doing: "Finding the app's files and measuring them",
+                    doing: "Measuring app files",
                     progress: format!("{}s", started.elapsed().as_secs()),
-                    note: "Nothing is changed while neet looks.",
+                    note: "Read-only scan.",
                 }
                 .draw(frame, area);
                 return;
@@ -536,61 +586,55 @@ impl Screen for AppFiles {
             } else {
                 selected.green().bold()
             })
-            .title_bottom(
-                Line::from(" Items go to the Trash, where Put Back works ").right_aligned(),
-            );
-        let [list_area, why_area] =
-            Layout::vertical([Constraint::Fill(1), Constraint::Length(3)]).areas(area);
-
-        // Checkbox, size, folder, and note are fixed; the name takes the rest.
-        let fixed = 2 + 2 + 2 + 3 + 9 + FOLDER_WIDTH + NOTE_WIDTH + 2 * 4;
-        let name_width = list_area.width.saturating_sub(fixed);
+            .title(Line::from(" Trash · Put Back restores ").right_aligned());
+        let current = self.list.selected().unwrap_or(0);
+        let mut details = vec![Line::from(self.bundle_id.clone()).cyan()];
+        if let Some(rule) = plan.rules.get(current) {
+            if let Some(path) = rule
+                .items
+                .first()
+                .map(|item| item.path.path())
+                .or_else(|| rule.skipped.first().map(|item| item.path.as_path()))
+            {
+                details.push(Line::from(display_path(&planned.home, path)).light_blue());
+            }
+            details.push(Line::from(explain(rule)));
+        }
+        let list_area = draw_selected(frame, area, details);
+        let sizes = format::column_width(
+            "Size",
+            plan.rules.iter().map(|rule| format::size(rule.size())),
+        );
+        let columns = super::visual::Columns::new(
+            list_area.width,
+            [(3, 0), (sizes, 0), (16, 1), (FOLDER_WIDTH, 0), (18, 0)],
+            &[3],
+            true,
+        );
         let current = self.list.selected().unwrap_or(0);
         let rows: Vec<Row> = plan
             .rules
             .iter()
             .enumerate()
-            .map(|(index, rule)| {
-                file_row(
-                    rule,
-                    &planned.home,
-                    index == current,
-                    usize::from(name_width),
-                )
-            })
+            .map(|(index, rule)| file_row(rule, &planned.home, index == current, &columns))
             .collect();
-        let header = Row::new([
-            Cell::from(""),
-            Cell::from(Line::from("Size").right_aligned()),
-            Cell::from("Name"),
-            Cell::from("Folder"),
-            Cell::from("Note"),
-        ])
-        .bold()
-        .bottom_margin(1);
-        let table = Table::new(
-            rows,
-            [
-                Constraint::Length(3),
-                Constraint::Length(9),
-                Constraint::Length(name_width),
-                Constraint::Length(FOLDER_WIDTH),
-                Constraint::Length(NOTE_WIDTH),
-            ],
-        )
-        .header(header)
-        .column_spacing(2)
-        .block(block)
-        .highlight_symbol("▸ ");
+        let header = columns
+            .row([
+                Cell::from(""),
+                Cell::from(Line::from("Size").right_aligned()),
+                Cell::from("Name"),
+                Cell::from("Folder"),
+                Cell::from("Note"),
+            ])
+            .style(super::visual::HEADING)
+            .bottom_margin(1);
+        let table = Table::new(rows, columns.widths())
+            .header(header)
+            .column_spacing(2)
+            .block(block)
+            .highlight_symbol("▸ ")
+            .row_highlight_style(super::visual::SELECTED);
         frame.render_stateful_widget(table, list_area, &mut self.list);
-
-        if let Some(rule) = plan.rules.get(current) {
-            frame.render_widget(
-                Paragraph::new(Line::from(explain(rule)))
-                    .block(Block::bordered().padding(Padding::horizontal(1))),
-                why_area,
-            );
-        }
     }
 
     fn handle_key(&mut self, key: KeyEvent, _context: &Context) -> Action {
@@ -616,10 +660,10 @@ impl Screen for AppFiles {
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
         &[
-            ("↑ ↓  j k", "Move the selection"),
+            ("↑ ↓  j k", "Move selection"),
             ("Space", "Select or clear a file"),
             ("Enter", "Review every selected path"),
-            ("Esc", "Go back to the app list"),
+            ("Esc", "Back to the app list"),
             ("q", "Quit"),
         ]
     }
@@ -704,7 +748,7 @@ mod tests {
     }
 
     #[test]
-    fn lists_apps_and_dims_refused_ones() {
+    fn lists_apps_and_labels_refused_ones() {
         let (_home, _shared, roots, apps) = setup();
         let mut screen = RemoveApp::from_apps(roots, apps, |_| false);
 
@@ -735,7 +779,7 @@ mod tests {
         let text = render(&mut screen);
         assert!(text.contains("6.0 GB"));
         assert!(text.contains("2.0 MB"));
-        assert!(text.contains("apps you can remove take 6.0 GB"));
+        assert!(text.contains("removable · 6.0 GB"));
         assert_eq!(screen.apps[0].name, "Big");
 
         press(&mut screen, KeyCode::Down);
@@ -802,6 +846,39 @@ mod tests {
             }
             assert!(Instant::now() < deadline, "planning should finish");
             thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+    #[test]
+    fn layout_stays_readable_across_terminal_sizes() {
+        use crate::ui::visual::tests as view;
+        let scan = crate::ui::scan::ScanStatus::Failed(String::new());
+        let context = Context {
+            scan: &scan,
+            disk: None,
+            cleanable: None,
+            plan: None,
+        };
+        let (_home, _shared, roots, apps) = setup();
+        let plan = removal::plan(&roots, &apps[0]).unwrap();
+        let mut files = AppFiles::ready(
+            "Example",
+            "com.example.app",
+            Planned {
+                plan,
+                errors: Vec::new(),
+                home: roots.home().to_path_buf(),
+            },
+        );
+        let mut screen = RemoveApp::from_apps(roots, apps, |_| false);
+        screen
+            .sizes
+            .insert(screen.apps[0].path.clone(), 6_000_000_000);
+        for (width, height) in view::SIZES {
+            let buffer = view::render("apps", &mut screen, &context, width, height);
+            view::aligned(&buffer, "Size", "6.0 GB");
+            let buffer = view::render("app-files", &mut files, &context, width, height);
+            assert!(view::text(&buffer).contains("Example.app"));
+            assert!(view::text(&buffer).contains("may be your data"));
         }
     }
 }

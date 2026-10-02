@@ -739,6 +739,7 @@ dependencies = [
  "neet-core",
  "ratatui",
  "tempfile",
+ "unicode-segmentation",
 ]
 
 [[package]]

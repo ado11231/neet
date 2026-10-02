@@ -3,7 +3,7 @@ use ratatui::crossterm::event::KeyEvent;
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
 use ratatui::style::Stylize;
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Clear, Paragraph};
+use ratatui::widgets::{Clear, Paragraph};
 
 use super::app::{Action, Context, Screen};
 
@@ -23,9 +23,12 @@ impl Screen for Help {
         let lines: Vec<Line> = self
             .keys
             .iter()
-            .map(|(key, action)| Line::from(vec![format!("{key:<14}").bold(), (*action).into()]))
+            .map(|(key, action)| {
+                Line::from(vec![format!("{key:<14}").cyan().bold(), (*action).into()])
+            })
             .collect();
-        let height = u16::try_from(lines.len() + 2).unwrap_or(u16::MAX);
+        let height = super::visual::wrapped_rows(&lines, area.width.min(48).saturating_sub(2))
+            .saturating_add(2);
         let [area] = Layout::vertical([Constraint::Length(height)])
             .flex(Flex::Center)
             .areas(area);
@@ -34,7 +37,9 @@ impl Screen for Help {
             .areas(area);
         frame.render_widget(Clear, area);
         frame.render_widget(
-            Paragraph::new(lines).block(Block::bordered().title(" Help ")),
+            Paragraph::new(lines)
+                .wrap(ratatui::widgets::Wrap { trim: false })
+                .block(super::visual::block().title(" Help ")),
             area,
         );
     }

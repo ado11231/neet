@@ -14,7 +14,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
 use ratatui::style::Stylize;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Clear, Padding, Paragraph, Wrap};
+use ratatui::widgets::{Clear, Padding, Paragraph, Wrap};
 
 use super::app::{Action, Context, Screen};
 use super::clean::{Planned, count, display_path, items, skip_reason};
@@ -55,12 +55,21 @@ fn scrolling(
     lines: Vec<Line<'static>>,
     scroll: &mut Scroll,
 ) {
-    let offset = scroll.clamp(lines.len(), area);
-    let body = Paragraph::new(lines).scroll((offset, 0)).block(
-        Block::bordered()
-            .title(title)
-            .padding(Padding::horizontal(1)),
+    let offset = scroll.clamp(
+        usize::from(super::visual::wrapped_rows(
+            &lines,
+            area.width.saturating_sub(4),
+        )),
+        area,
     );
+    let body = Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .scroll((offset, 0))
+        .block(
+            super::visual::block()
+                .title(title)
+                .padding(Padding::horizontal(1)),
+        );
     frame.render_widget(body, area);
 }
 
@@ -149,7 +158,7 @@ impl Review {
             Line::from("What happens next").bold(),
             Line::from(vec![
                 Span::raw("1. "),
-                Span::raw("Enter asks you once more."),
+                Span::raw("Enter: confirm selection."),
             ]),
             Line::from(vec![
                 Span::raw("2. "),
@@ -194,11 +203,9 @@ impl Screen for Review {
             Paragraph::new(self.summary())
                 .wrap(Wrap { trim: false })
                 .block(
-                    Block::bordered()
+                    super::visual::block()
                         .title(" Summary ")
-                        .title_bottom(
-                            Line::from(" Nothing moves until you answer ").right_aligned(),
-                        )
+                        .title_bottom(Line::from(" Review before confirming ").right_aligned())
                         .padding(Padding::horizontal(1)),
                 ),
             side,
@@ -222,8 +229,8 @@ impl Screen for Review {
             SCROLL_HELP[0],
             SCROLL_HELP[1],
             SCROLL_HELP[2],
-            ("Enter", "Go on to the question"),
-            ("Esc", "Go back to Clean"),
+            ("Enter", "Confirm selected paths"),
+            ("Esc", "Back to Clean"),
             ("q", "Quit"),
         ]
     }
@@ -251,8 +258,8 @@ impl Screen for Confirm {
             ))
             .bold(),
             Line::default(),
-            Line::from("Finder moves them, so Put Back can restore each one."),
-            Line::from("Each item is checked again right before it moves."),
+            Line::from("Restore from Trash with Finder’s Put Back."),
+            Line::from("Paths rechecked before moving."),
             Line::default(),
             Line::from(vec![
                 Span::raw("y").bold().cyan(),
@@ -263,16 +270,19 @@ impl Screen for Confirm {
                 Span::raw(" go back"),
             ]),
         ];
-        let [area] = Layout::vertical([Constraint::Length(8)])
-            .flex(Flex::Center)
-            .areas(area);
+        let [area] = Layout::vertical([Constraint::Length(
+            super::visual::wrapped_rows(&lines, area.width.min(60).saturating_sub(4))
+                .saturating_add(2),
+        )])
+        .flex(Flex::Center)
+        .areas(area);
         let [area] = Layout::horizontal([Constraint::Length(60)])
             .flex(Flex::Center)
             .areas(area);
         frame.render_widget(Clear, area);
         frame.render_widget(
             Paragraph::new(lines).wrap(Wrap { trim: false }).block(
-                Block::bordered()
+                super::visual::block()
                     .title(" Move to the Trash ")
                     .padding(Padding::horizontal(1)),
             ),
@@ -295,7 +305,7 @@ impl Screen for Confirm {
     fn help(&self) -> &'static [(&'static str, &'static str)] {
         &[
             ("y", "Move the items to the Trash"),
-            ("n  Esc", "Go back to the review"),
+            ("n  Esc", "Back to the review"),
         ]
     }
 
@@ -477,11 +487,16 @@ impl Screen for Cleanup {
                     Line::default(),
                     Line::from(reason.clone()),
                 ];
-                let box_area = centered(area, BOX_WIDTH, 7);
+                let height = super::visual::wrapped_rows(
+                    &lines,
+                    area.width.min(BOX_WIDTH).saturating_sub(4),
+                )
+                .saturating_add(4);
+                let box_area = centered(area, BOX_WIDTH, height);
                 frame.render_widget(Clear, box_area);
                 frame.render_widget(
                     Paragraph::new(lines).wrap(Wrap { trim: false }).block(
-                        Block::bordered()
+                        super::visual::block()
                             .title(" Cleanup ")
                             .padding(Padding::uniform(1)),
                     ),
@@ -492,9 +507,10 @@ impl Screen for Cleanup {
                 // Border and padding take 4 columns and 4 rows.
                 let width = BOX_WIDTH.min(area.width);
                 let lines = self.result_lines(outcome, usize::from(width.saturating_sub(4)));
-                let wanted = u16::try_from(lines.len() + 4).unwrap_or(u16::MAX);
+                let rows = super::visual::wrapped_rows(&lines, width.saturating_sub(4));
+                let wanted = rows.saturating_add(4);
                 let box_area = centered(area, width, wanted);
-                let offset = self.scroll.clamp(lines.len() + 2, box_area);
+                let offset = self.scroll.clamp(usize::from(rows) + 2, box_area);
                 let title = if outcome.moved.is_empty() {
                     Line::from(" Cleanup done ").yellow()
                 } else {
@@ -502,12 +518,15 @@ impl Screen for Cleanup {
                 };
                 frame.render_widget(Clear, box_area);
                 frame.render_widget(
-                    Paragraph::new(lines).scroll((offset, 0)).block(
-                        Block::bordered()
-                            .title(title)
-                            .title_bottom(Line::from(" Enter or Esc for Home ").right_aligned())
-                            .padding(Padding::uniform(1)),
-                    ),
+                    Paragraph::new(lines)
+                        .wrap(Wrap { trim: false })
+                        .scroll((offset, 0))
+                        .block(
+                            super::visual::block()
+                                .title(title)
+                                .title_bottom(Line::from(" Enter or Esc for Home ").right_aligned())
+                                .padding(Padding::uniform(1)),
+                        ),
                     box_area,
                 );
             }
@@ -535,7 +554,7 @@ impl Screen for Cleanup {
 
     fn hints(&self) -> &'static str {
         if self.is_moving() {
-            "moving to the Trash, please wait"
+            "Moving to Trash…"
         } else {
             "↑↓ scroll · enter or esc home · q quit"
         }
@@ -546,7 +565,7 @@ impl Screen for Cleanup {
             SCROLL_HELP[0],
             SCROLL_HELP[1],
             SCROLL_HELP[2],
-            ("Enter  Esc", "Go back to Home when done"),
+            ("Enter  Esc", "Back to Home when done"),
             ("q", "Quit, when done"),
         ]
     }
@@ -569,6 +588,28 @@ mod tests {
     use std::fs;
     use std::time::{Duration, Instant};
     use tempfile::{TempDir, tempdir};
+
+    #[test]
+    fn end_of_review_includes_wrapped_lines() {
+        let mut terminal = Terminal::new(TestBackend::new(40, 8)).unwrap();
+        let mut scroll = Scroll(u16::MAX);
+        let lines = vec![
+            Line::from("a-long-folder-name/".repeat(20)),
+            Line::from("Last path"),
+        ];
+        terminal
+            .draw(|frame| {
+                scrolling(
+                    frame,
+                    frame.area(),
+                    " Review ".into(),
+                    lines.clone(),
+                    &mut scroll,
+                );
+            })
+            .unwrap();
+        assert!(crate::ui::visual::tests::text(terminal.backend().buffer()).contains("Last path"));
+    }
 
     fn planned() -> (TempDir, Arc<Planned>) {
         let dir = tempdir().expect("temporary directory should be created");
@@ -733,7 +774,7 @@ mod tests {
 
         assert!(screen.contains("Summary"));
         assert!(screen.contains("What happens next"));
-        assert!(screen.contains("Nothing moves until you answer"));
+        assert!(screen.contains("Review before confirming"));
     }
 
     #[test]
@@ -752,5 +793,26 @@ mod tests {
         // Once in the list, once in the summary
         assert_eq!(screen.matches("HTTPStorages").count(), 2);
         assert!(screen.contains("HTTPStorages  2 items"));
+    }
+    #[test]
+    fn layout_stays_readable_across_terminal_sizes() {
+        use crate::ui::visual::tests as view;
+        let scan = ScanStatus::Failed(String::new());
+        let context = Context {
+            scan: &scan,
+            disk: None,
+            cleanable: None,
+            plan: None,
+        };
+        let (_dir, planned) = planned();
+        let mut review = Review::new(Arc::clone(&planned));
+        let mut confirm = Confirm::new(planned);
+        for (width, height) in view::SIZES {
+            let buffer = view::render("review", &mut review, &context, width, height);
+            assert!(view::text(&buffer).contains("DerivedData"));
+            let buffer = view::render("confirm", &mut confirm, &context, width, height);
+            assert!(view::text(&buffer).contains("Put Back"));
+            assert!(view::text(&buffer).contains("go back"));
+        }
     }
 }
