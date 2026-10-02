@@ -115,7 +115,7 @@ impl Review {
         for (name, found) in self.groups() {
             let size = found.iter().map(|item| item.size).sum();
             lines.push(Line::from(vec![
-                Span::raw(name.to_string()).bold().cyan(),
+                Span::raw(name.to_string()).bold().fg(super::visual::ACCENT),
                 Span::raw(format!("  {} · {}", items(found.len()), format::size(size))),
             ]));
             for item in found {
@@ -147,7 +147,7 @@ impl Review {
         groups.sort_by_key(|&(_, size)| std::cmp::Reverse(size));
         for (name, size) in groups {
             lines.push(Line::from(vec![
-                Span::raw(format::bar(size, total, SUMMARY_BAR)).cyan(),
+                Span::raw(format::bar(size, total, SUMMARY_BAR)).fg(super::visual::ACCENT),
                 Span::raw(" "),
                 format::size_span(size, format!("{:>9}", format::size(size))),
                 Span::raw(format!("  {name}")),
@@ -262,7 +262,7 @@ impl Screen for Confirm {
             Line::from("Paths rechecked before moving."),
             Line::default(),
             Line::from(vec![
-                Span::raw("y").bold().cyan(),
+                Span::raw("y").bold().fg(super::visual::ACCENT),
                 Span::raw(" move to the Trash    "),
                 Span::raw("n").bold(),
                 Span::raw(" or "),

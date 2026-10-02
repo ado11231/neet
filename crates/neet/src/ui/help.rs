@@ -24,7 +24,10 @@ impl Screen for Help {
             .keys
             .iter()
             .map(|(key, action)| {
-                Line::from(vec![format!("{key:<14}").cyan().bold(), (*action).into()])
+                Line::from(vec![
+                    format!("{key:<14}").fg(super::visual::ACCENT).bold(),
+                    (*action).into(),
+                ])
             })
             .collect();
         let height = super::visual::wrapped_rows(&lines, area.width.min(48).saturating_sub(2))

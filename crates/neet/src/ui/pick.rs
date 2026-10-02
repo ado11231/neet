@@ -175,7 +175,8 @@ fn item_row(
             Line::from(format::size_span(item.size, format::size(item.size))).right_aligned(),
         ),
         Cell::from(Line::from(vec![
-            Span::raw(format!("{}/", format::shorten_path(&folder, room))).light_blue(),
+            Span::raw(format!("{}/", format::shorten_path(&folder, room)))
+                .fg(super::visual::ACCENT),
             Span::raw(format::shorten_middle(&name, width.saturating_sub(2))),
         ])),
         Cell::from(age),

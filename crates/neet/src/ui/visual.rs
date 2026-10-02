@@ -5,7 +5,9 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Cell, Paragraph, Row, Wrap};
 
-pub const HEADING: Style = Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD);
+/// Match the existing Home artwork without changing its renderer.
+pub const ACCENT: Color = Color::Rgb(0x82, 0xaa, 0xff);
+pub const HEADING: Style = Style::new().fg(ACCENT).add_modifier(Modifier::BOLD);
 pub const SELECTED: Style = Style::new().add_modifier(Modifier::BOLD);
 
 pub fn block<'a>() -> Block<'a> {
@@ -216,7 +218,7 @@ pub(super) mod tests {
             .expect("table header");
         assert_eq!(
             buffer[(u16::try_from(header_end - 1).unwrap(), header_y)].fg,
-            Color::Cyan
+            ACCENT
         );
         let aligned = (header_y + 1..buffer.area.height).any(|y| {
             let line: String = (0..buffer.area.width)

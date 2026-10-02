@@ -21,7 +21,7 @@
 
 * Run `neet` to open it. It opens on Home and starts scanning your home folder in the background.
 * Each screen fills the terminal. The footer lists keys for the current screen and wraps when needed.
-* The row under the arrow turns bold and keeps its colors, so sizes, bars, and labels read the same as the rows around it. Body text uses the terminal foreground. Cyan marks headings, keys, and progress; green marks selection and success; yellow marks caution; red marks errors and permanent removal. Labels and symbols carry the same meaning as the color. Gray and dim styles are reserved for the unchanged Home artwork.
+* The row under the arrow turns bold and keeps its colors, so sizes, bars, and labels read the same as the rows around it. Body text uses the terminal foreground. The artwork’s moonlight blue (`#82aaff`) marks headings, keys, and progress; green marks selection and success; yellow marks caution; red marks errors and permanent removal. Labels and symbols carry the same meaning as the color. Gray and dim styles are reserved for the unchanged Home artwork.
 * Screens stack: each one opens on top of the last, and `Esc` goes back one step.
 * Boxes, such as help and questions, open in the middle of the screen, on top of it.
 * The screen redraws about four times a second, so progress stays current.
@@ -109,7 +109,7 @@
 * **Left, 55% of the width:** the current folder, largest first. A table aligns Size, percent, and Name beneath their headers, with a 12 character bar when space allows. Folders end in `/`, links in `@`.
 * Sizes and bars of 5 GB or more are red, and of 1 GB or more yellow, as in Large Files.
 * The title shows the folder's path on the left, and its size, item count, and sort order on the right.
-* **Right:** the selected row, titled with its name in bold cyan. The preview is hidden when the terminal is narrower than 100 columns.
+* **Right:** the selected row, titled with its name in bold moonlight blue. The preview is hidden when the terminal is narrower than 100 columns.
   1. Its path, and for well known folders, such as `~/Library/Caches` or `.npm`, what they hold in plain words.
   2. Its size and share of the current folder, its item count, and when it last changed.
   3. Whether neet cleans it: a green `✓` inside a folder neet cleans, a yellow `◆` for a cleanup folder whose items neet cleans, a red `✗` for a protected folder, and a normal foreground `·` for anywhere else.
@@ -157,8 +157,8 @@
   2. Project build folders and installers in Downloads, from the scan. neet moves these to the Trash after you pick and review them.
   3. The Trash, from the scan, which you empty yourself.
   4. The Docker disk image, from the scan, and simulators, asked of `xcrun simctl` when there are simulators on the Mac: runtimes, and simulators left without one. neet asks their own tools to remove them, which is permanent.
-  5. Temporary files, measured in `/private/var/folders`, which macOS clears. Simulators and temporary files are worked out in the background and show cyan `scanning` until done.
-* **Columns:** the size and a bar of it against the largest row, both red from 5 GB and yellow from 1 GB, how many items, and who clears it: `neet` in green, `neet, permanently` in red, `you` in yellow, or `macOS` in light blue. Temporary files are left to macOS, since deleting them by hand can break running apps.
+  5. Temporary files, measured in `/private/var/folders`, which macOS clears. Simulators and temporary files are worked out in the background and show moonlight blue `scanning` until done.
+* **Columns:** the size and a bar of it against the largest row, both red from 5 GB and yellow from 1 GB, how many items, and who clears it: `neet` in green, `neet, permanently` in red, `you` in yellow, or `macOS` in moonlight blue. Temporary files are left to macOS, since deleting them by hand can break running apps.
 * The bottom edge adds up what neet can clear and what you can free yourself.
 * **Below the table:** numbered actions for the selected row, followed by its description when space allows.
 * **Right:** the largest items of the selected row, as many as fit: rules for Caches and logs, folders and installers by path, and the largest item for the Trash and Docker. When there is no list, the reason sits in the middle of the box. It is hidden when the terminal is narrower than 130 columns.
@@ -341,7 +341,7 @@
 ```
 
 * **App list:** a table of each app in `/Applications` and `~/Applications`, with its name, its size, a bar of its size against the largest app, its folder, and its bundle ID (the name macOS uses to identify it). Apps neet can remove come first. Apps it will not remove are listed after them, with a yellow refusal reason, such as `Apple app` or `link`.
-* **Colors:** sizes and bars are red from 5 GB and yellow from 1 GB, and bars are green below that. `/Applications` is light blue, `~/Applications` magenta, and bundle IDs cyan.
+* **Colors:** sizes and bars are red from 5 GB and yellow from 1 GB, and bars are green below that. `/Applications` and bundle IDs use moonlight blue; `~/Applications` is magenta.
 * Sizes are measured in the background, one app after another, and show `…` until then. Press `s` to list the largest first, and again to go back to names.
 * The bottom edge shows how many apps can be removed and how much space they take, with the sort order or a note on the top edge. A Selected box keeps the current app’s path and bundle ID or refusal visible.
 * **App files:** opening an app finds and measures its files, with the loading box and a timer. Then a table lists the app and each file, with a checkbox, size, name, folder, and a note on anything left unselected, such as `may be your data`.
