@@ -150,9 +150,10 @@
 * **Rows,** always in this order, what neet clears first:
   1. Caches and logs: what every Deep Clean rule found.
   2. Project build folders and installers in Downloads, from the scan. neet moves these to the Trash after you pick and review them.
-  3. The Trash and the Docker disk image, from the scan, which you clear yourself.
-  4. Simulator runtimes, asked of `xcrun simctl` when there are simulators on the Mac, and temporary files, measured in `/private/var/folders`. Both are worked out in the background and show `looking…` until done.
-* **Columns:** the size and a bar of it against the largest row, both red from 5 GB and yellow from 1 GB, how many items, and who clears it: `neet` in green, `you` in yellow, or `macOS` in blue. Temporary files are left to macOS, since deleting them by hand can break running apps.
+  3. The Trash, from the scan, which you empty yourself.
+  4. The Docker disk image, from the scan, and simulator runtimes, asked of `xcrun simctl` when there are simulators on the Mac. neet asks their own tools to remove them, which is for good.
+  5. Temporary files, measured in `/private/var/folders`, which macOS clears. Simulator runtimes and temporary files are worked out in the background and show `looking…` until done.
+* **Columns:** the size and a bar of it against the largest row, both red from 5 GB and yellow from 1 GB, how many items, and who clears it: `neet` in green, `neet, for good` in red, `you` in yellow, or `macOS` in blue. Temporary files are left to macOS, since deleting them by hand can break running apps.
 * The bottom edge adds up what neet can clear and what you can free yourself.
 * **Below the table:** what the selected row is, and numbered steps to clear it.
 * **Right:** the largest items of the selected row, as many as fit: rules for Caches and logs, folders and installers by path, and the largest item for the Trash and Docker. It is hidden when the terminal is narrower than 130 columns.
@@ -164,7 +165,7 @@
 | --- | --- |
 | `Up` / `Down` | Move the selection. |
 | `g` / `G` | Jump to the first or last row. |
-| `Enter`, `Right`, or `l` | On Caches and logs, open [Deep Clean](#deep-clean). On build folders or installers, open [Pick](#pick). On the Trash or Docker, show it in [Disk](#disk). |
+| `Enter`, `Right`, or `l` | On Caches and logs, open [Deep Clean](#deep-clean). On build folders or installers, open [Pick](#pick). On Docker or simulator runtimes, open [Docker And Simulators](#docker-and-simulators). On the Trash, show it in [Disk](#disk). |
 | `d` | Show the largest item of the row in [Disk](#disk). |
 
 ### Pick
@@ -188,6 +189,21 @@
 | `Space` | Select or clear an item. |
 | `a` | Select all, or clear all when all are selected. |
 | `Enter` | Go to [Review](#review-confirm-and-move). |
+
+### Docker And Simulators
+
+* These cannot go to the Trash, so neet asks their own tool to remove them. Both screens end in a red question that says it is for good. Only `y` goes ahead. See [SAFETY.md](SAFETY.md#tools-neet-runs).
+* **Simulator runtimes:** a table of each runtime with a checkbox, its version, build, size, and the day a simulator last used it. None start selected. `Enter` asks, then runs `xcrun simctl runtime delete` for each one, and lists which were deleted.
+* **Docker:** a table of what `docker system df` reports: images, containers, volumes, and build cache, with how many, how many are in use, their size, and how much can be freed, in yellow. The box below lists what `docker system prune --all` removes and what it keeps. `Enter` asks, then runs it, and shows how much Docker freed.
+* If Docker Desktop is not running, the screen says so. `o` opens it, and `r` asks Docker again.
+
+| Key | Action |
+| --- | --- |
+| `Space` | On simulator runtimes, select or clear a runtime. |
+| `Enter` | Ask before removing. |
+| `y` | In the question, remove for good. |
+| `n` or `Esc` | In the question, go back. |
+| `o` / `r` | On Docker, open Docker Desktop, or ask again. |
 
 ## Deep Clean
 

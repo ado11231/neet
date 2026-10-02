@@ -13,6 +13,7 @@ mod quick;
 mod review;
 mod scan;
 mod skipped;
+mod tools;
 
 use std::io;
 use std::path::PathBuf;

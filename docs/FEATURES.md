@@ -59,6 +59,7 @@
 | Your own rules | Loads extra rules from `~/.config/neet/rules/`. They can never reach outside the allowed folders, and never start selected. | Done |
 | Clean one item | Press `d` in Disk or Large Files to clean the selected item, with the same checks. | Done |
 | Project build folders | Moves build folders in your code projects, `target/` beside a `Cargo.toml` and `node_modules/`, to the Trash from Quick Clean. You pick which, then review. | Done |
+| Simulator runtimes and Docker | From Quick Clean, runs `xcrun simctl runtime delete` for the runtimes you pick, or `docker system prune --all`, after a red question. For good, not the Trash. | Done |
 | Installers in Downloads | Moves `.dmg`, `.pkg`, `.iso`, and `.xip` files in Downloads to the Trash from Quick Clean. You pick which, then review. | Done |
 
 ### Risk Levels

@@ -20,6 +20,7 @@ use super::format;
 use super::loading::scanning;
 use super::pick::Pick;
 use super::scan::ScanStatus;
+use super::tools::{DockerSpace, Simulators};
 
 /// Below this width the largest items are left out.
 const MIN_SIDE_WIDTH: u16 = 130;
@@ -95,7 +96,10 @@ fn name(item: Item) -> &'static str {
 /// Who clears an item
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Who {
+    /// neet moves it to the Trash
     Neet,
+    /// neet asks the item's own tool to remove it, which is for good
+    Tool,
     You,
     /// macOS clears it on its own
     Mac,
@@ -105,6 +109,7 @@ fn who(item: Item) -> Who {
     match item {
         Item::Rules => Who::Neet,
         Item::Clutter(kind) if clutter::neet_removes(kind) => Who::Neet,
+        Item::Clutter(Kind::DockerImage | Kind::SimulatorRuntimes) => Who::Tool,
         Item::Clutter(Kind::TempFiles) => Who::Mac,
         Item::Clutter(_) => Who::You,
     }
@@ -113,6 +118,7 @@ fn who(item: Item) -> Who {
 fn who_span(who: Who) -> Span<'static> {
     match who {
         Who::Neet => Span::raw("neet").green(),
+        Who::Tool => Span::raw("neet, for good").red(),
         Who::You => Span::raw("you").yellow(),
         Who::Mac => Span::raw("macOS").blue(),
     }
@@ -166,14 +172,14 @@ fn steps(item: Item) -> &'static [&'static str] {
             "neet never empties the Trash, so Put Back always works.",
         ],
         Item::Clutter(Kind::DockerImage) => &[
-            "Run: docker system prune -a",
-            "Or remove images in Docker Desktop.",
-            "Then Docker Desktop, Settings, Resources can shrink the disk.",
+            "Press Enter to see what Docker can free.",
+            "neet runs docker system prune --all. Volumes are kept.",
+            "It asks first, in red: this is for good, not the Trash.",
         ],
         Item::Clutter(Kind::SimulatorRuntimes) => &[
-            "Run: xcrun simctl runtime list",
-            "Then: xcrun simctl runtime delete <id>",
-            "Or Xcode, Settings, Components.",
+            "Press Enter to list every runtime. None start selected.",
+            "neet runs xcrun simctl runtime delete for each one you pick.",
+            "It asks first, in red: this is for good, not the Trash.",
         ],
         Item::Clutter(Kind::TempFiles) => &[
             "macOS removes old ones on its own.",
@@ -326,7 +332,7 @@ impl QuickClean {
                 let (size, bar, found) = match *status {
                     Status::Found { size, count } => {
                         match who(item) {
-                            Who::Neet => neet_total += size,
+                            Who::Neet | Who::Tool => neet_total += size,
                             Who::You => your_total += size,
                             Who::Mac => {}
                         }
@@ -417,6 +423,7 @@ impl QuickClean {
         ];
         let color = match who(item) {
             Who::Neet => Color::Green,
+            Who::Tool => Color::Red,
             Who::You => Color::Yellow,
             Who::Mac => Color::Blue,
         };
@@ -597,6 +604,12 @@ impl Screen for QuickClean {
                     let ScanStatus::Done { scan, .. } = context.scan else {
                         return Action::None;
                     };
+                    if kind == Kind::SimulatorRuntimes {
+                        return Action::Open(Box::new(Simulators::new()));
+                    }
+                    if kind == Kind::DockerImage {
+                        return Action::Open(Box::new(DockerSpace::new()));
+                    }
                     if clutter::neet_removes(kind) {
                         let paths: Vec<PathBuf> = self
                             .removable(kind)
@@ -638,7 +651,7 @@ impl Screen for QuickClean {
             ("g  G", "Jump to the first or last row"),
             (
                 "Enter  →  l",
-                "Rows neet clears: pick what goes to the Trash. Others: show in Disk",
+                "Rows neet clears: pick what to remove. Trash: show in Disk",
             ),
             ("d", "Show the largest item in Disk"),
             ("Esc", "Go back to Home"),
@@ -731,7 +744,8 @@ mod tests {
         assert!(screen.contains("300.0 KB") || screen.contains("303.1 KB"));
         assert!(screen.contains("17.0 GB"));
         assert!(screen.contains("looking…"));
-        assert!(screen.contains("you can free 17.0 GB more"));
+        assert!(screen.contains("you can free 2.0 MB more"));
+        assert!(screen.contains("neet, for good"));
         assert!(screen.contains("macOS"));
         assert!(screen.contains("Press Enter to open Deep Clean"));
     }
@@ -767,7 +781,7 @@ mod tests {
     }
 
     #[test]
-    fn enter_opens_deep_clean_then_disk_for_the_trash() {
+    fn enter_opens_deep_clean_disk_and_the_tool_screens() {
         let (_dir, scan) = done();
         let mut screen = quick();
         let _ = render(&mut screen, &scan);
@@ -783,13 +797,13 @@ mod tests {
             press(&mut screen, &scan, KeyCode::Enter),
             Action::Open(_)
         ));
-        // Simulator runtimes are outside the scan, so there is nothing to show.
+        // Simulator runtimes open their own screen, which asks simctl.
         for _ in 0..2 {
             press(&mut screen, &scan, KeyCode::Down);
         }
         assert!(matches!(
             press(&mut screen, &scan, KeyCode::Enter),
-            Action::None
+            Action::Open(_)
         ));
     }
 }
