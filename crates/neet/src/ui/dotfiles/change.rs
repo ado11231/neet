@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 
 use neet_core::dotfiles::change::{self, Checked, Done, Edit};
+use neet_core::rewrite::Backup;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Stylize};
@@ -38,6 +39,25 @@ pub(super) enum Mode {
         fix: Fix,
         index: usize,
         diff: Diff,
+    },
+    /// The selected file's backups, newest first
+    Backups {
+        index: usize,
+        list: Vec<Backup>,
+        selected: usize,
+    },
+    /// A backup to put back, waiting for `y`
+    Restore {
+        index: usize,
+        backup: Backup,
+        diff: Diff,
+    },
+    /// `d`: how the file differs from its source file or its last backup
+    Show {
+        title: String,
+        lines: Vec<Line<'static>>,
+        diff: Diff,
+        hidden: bool,
     },
     /// What happened, until a key is pressed
     Note {
@@ -322,4 +342,67 @@ pub(super) fn finish(
     let result = review.edit.finish(&review.new, backups, SystemTime::now());
     change::discard(&review.copy);
     result
+}
+
+/// A backup's name as a time to read, such as `2026-10-05 16:30:12 UTC`
+pub(super) fn saved(backup: &Backup) -> String {
+    let stamp = backup.saved.get(..19).unwrap_or(&backup.saved);
+    match stamp.split_once('T') {
+        Some((day, time)) => format!("{day} {} UTC", time.replace('-', ":")),
+        None => backup.saved.clone(),
+    }
+}
+
+/// The list of backups, in a box sized to fit, with the selected one bold
+pub(super) fn draw_backups(
+    frame: &mut Frame,
+    area: Rect,
+    name: &str,
+    list: &[Backup],
+    selected: usize,
+) {
+    let rows = usize::from(area.height.saturating_sub(4)).max(1);
+    let first = selected.saturating_sub(rows.saturating_sub(1));
+    let lines: Vec<Line<'static>> = list
+        .iter()
+        .enumerate()
+        .skip(first)
+        .take(rows)
+        .map(|(index, backup)| {
+            let size = super::super::format::size(backup.size);
+            let text = format!("{}   {size:>8}", saved(backup));
+            if index == selected {
+                Line::from(vec![Span::raw("▸ "), Span::raw(text)]).style(visual::SELECTED)
+            } else {
+                Line::from(format!("  {text}"))
+            }
+        })
+        .collect();
+    let width = lines
+        .iter()
+        .map(Line::width)
+        .max()
+        .unwrap_or(0)
+        .saturating_add(4)
+        .max(44);
+    let width = u16::try_from(width).unwrap_or(u16::MAX).min(area.width);
+    let height = u16::try_from(lines.len() + 2)
+        .unwrap_or(u16::MAX)
+        .min(area.height);
+    let [area] = Layout::vertical([Constraint::Length(height)])
+        .flex(ratatui::layout::Flex::Center)
+        .areas(area);
+    let [area] = Layout::horizontal([Constraint::Length(width)])
+        .flex(ratatui::layout::Flex::Center)
+        .areas(area);
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(lines).block(
+            visual::block()
+                .title(Line::from(format!(" Backups of {name} ")).bold())
+                .title_bottom(Line::from(format!(" {} ", list.len())).right_aligned())
+                .padding(Padding::horizontal(1)),
+        ),
+        area,
+    );
 }

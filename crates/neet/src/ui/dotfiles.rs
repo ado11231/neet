@@ -21,6 +21,7 @@ use super::visual::{self, Columns};
 mod change;
 
 use change::{Diff, Fix, Mode, Review};
+use neet_core::rewrite::Backup;
 
 /// From this width the selected file and its preview show on the right.
 const MIN_SIDE_WIDTH: u16 = 120;
@@ -481,6 +482,13 @@ impl Dotfiles {
             lines.push(field("Mode", Span::raw(format!("{:o}", found.mode))));
         }
         lines.push(field("Check", Span::raw(file.known.syntax.name())));
+        if file.found.is_some() {
+            let count = self
+                .backups
+                .list(file.known.path)
+                .map_or(0, |list| list.len());
+            lines.push(field("Backups", Span::raw(count.to_string())));
+        }
         lines.push(Line::default());
         lines.extend(self.notes(file));
         (name, lines)
@@ -747,12 +755,183 @@ impl Dotfiles {
                 let hidden = self.listing.files[*index].may_hold_secrets;
                 change::draw_ask(frame, area, &title, lines, diff, hidden);
             }
+            Mode::Backups {
+                index,
+                list,
+                selected,
+            } => {
+                let name = self.listing.files[*index].known.path;
+                change::draw_backups(frame, area, name, list, *selected);
+            }
+            Mode::Restore {
+                index,
+                backup,
+                diff,
+            } => {
+                let file = &self.listing.files[*index];
+                let shown = format!("~/{}", file.known.path);
+                let mut lines = vec![
+                    Line::from(vec![
+                        Span::raw(format!("{:<9}", "Restores")).bold(),
+                        Span::raw(format!("{shown} as it was at {}", change::saved(backup))),
+                    ]),
+                    Line::from(vec![
+                        Span::raw(format!("{:<9}", "Backup")).bold(),
+                        Span::raw(format!("{shown} as it is now, first")),
+                    ]),
+                    change_counts(diff),
+                ];
+                if file.managed.as_ref().and_then(Managed::source).is_some() {
+                    lines.push(Line::from(
+                        "It may then differ from its source file in chezmoi. r keeps it there.",
+                    ));
+                }
+                let title = format!(" Restore {} ", file.known.path);
+                change::draw_ask(frame, area, &title, lines, diff, file.may_hold_secrets);
+            }
+            Mode::Show {
+                title,
+                lines,
+                diff,
+                hidden,
+            } => change::draw_ask(frame, area, title, lines.clone(), diff, *hidden),
             Mode::Note {
                 title,
                 lines,
                 color,
             } => super::tools::message(frame, area, title, lines.clone(), *color),
         }
+    }
+
+    /// `b`: lists the selected file's backups.
+    fn open_backups(&mut self) {
+        let Some(index) = self.selected() else {
+            return;
+        };
+        let name = self.listing.files[index].known.path;
+        self.mode = match self.backups.list(name) {
+            Ok(list) if list.is_empty() => Mode::Note {
+                title: "No backups".to_string(),
+                lines: vec![Line::from(format!(
+                    "~/{name} has no backups yet. neet saves one before every change."
+                ))],
+                color: visual::ACCENT,
+            },
+            Ok(list) => Mode::Backups {
+                index,
+                list,
+                selected: 0,
+            },
+            Err(error) => change::done(
+                Err(format!("Its backups could not be read: {error}.")),
+                "",
+                None,
+            ),
+        };
+    }
+
+    /// `Enter` on a backup: shows what restoring it changes, and asks.
+    fn ask_restore(&mut self, index: usize, backup: Backup) {
+        let file = &self.listing.files[index];
+        let (Ok(now), Ok(then)) = (fs::read(&file.path), fs::read(&backup.path)) else {
+            self.mode = change::done(
+                Err("The file or its backup could not be read.".to_string()),
+                "",
+                None,
+            );
+            return;
+        };
+        let diff = Diff::new(&now, &then);
+        self.mode = Mode::Restore {
+            index,
+            backup,
+            diff,
+        };
+    }
+
+    /// `y` on the restore question
+    fn run_restore(&mut self, index: usize, backup: &Backup) {
+        let file = &self.listing.files[index];
+        let result = core_change::restore(file, backup, &self.backups, SystemTime::now());
+        let shown = format!("~/{}", file.known.path);
+        self.mode = change::done(result, &shown, None);
+        self.reload();
+    }
+
+    /// `d`: how the file differs from its source file, or else what changed
+    /// since its last backup
+    fn show_diff(&mut self) {
+        let Some(index) = self.selected() else {
+            return;
+        };
+        let file = &self.listing.files[index];
+        let shown = format!("~/{}", file.known.path);
+        let note = |text: String| Mode::Note {
+            title: "Nothing to compare".to_string(),
+            lines: vec![Line::from(text)],
+            color: visual::ACCENT,
+        };
+        let Ok(now) = fs::read(&file.path) else {
+            self.mode = note(format!("{shown} could not be read."));
+            return;
+        };
+        if let Some(Managed::Differs(source)) = &file.managed {
+            let Ok(then) = fs::read(source) else {
+                self.mode = note("Its source file could not be read.".to_string());
+                return;
+            };
+            let diff = Diff::new(&then, &now);
+            let source = self.source_name(file).unwrap_or_default();
+            self.mode = Mode::Show {
+                title: format!(" {} and its source file ", file.known.path),
+                lines: vec![
+                    Line::from(vec![
+                        Span::raw(format!("{:<9}", "From")).bold(),
+                        Span::raw(format!("{source} in chezmoi")),
+                    ]),
+                    Line::from(vec![
+                        Span::raw(format!("{:<9}", "To")).bold(),
+                        Span::raw(format!("{shown}, as it is now")),
+                    ]),
+                    change_counts(&diff),
+                ],
+                diff,
+                hidden: file.may_hold_secrets,
+            };
+            return;
+        }
+        let latest = self
+            .backups
+            .list(file.known.path)
+            .ok()
+            .and_then(|list| list.into_iter().next());
+        let Some(backup) = latest else {
+            self.mode = note(format!(
+                "{shown} matches its source file or is not in chezmoi, and has no backups yet."
+            ));
+            return;
+        };
+        let Ok(then) = fs::read(&backup.path) else {
+            self.mode = note("Its last backup could not be read.".to_string());
+            return;
+        };
+        let diff = Diff::new(&then, &now);
+        self.mode = Mode::Show {
+            title: format!(" {} since its last backup ", file.known.path),
+            lines: vec![
+                Line::from(vec![
+                    Span::raw(format!("{:<9}", "From")).bold(),
+                    Span::raw(format!("the backup at {}", change::saved(&backup))),
+                ]),
+                Line::from(vec![
+                    Span::raw(format!("{:<9}", "To")).bold(),
+                    Span::raw(format!("{shown}, as it is now")),
+                ]),
+                change_counts(&diff),
+            ],
+            diff,
+            hidden: file.may_hold_secrets,
+        };
     }
 
     /// The question's lines for `r` or `p`
@@ -871,6 +1050,16 @@ fn status(file: &Dotfile) -> Span<'static> {
     }
 }
 
+/// `Changes  +3 −1`, colored
+fn change_counts(diff: &Diff) -> Line<'static> {
+    Line::from(vec![
+        Span::raw(format!("{:<9}", "Changes")).bold(),
+        Span::raw(format!("+{}", diff.added)).green().bold(),
+        Span::raw(" "),
+        Span::raw(format!("−{}", diff.removed)).red().bold(),
+    ])
+}
+
 /// A label and its value, lined up with the other labels
 fn field(label: &str, value: Span<'static>) -> Line<'static> {
     Line::from(vec![Span::raw(format!("{label:<9}")).bold(), value])
@@ -984,6 +1173,48 @@ impl Screen for Dotfiles {
                 }
                 return Action::None;
             }
+            Mode::Backups {
+                index,
+                list,
+                selected,
+            } => {
+                match key.code {
+                    KeyCode::Up | KeyCode::Char('k') => *selected = selected.saturating_sub(1),
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        *selected = (*selected + 1).min(list.len().saturating_sub(1));
+                    }
+                    KeyCode::Enter => {
+                        let (index, backup) = (*index, list[*selected].clone());
+                        self.ask_restore(index, backup);
+                    }
+                    _ => {}
+                }
+                return Action::None;
+            }
+            Mode::Restore {
+                index,
+                backup,
+                diff,
+            } => {
+                match key.code {
+                    KeyCode::Up | KeyCode::Char('k') => diff.scroll(false),
+                    KeyCode::Down | KeyCode::Char('j') => diff.scroll(true),
+                    KeyCode::Char('y') => {
+                        let (index, backup) = (*index, backup.clone());
+                        self.run_restore(index, &backup);
+                    }
+                    _ => {}
+                }
+                return Action::None;
+            }
+            Mode::Show { diff, .. } => {
+                match key.code {
+                    KeyCode::Up | KeyCode::Char('k') => diff.scroll(false),
+                    KeyCode::Down | KeyCode::Char('j') => diff.scroll(true),
+                    _ => self.mode = Mode::Browse,
+                }
+                return Action::None;
+            }
         }
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => self.step(false),
@@ -994,6 +1225,8 @@ impl Screen for Dotfiles {
             KeyCode::Char('e') => return self.start_edit(),
             KeyCode::Char('r') => self.ask_fix(Fix::Keep),
             KeyCode::Char('p') => self.ask_fix(Fix::PutBack),
+            KeyCode::Char('b') => self.open_backups(),
+            KeyCode::Char('d') => self.show_diff(),
             _ => {}
         }
         Action::None
@@ -1011,7 +1244,11 @@ impl Screen for Dotfiles {
                 self.mode = Mode::Editing { edit, copy };
                 Action::None
             }
-            Mode::Ask { .. } | Mode::Note { .. } => Action::None,
+            Mode::Ask { .. }
+            | Mode::Backups { .. }
+            | Mode::Restore { .. }
+            | Mode::Show { .. }
+            | Mode::Note { .. } => Action::None,
         }
     }
 
@@ -1058,7 +1295,7 @@ impl Screen for Dotfiles {
     fn hints(&self) -> &'static str {
         match &self.mode {
             Mode::Browse => {
-                "↑↓ move · e edit · r keep · p put back · . missing files · esc home · ? help"
+                "↑↓ move · e edit · d diff · b backups · r keep · p put back · . missing · esc home · ? help"
             }
             Mode::Editing { .. } => "Waiting for your editor to close",
             Mode::Review(review) if matches!(review.checked, Checked::Failed(_)) => {
@@ -1067,6 +1304,9 @@ impl Screen for Dotfiles {
             Mode::Review(_) => "y write · e edit again · ↑↓ scroll · esc drop the change",
             Mode::Ask { fix: Fix::Keep, .. } => "y keep this version · ↑↓ scroll · esc go back",
             Mode::Ask { .. } => "y put it back · ↑↓ scroll · esc go back",
+            Mode::Backups { .. } => "↑↓ move · enter show the change · esc go back",
+            Mode::Restore { .. } => "y restore it · ↑↓ scroll · esc go back",
+            Mode::Show { .. } => "↑↓ scroll · any other key go back",
             Mode::Note { .. } => "any key continue",
         }
     }
@@ -1081,6 +1321,11 @@ impl Screen for Dotfiles {
             ),
             ("r", "Keep this version in chezmoi, when it differs"),
             ("p", "Put chezmoi's version back, when it differs"),
+            (
+                "d",
+                "Show how it differs from its source file or last backup",
+            ),
+            ("b", "List its backups, then restore one"),
             (".", "Show or hide the files that are not on this Mac"),
             ("Esc", "Go back"),
             ("q", "Quit"),
@@ -1385,5 +1630,59 @@ mod tests {
             "{text}"
         );
         assert!(!text.contains("npm_"));
+    }
+
+    #[test]
+    fn b_lists_backups_and_restores_one_after_showing_the_change() {
+        let (_dir, mut screen) = screen();
+        press(&mut screen, KeyCode::Char('b'));
+        assert!(render(&mut screen, 120, 30).contains("has no backups yet"));
+        press(&mut screen, KeyCode::Enter);
+
+        edit_to(&mut screen, "export EDITOR=hx\n");
+        press(&mut screen, KeyCode::Char('y'));
+        press(&mut screen, KeyCode::Enter);
+        // The edit wrote chezmoi's source file, so write the home file too,
+        // as chezmoi apply would.
+        fs::write(screen.home.join(".zshrc"), "export EDITOR=hx\n").unwrap();
+        screen.reload();
+        assert!(render(&mut screen, 140, 30).contains("Backups  1"));
+
+        press(&mut screen, KeyCode::Char('b'));
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains("Backups of .zshrc"), "{text}");
+        assert!(text.contains(" UTC"));
+        press(&mut screen, KeyCode::Enter);
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains("Restore .zshrc"), "{text}");
+        assert!(text.contains("- export EDITOR=hx"));
+        assert!(text.contains("+ export EDITOR=nvim"));
+        assert!(text.contains("r keeps it there"));
+
+        press(&mut screen, KeyCode::Char('y'));
+        assert!(render(&mut screen, 120, 30).contains("Saved ~/.zshrc"));
+        assert_eq!(
+            fs::read_to_string(screen.home.join(".zshrc")).unwrap(),
+            "export EDITOR=nvim\n"
+        );
+        assert_eq!(screen.backups.list(".zshrc").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn d_shows_how_a_file_differs_from_its_source() {
+        let (_dir, mut screen) = screen();
+        press(&mut screen, KeyCode::Char('d'));
+        assert!(render(&mut screen, 120, 30).contains("Nothing to compare"));
+        press(&mut screen, KeyCode::Enter);
+
+        press(&mut screen, KeyCode::Down);
+        press(&mut screen, KeyCode::Char('d'));
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains(".gitconfig and its source file"), "{text}");
+        assert!(text.contains("dot_gitconfig in chezmoi"));
+        assert!(text.contains("-     name = Someone"));
+        assert!(text.contains("+     name = You"));
+        press(&mut screen, KeyCode::Char('x'));
+        assert!(!screen.is_dialog());
     }
 }
