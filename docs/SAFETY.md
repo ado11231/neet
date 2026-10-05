@@ -39,6 +39,7 @@
 
 * There is no command or option that skips the review or the question.
 * The first cleanup makes macOS ask whether your terminal may control Finder.
+* Finder has a minute to answer each move. If it does not, the item is skipped with the reason. Finder may still move it later, so look in the Trash before trying again.
 * Afterwards, neet shows how much space the items take in the Trash. That space is freed when you empty the Trash.
 
 ## Allowed Folders

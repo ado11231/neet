@@ -101,10 +101,11 @@
 ### 8. Clarity Pass
 
 * Make it easy to see how your disk space is used, and why neet's numbers can differ from Finder's.
-* Done before any later feature.
+* Its bugs are fixed before any later feature. The other items can be done alongside them.
 * **Done:**
   1. Free space and Finder. Home says how much free space Finder shows, and that it adds space macOS clears on its own, called purgeable space.
   2. A wireless networks file in user logs. It is a copy macOS wrote once for diagnostics. your Mac connects without it, so the rule keeps offering it, and FEATURES explains it.
+  3. Moving to the Trash no longer waits forever when Finder does not answer.
 
 | Item | Done When |
 | --- | --- |
