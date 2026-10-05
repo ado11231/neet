@@ -136,25 +136,24 @@
 ## Quick Clean
 
 ```text
-+ Quick Clean -------------------------------------------+  + Largest ------------------------------------+
-|   Item                        Size              Found  |  |   20.8 GB  ~/Documents/rust/slingshot/target |
-|                                                Cleared |  |    5.4 GB  ~/Documents/rust/neet/target      |
-|   Caches and logs          ~193 MB  ......        neet |  |    2.1 GB  ~/Documents/app/node_modules      |
-| > Project build folders    31.5 GB  ######   26   neet |  |  956.2 MB  ~/Documents/web/node_modules      |
-|   Installers in Downloads     none                neet |  |       ...                                    |
-|   Trash                     4.4 MB  ......  2,195  you |  |                                              |
-|   Docker disk image        11.0 GB  ###...     1   you |  |                                              |
-|   Simulators               17.3 GB  ####..     2   you |  |                                              |
-|   Temporary files           3.1 GB  #.....  6,033 macOS|  |                                              |
-+------- neet can clear ~31.7 GB . you can free 28.3 GB -+  |                                              |
-+ Project build folders ---------------------------------+  |                                              |
-| Cleared by neet                                        |  |                                              |
-| node_modules folders, and Rust target folders, ...     |  |                                              |
-| How                                                    |  |                                              |
-| 1. Press Enter to list every build folder.             |  |                                              |
-| 2. All start selected. Clear any you are working in.   |  |                                              |
-| 3. Review, confirm, and they go to the Trash.          |  |                                              |
-+--------------------------------------------------------+  +----------------------------------------------+
++ Quick Clean -------------------------------------------+  + After cleanup -------------------------------+
+|   Item                        Size              Found  |  | ######################====..... 64% -> 58%   |
+|                                                Cleared |  | Free now   86.9 GB of 245.1 GB               |
+|   Caches and logs          ~193 MB  ......        neet |  | Cleanup    +~14.0 GB by neet                 |
+| > Project build folders    31.5 GB  ######   26   neet |  | By hand    +248.1 MB by you                  |
+|   Installers in Downloads     none                neet |  | Free after ~100.9 GB                         |
+|   Trash                     4.4 MB  ......  2,195  you |  +----------------------------------------------+
+|   Docker disk image        11.0 GB  ###...     1   you |  + Largest ------------------------------------+
+|   Simulators               17.3 GB  ####..     2   you |  |   20.8 GB  ~/Documents/rust/slingshot/target |
+|   Temporary files           3.1 GB  #.....  6,033 macOS|  |    5.4 GB  ~/Documents/rust/neet/target      |
++------- neet can clear ~31.7 GB . you can free 28.3 GB -+  |    2.1 GB  ~/Documents/app/node_modules      |
++ Project build folders ---------------------------------+  +----------------------------------------------+
+| 1. Enter: list build folders.                          |
+| 2. All selected. Deselect active projects.             |
+| 3. Review and confirm: move to Trash.                  |
+|                                                        |
+| Project node_modules and Rust target folders. ...      |
++--------------------------------------------------------+
 ```
 
 * One table of everything taking space that can be cleared, so you can start with the biggest wins.
@@ -166,8 +165,10 @@
   5. Temporary files, measured in `/private/var/folders`, which macOS clears. Simulators and temporary files are worked out in the background and show moonlight blue `scanning` until done.
 * **Columns:** the size and a bar of it against the largest row, both red from 5 GB and yellow from 1 GB, how many items, and who clears it: `neet` in green, `neet, permanently` in red, `you` in yellow, or `macOS` in moonlight blue. Temporary files are left to macOS, since deleting them by hand can break running apps.
 * The bottom edge adds up what neet can clear and what you can free yourself.
-* **Below the table:** numbered actions for the selected row, followed by its description when space allows.
-* **Right:** the largest items of the selected row, as many as fit: rules for Caches and logs, folders and installers by path, and the largest item for the Trash and Docker. When there is no list, the reason sits in the middle of the box. It is hidden when the terminal is narrower than 130 columns.
+* **Every box is sized to its lines,** and the boxes are centred top to bottom, so a tall screen has no mostly empty box. When room is short, the table keeps every row and the box under it takes what is left.
+* **Below the table:** numbered actions for the selected row, then its description.
+* **After cleanup,** top right: a gauge of the disk, with the space the cleanup frees in green, and how full it is now and after. Then free space now, what neet can clear in green, what you clear by hand in yellow when there is any, and free space after the cleanup in green. Below 130 columns it goes under the steps, when there is room.
+* **Largest,** under it: the largest items of the selected row, as many as fit: rules for Caches and logs, folders and installers by path, and the largest item for the Trash and Docker. When there is no list, it says why. It is hidden when the terminal is narrower than 130 columns.
 * Build folders and installers that are empty, or already gone since the scan, are left out.
 * Below 120 columns, the selected path and age sit below the file table when at least 18 rows are available.
 * Until the scan finishes, the screen shows the loading box.
