@@ -72,9 +72,19 @@ impl Opened {
         &self.contents
     }
 
+    /// Its permission bits when it was opened, such as `0o644`
+    #[must_use]
+    pub fn mode(&self) -> u32 {
+        self.mode
+    }
+
     /// Whether the file is still the same one, unchanged: the same identity
     /// on disk, the same last change time, and the same contents
-    fn is_unchanged(&self) -> io::Result<bool> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file can no longer be read.
+    pub fn is_unchanged(&self) -> io::Result<bool> {
         let metadata = fs::symlink_metadata(&self.path)?;
         if !metadata.is_file()
             || metadata.dev() != self.device
