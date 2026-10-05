@@ -61,6 +61,14 @@ pub(super) enum Mode {
     },
     /// `c`: a program's settings, open for changes
     Configure(Box<super::configure::Configure>),
+    /// `x`: the review for secrets and the files to commit
+    Export(Box<super::export::Export>),
+    /// After a commit: whether to push, and where
+    Push {
+        top: PathBuf,
+        target: String,
+        ahead: Option<usize>,
+    },
     /// What happened, until a key is pressed
     Note {
         title: String,
