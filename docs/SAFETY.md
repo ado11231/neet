@@ -271,7 +271,7 @@ min_age_days = 0
 4. It checks the file did not change since you opened it: the same identity on disk, the same last change time, and the same contents. If it changed, nothing is written.
 5. It saves a [backup](#backups).
 6. It writes a new copy beside the file, with the same permissions, flushes it to disk, and swaps it in. A crash leaves the old file or the new one, never half of one.
-7. With chezmoi, it writes the source file, then runs `chezmoi apply` for that one file.
+7. With chezmoi, it writes the source file, then runs `chezmoi apply` for that one file, when it [may run chezmoi](#when-neet-may-run-chezmoi).
 
 ### Checks
 
@@ -311,20 +311,32 @@ min_age_days = 0
 
 ### chezmoi
 
-* neet works with [chezmoi](https://www.chezmoi.io) when it is installed and `chezmoi source-path` names a source folder.
-* Each listed file shows whether chezmoi manages it, and whether it is **in sync**, **changed in home**, or **changed in source**.
-* Commands neet runs:
+* neet works with [chezmoi](https://www.chezmoi.io), a dotfile manager, when it is installed.
+* chezmoi renders templates and runs hooks, and either can run any program or ask a password manager. So neet reads chezmoi's folder itself, and runs chezmoi only to change a file, only when nothing it would run can run a program.
+
+#### What neet reads itself
+
+1. **The source folder:** `sourceDir` in chezmoi's config file, or `~/.local/share/chezmoi`, then the folder named in its `.chezmoiroot`, if there is one. The config file is `~/.config/chezmoi/chezmoi.toml` or `chezmoi.json`. A config in another format counts as unknown.
+2. **Each listed file's source file**, by chezmoi's naming: `dot_` for a leading `.`, and the attribute prefixes `private_`, `readonly_`, `executable_`, and `empty_`.
+3. **Whether it differs:** the source file and the file in your home folder are compared byte by byte. The screen says **in sync**, **differs from source**, or **not in chezmoi**.
+4. Source files that end in `.tmpl`, or start with `encrypted_`, `modify_`, `create_`, or `symlink_`, are view only. neet shows the source file, and never asks chezmoi what it would make.
+
+#### When neet may run chezmoi
+
+* Only when all of these are true. Otherwise neet still writes the source file, and tells you to run `chezmoi apply` for that file yourself.
+  1. The config file is one neet can read, and has no `hooks` section. A hook runs on every chezmoi command, even `chezmoi source-path`.
+  2. Every `.chezmoiignore`, `.chezmoiremove`, and `.chezmoiexternal` file in the source folder, and everything in a `.chezmoiexternals` folder, is plain, or only uses `if`, `else`, `end`, `eq`, `ne`, `and`, `or`, `not`, and values that start with `.`. chezmoi renders these on almost every command, even ones that only name a single file, with or without `.tmpl` in their name.
+  3. The file is not view only.
 
 | Command | When | Changes |
 | --- | --- | --- |
-| `chezmoi source-path` | When Dotfiles opens. | Nothing. |
-| `chezmoi managed` | When Dotfiles opens. | Nothing. |
-| `chezmoi apply --exclude=scripts -- <file>` | After a change to a source file, or to put the source version back. | That one file in your home folder. |
-| `chezmoi re-add -- <file>` | To keep the version in your home folder. | That file's source file. |
-| `chezmoi add -- <file>` | To let chezmoi manage a listed file. | Adds one source file. |
+| `chezmoi apply --no-tty --exclude=scripts,externals -- <file>` | After a change to a source file, or to put the source version back. | That one file in your home folder. |
+| `chezmoi re-add --no-tty -- <file>` | To keep the version in your home folder. | That file's source file. |
+| `chezmoi add --no-tty -- <file>` | To let chezmoi manage a listed file. | Adds one source file. |
 
-* neet never runs `chezmoi apply` without a file, `chezmoi update`, or chezmoi's scripts.
-* Templates are never changed, and neet never asks chezmoi to render one on its own. A template can run commands, or ask a password manager.
+* neet never runs `chezmoi status`, `diff`, `cat`, `managed`, `update`, or `apply` without a file. `status` without a file renders every template and runs `modify_` scripts. neet shows its own diff instead.
+* Templates are never changed or rendered by neet.
+* Checked with chezmoi 2.72.2, in a test folder where every kind of template and hook wrote down when it ran.
 
 ### Export
 
