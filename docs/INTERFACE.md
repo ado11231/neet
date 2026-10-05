@@ -382,11 +382,11 @@
 |        Size    Changed       Status                    |  | Path     ~/.zprofile                     |
 | Shell                                                  |  | Source   dot_zprofile                    |
 |   .zshrc       895 B   12 days ago   in sync           |  | Changed  2 days ago                      |
-| > .zprofile    193 B   2 days ago    changed in home   |  | Check    zsh -n  passed                  |
+| > .zprofile    193 B   2 days ago    differs           |  | Check    zsh -n  passed                  |
 |   .zshenv       89 B   12 days ago   in sync           |  | Backups  3                               |
 | Git                                                    |  |                                          |
-|   .gitconfig   284 B   8 days ago    in sync           |  | Changed in home since chezmoi            |
-|   git/ignore    41 B   1 month ago   in sync           |  | wrote it. r keeps it, p puts the         |
+|   .gitconfig   284 B   8 days ago    in sync           |  | Differs from its source file.            |
+|   git/ignore    41 B   1 month ago   in sync           |  | r keeps this version, p puts the         |
 | SSH                                                    |  | source back.                             |
 |   config       312 B   3 months ago  view only         |  +------------------------------------------+
 | Terminal                                               |  + Preview ---------------------------------+
@@ -397,10 +397,10 @@
 +--------------------------------------- 11 files found -+  +------------------------------------------+
 ```
 
-* **Top edge:** whether chezmoi is in use, the repository, how many files wait to be committed, and whether it is ahead of or behind the remote, as last fetched. Without chezmoi it says so, and `x` offers to start a repository.
+* **Top edge:** whether chezmoi is in use, and whether neet may run it, the repository, how many files wait to be committed, and whether it is ahead of or behind the remote, as last fetched. Without chezmoi it says so, and `x` offers to start a repository.
 * **Files:** only the files that exist, grouped by shell, Git, SSH, editors, terminal, and tools. `.` shows the missing ones too, so you can create one. Long paths keep their file name.
   1. Size and when it last changed.
-  2. Status: **in sync** in green, **changed in home** or **changed in source** in yellow, **not in chezmoi**, **view only** with the reason in the details, and **may hold secrets** in red.
+  2. Status: **in sync** in green, **differs** from its source file in yellow, **not in chezmoi**, **view only** with the reason in the details, and **may hold secrets** in red.
 * **Right:** the selected file: its path, its source file in chezmoi, when it changed, its check and whether the file passes it now, and how many backups it has. Below, a note on its status and the keys that fix it. Under that, a preview of the start of the file.
 * Below 120 columns, the details sit under the list, and the preview is hidden.
 
@@ -411,7 +411,7 @@
 | `c` | Configure the selected program's settings, one at a time. |
 | `d` | Show the diff between the file and its source file, or its latest backup. |
 | `b` | List its backups, newest first. `Enter` shows the diff, then `y` restores it. |
-| `r` / `p` | When changed in home: `r` keeps the home version in chezmoi, `p` puts the source version back. |
+| `r` / `p` | When it differs from its source file: `r` keeps the home version in chezmoi, `p` puts the source version back. Both show the diff first. When neet may not run chezmoi, it says which command to run yourself. |
 | `a` | Let chezmoi manage the file. |
 | `x` | Export: review for secrets, commit, then push. |
 | `.` | Show or hide missing files. |
