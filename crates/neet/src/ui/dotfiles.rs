@@ -19,8 +19,11 @@ use super::format;
 use super::visual::{self, Columns};
 
 mod change;
+mod configure;
 
 use change::{Diff, Fix, Mode, Review};
+use configure::Configure;
+use neet_core::dotfiles::configure as settings;
 use neet_core::rewrite::Backup;
 
 /// From this width the selected file and its preview show on the right.
@@ -743,6 +746,180 @@ impl Dotfiles {
         }
     }
 
+    /// Keys while a review, question, list, or note is open
+    fn mode_key(&mut self, key: KeyEvent) -> Action {
+        match &mut self.mode {
+            Mode::Browse => {}
+            Mode::Editing { .. } => return Action::None,
+            Mode::Note { .. } => {
+                self.mode = Mode::Browse;
+                return Action::None;
+            }
+            Mode::Review(review) => {
+                match key.code {
+                    KeyCode::Up | KeyCode::Char('k') => review.diff.scroll(false),
+                    KeyCode::Down | KeyCode::Char('j') => review.diff.scroll(true),
+                    KeyCode::Char('y') => self.write_edit(),
+                    KeyCode::Char('e') => {
+                        let Mode::Review(review) = std::mem::replace(&mut self.mode, Mode::Browse)
+                        else {
+                            return Action::None;
+                        };
+                        let copy = review.copy.clone();
+                        self.mode = Mode::Editing {
+                            edit: review.edit,
+                            copy: copy.clone(),
+                        };
+                        return Action::Edit(copy);
+                    }
+                    _ => {}
+                }
+                return Action::None;
+            }
+            Mode::Ask { fix, index, diff } => {
+                match key.code {
+                    KeyCode::Up | KeyCode::Char('k') => diff.scroll(false),
+                    KeyCode::Down | KeyCode::Char('j') => diff.scroll(true),
+                    KeyCode::Char('y') => {
+                        let (fix, index) = (*fix, *index);
+                        self.run_fix(fix, index);
+                    }
+                    _ => {}
+                }
+                return Action::None;
+            }
+            Mode::Backups {
+                index,
+                list,
+                selected,
+            } => {
+                match key.code {
+                    KeyCode::Up | KeyCode::Char('k') => *selected = selected.saturating_sub(1),
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        *selected = (*selected + 1).min(list.len().saturating_sub(1));
+                    }
+                    KeyCode::Enter => {
+                        let (index, backup) = (*index, list[*selected].clone());
+                        self.ask_restore(index, backup);
+                    }
+                    _ => {}
+                }
+                return Action::None;
+            }
+            Mode::Restore {
+                index,
+                backup,
+                diff,
+            } => {
+                match key.code {
+                    KeyCode::Up | KeyCode::Char('k') => diff.scroll(false),
+                    KeyCode::Down | KeyCode::Char('j') => diff.scroll(true),
+                    KeyCode::Char('y') => {
+                        let (index, backup) = (*index, backup.clone());
+                        self.run_restore(index, &backup);
+                    }
+                    _ => {}
+                }
+                return Action::None;
+            }
+            Mode::Configure(configure) => {
+                if configure.key(key) {
+                    self.review_configure();
+                }
+                return Action::None;
+            }
+            Mode::Show { diff, .. } => {
+                match key.code {
+                    KeyCode::Up | KeyCode::Char('k') => diff.scroll(false),
+                    KeyCode::Down | KeyCode::Char('j') => diff.scroll(true),
+                    _ => self.mode = Mode::Browse,
+                }
+                return Action::None;
+            }
+        }
+        Action::None
+    }
+
+    /// Checks the new contents and shows the review.
+    fn review(&mut self, edit: Edit, copy: PathBuf, new: Vec<u8>) {
+        let checked = core_change::check(edit.syntax(), &copy, edit.file_name());
+        let diff = Diff::new(edit.contents(), &new);
+        let hidden = self
+            .selected()
+            .is_some_and(|index| self.listing.files[index].may_hold_secrets);
+        self.mode = Mode::Review(Review {
+            edit,
+            copy,
+            new,
+            checked,
+            diff,
+            hidden,
+        });
+    }
+
+    /// `c`: opens the selected file's settings, when Configure knows them.
+    fn start_configure(&mut self) {
+        let Some(index) = self.selected() else {
+            return;
+        };
+        let file = &self.listing.files[index];
+        let Some(program) = settings::program_for(file.known.path) else {
+            self.mode = Mode::Note {
+                title: "No settings".to_string(),
+                lines: vec![Line::from(
+                    "Configure knows Git's settings for now. Press e to edit this file.",
+                )],
+                color: visual::ACCENT,
+            };
+            return;
+        };
+        let begun = Edit::begin(file, self.listing.chezmoi.as_ref()).and_then(|edit| {
+            edit.copy(&self.home)
+                .map(|copy| (edit, copy))
+                .map_err(|error| format!("A copy to change could not be made: {error}."))
+        });
+        self.mode = match begun {
+            Ok((edit, copy)) => match settings::values(program, &copy) {
+                Ok(values) => {
+                    Mode::Configure(Box::new(Configure::new(edit, copy, program, values)))
+                }
+                Err(error) => {
+                    core_change::discard(&copy);
+                    change::done(Err(error), "", None)
+                }
+            },
+            Err(error) => change::done(Err(error), "", None),
+        };
+    }
+
+    /// `y` in Configure: makes the changes on the copy, then shows the
+    /// review.
+    fn review_configure(&mut self) {
+        let Mode::Configure(configure) = std::mem::replace(&mut self.mode, Mode::Browse) else {
+            return;
+        };
+        if !configure.has_changes() {
+            self.mode = Mode::Configure(configure);
+            return;
+        }
+        if let Err(error) = configure.apply() {
+            // Start again from the file as it was, so no half change stays.
+            let _ = fs::write(&configure.copy, configure.edit.contents());
+            let mut configure = configure;
+            configure.error = Some(error);
+            self.mode = Mode::Configure(configure);
+            return;
+        }
+        let configure = *configure;
+        match change::read_copy(&configure.copy) {
+            Ok(new) => self.review(configure.edit, configure.copy, new),
+            Err(error) => {
+                core_change::discard(&configure.copy);
+                self.mode = change::done(Err(error), "", None);
+            }
+        }
+    }
+
     /// Draws the review, the question, or the note on top of the list.
     fn draw_mode(&self, frame: &mut Frame, area: Rect) {
         match &self.mode {
@@ -795,6 +972,12 @@ impl Dotfiles {
                 diff,
                 hidden,
             } => change::draw_ask(frame, area, title, lines.clone(), diff, *hidden),
+            Mode::Configure(configure) => {
+                let shown = self.selected().map_or_else(String::new, |index| {
+                    format!("~/{}", self.listing.files[index].known.path)
+                });
+                configure.draw(frame, area, &shown);
+            }
             Mode::Note {
                 title,
                 lines,
@@ -1133,88 +1316,8 @@ impl Screen for Dotfiles {
     }
 
     fn handle_key(&mut self, key: KeyEvent, _context: &Context) -> Action {
-        match &mut self.mode {
-            Mode::Browse => {}
-            Mode::Editing { .. } => return Action::None,
-            Mode::Note { .. } => {
-                self.mode = Mode::Browse;
-                return Action::None;
-            }
-            Mode::Review(review) => {
-                match key.code {
-                    KeyCode::Up | KeyCode::Char('k') => review.diff.scroll(false),
-                    KeyCode::Down | KeyCode::Char('j') => review.diff.scroll(true),
-                    KeyCode::Char('y') => self.write_edit(),
-                    KeyCode::Char('e') => {
-                        let Mode::Review(review) = std::mem::replace(&mut self.mode, Mode::Browse)
-                        else {
-                            return Action::None;
-                        };
-                        let copy = review.copy.clone();
-                        self.mode = Mode::Editing {
-                            edit: review.edit,
-                            copy: copy.clone(),
-                        };
-                        return Action::Edit(copy);
-                    }
-                    _ => {}
-                }
-                return Action::None;
-            }
-            Mode::Ask { fix, index, diff } => {
-                match key.code {
-                    KeyCode::Up | KeyCode::Char('k') => diff.scroll(false),
-                    KeyCode::Down | KeyCode::Char('j') => diff.scroll(true),
-                    KeyCode::Char('y') => {
-                        let (fix, index) = (*fix, *index);
-                        self.run_fix(fix, index);
-                    }
-                    _ => {}
-                }
-                return Action::None;
-            }
-            Mode::Backups {
-                index,
-                list,
-                selected,
-            } => {
-                match key.code {
-                    KeyCode::Up | KeyCode::Char('k') => *selected = selected.saturating_sub(1),
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        *selected = (*selected + 1).min(list.len().saturating_sub(1));
-                    }
-                    KeyCode::Enter => {
-                        let (index, backup) = (*index, list[*selected].clone());
-                        self.ask_restore(index, backup);
-                    }
-                    _ => {}
-                }
-                return Action::None;
-            }
-            Mode::Restore {
-                index,
-                backup,
-                diff,
-            } => {
-                match key.code {
-                    KeyCode::Up | KeyCode::Char('k') => diff.scroll(false),
-                    KeyCode::Down | KeyCode::Char('j') => diff.scroll(true),
-                    KeyCode::Char('y') => {
-                        let (index, backup) = (*index, backup.clone());
-                        self.run_restore(index, &backup);
-                    }
-                    _ => {}
-                }
-                return Action::None;
-            }
-            Mode::Show { diff, .. } => {
-                match key.code {
-                    KeyCode::Up | KeyCode::Char('k') => diff.scroll(false),
-                    KeyCode::Down | KeyCode::Char('j') => diff.scroll(true),
-                    _ => self.mode = Mode::Browse,
-                }
-                return Action::None;
-            }
+        if !matches!(self.mode, Mode::Browse) {
+            return self.mode_key(key);
         }
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => self.step(false),
@@ -1227,6 +1330,7 @@ impl Screen for Dotfiles {
             KeyCode::Char('p') => self.ask_fix(Fix::PutBack),
             KeyCode::Char('b') => self.open_backups(),
             KeyCode::Char('d') => self.show_diff(),
+            KeyCode::Char('c') => self.start_configure(),
             _ => {}
         }
         Action::None
@@ -1244,12 +1348,24 @@ impl Screen for Dotfiles {
                 self.mode = Mode::Editing { edit, copy };
                 Action::None
             }
+            Mode::Configure(mut configure) => {
+                if configure.typing.take().is_some() {
+                    self.mode = Mode::Configure(configure);
+                } else {
+                    core_change::discard(&configure.copy);
+                }
+                Action::None
+            }
             Mode::Ask { .. }
             | Mode::Backups { .. }
             | Mode::Restore { .. }
             | Mode::Show { .. }
             | Mode::Note { .. } => Action::None,
         }
+    }
+
+    fn takes_text(&self) -> bool {
+        matches!(&self.mode, Mode::Configure(configure) if configure.typing.is_some())
     }
 
     fn is_dialog(&self) -> bool {
@@ -1274,28 +1390,14 @@ impl Screen for Dotfiles {
                     color: visual::ACCENT,
                 };
             }
-            Ok(new) => {
-                let checked = core_change::check(edit.syntax(), &copy, edit.file_name());
-                let diff = Diff::new(edit.contents(), &new);
-                let hidden = self
-                    .selected()
-                    .is_some_and(|index| self.listing.files[index].may_hold_secrets);
-                self.mode = Mode::Review(Review {
-                    edit,
-                    copy,
-                    new,
-                    checked,
-                    diff,
-                    hidden,
-                });
-            }
+            Ok(new) => self.review(edit, copy, new),
         }
     }
 
     fn hints(&self) -> &'static str {
         match &self.mode {
             Mode::Browse => {
-                "↑↓ move · e edit · d diff · b backups · r keep · p put back · . missing · esc home · ? help"
+                "↑↓ move · e edit · c configure · d diff · b backups · r keep · p put back · . missing · esc home · ? help"
             }
             Mode::Editing { .. } => "Waiting for your editor to close",
             Mode::Review(review) if matches!(review.checked, Checked::Failed(_)) => {
@@ -1307,6 +1409,10 @@ impl Screen for Dotfiles {
             Mode::Backups { .. } => "↑↓ move · enter show the change · esc go back",
             Mode::Restore { .. } => "y restore it · ↑↓ scroll · esc go back",
             Mode::Show { .. } => "↑↓ scroll · any other key go back",
+            Mode::Configure(configure) if configure.typing.is_some() => {
+                "type the value · enter keep it · esc cancel"
+            }
+            Mode::Configure(_) => "↑↓ move · enter change · y review · esc drop the changes",
             Mode::Note { .. } => "any key continue",
         }
     }
@@ -1684,5 +1790,94 @@ mod tests {
         assert!(text.contains("+     name = You"));
         press(&mut screen, KeyCode::Char('x'));
         assert!(!screen.is_dialog());
+    }
+
+    /// A home folder with only a `.gitconfig`, and no chezmoi
+    fn git_screen() -> (tempfile::TempDir, Dotfiles) {
+        let dir = tempfile::tempdir().unwrap();
+        let home = fs::canonicalize(dir.path()).unwrap();
+        write(&home.join(".gitconfig"), "# mine\n[user]\n\tname = You\n");
+        let listing = dotfiles::list(&home);
+        (dir, Dotfiles::from_listing(home, listing))
+    }
+
+    fn typed(screen: &mut Dotfiles, text: &str) {
+        for character in text.chars() {
+            press(screen, KeyCode::Char(character));
+        }
+    }
+
+    #[test]
+    fn configure_changes_git_settings_then_reviews_them() {
+        let (_dir, mut screen) = git_screen();
+        press(&mut screen, KeyCode::Char('c'));
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains("Git settings · ~/.gitconfig"), "{text}");
+        assert!(text.contains("user.name"));
+        assert!(text.contains("You"));
+        assert!(text.contains("not set"));
+        assert!(text.contains("Nothing changed yet."));
+
+        press(&mut screen, KeyCode::Down);
+        press(&mut screen, KeyCode::Enter);
+        assert!(screen.takes_text());
+        typed(&mut screen, "you@example.com");
+        press(&mut screen, KeyCode::Enter);
+        assert!(!screen.takes_text());
+        for _ in 0..3 {
+            press(&mut screen, KeyCode::Down);
+        }
+        press(&mut screen, KeyCode::Enter);
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains("user.email  you@example.com"), "{text}");
+        assert!(text.contains("pull.rebase  true"));
+
+        press(&mut screen, KeyCode::Char('y'));
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains("Change to .gitconfig"), "{text}");
+        assert!(text.contains("git config --list  passed"));
+        assert!(text.contains("email = you@example.com"));
+        assert!(text.contains("rebase = true"));
+
+        press(&mut screen, KeyCode::Char('y'));
+        assert!(render(&mut screen, 120, 30).contains("Saved ~/.gitconfig"));
+        let saved = fs::read_to_string(screen.home.join(".gitconfig")).unwrap();
+        assert!(
+            saved.starts_with("# mine\n[user]\n\tname = You\n"),
+            "{saved}"
+        );
+        assert!(saved.contains("email = you@example.com"));
+        assert_eq!(screen.backups.list(".gitconfig").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn esc_cancels_typing_then_drops_the_changes() {
+        let (_dir, mut screen) = git_screen();
+        press(&mut screen, KeyCode::Char('c'));
+        let Mode::Configure(configure) = &screen.mode else {
+            panic!("c must open Configure");
+        };
+        let copy = configure.copy.clone();
+        press(&mut screen, KeyCode::Enter);
+        typed(&mut screen, "Other");
+        assert!(matches!(screen.back(), Action::None));
+        assert!(matches!(screen.mode, Mode::Configure(_)));
+        assert!(!screen.takes_text());
+        assert!(render(&mut screen, 120, 30).contains("Nothing changed yet."));
+
+        assert!(matches!(screen.back(), Action::None));
+        assert!(!screen.is_dialog());
+        assert!(!copy.exists());
+        assert_eq!(
+            fs::read_to_string(screen.home.join(".gitconfig")).unwrap(),
+            "# mine\n[user]\n\tname = You\n"
+        );
+    }
+
+    #[test]
+    fn configure_says_which_programs_it_knows() {
+        let (_dir, mut screen) = screen();
+        press(&mut screen, KeyCode::Char('c'));
+        assert!(render(&mut screen, 120, 30).contains("Configure knows Git's settings"));
     }
 }
