@@ -251,7 +251,7 @@ min_age_days = 0
   2. Files that hold passwords or tokens: `.netrc`, `.git-credentials`, `.config/gh/hosts.yml`, and everything in `~/.aws`, `~/.docker`, and `~/.kube`.
   3. Everything in `~/.ssh` except `config`.
   4. Files a shell makes for itself, such as `.zcompdump`.
-* `.npmrc` can hold a token. It is marked **may hold secrets**, and starts left out of exports.
+* `.npmrc` can hold a token. It is marked **secret**, and starts left out of exports.
 
 ### What May Change
 
@@ -321,7 +321,7 @@ min_age_days = 0
 
 1. **The source folder:** `sourceDir` in chezmoi's config file, or `~/.local/share/chezmoi`, then the folder named in its `.chezmoiroot`, if there is one. The config file is `~/.config/chezmoi/chezmoi.toml` or `chezmoi.json`. A config in another format counts as unknown.
 2. **Each listed file's source file**, by chezmoi's naming: `dot_` for a leading `.`, and the attribute prefixes `private_`, `readonly_`, `executable_`, and `empty_`.
-3. **Whether it differs:** the source file and the file in your home folder are compared byte by byte. The screen says **in sync**, **differs from source**, or **not in chezmoi**.
+3. **Whether it differs:** the source file and the file in your home folder are compared byte by byte. The screen says **saved**, **changed**, or **not saved**.
 4. Source files that end in `.tmpl`, or start with `encrypted_`, `modify_`, `create_`, or `symlink_`, are view only. neet shows the source file, and never asks chezmoi what it would make.
 
 #### When neet may run chezmoi

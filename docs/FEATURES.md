@@ -108,11 +108,11 @@
 
 | Feature | What It Does | Status |
 | --- | --- | --- |
-| List | Shows your settings files, such as `~/.zshrc` and `~/.gitconfig`, grouped by program, with size, last change, and a preview. | Done |
+| List | Shows your settings files, such as `~/.zshrc` and `~/.gitconfig`, grouped by program, each saved, changed, or not saved, with a preview. `Enter` shows what you can do with one. | Done |
 | chezmoi status | Reads chezmoi's folder without running it, and shows whether each file matches its source file. | Done |
 | Edit | Opens a copy in your editor, then checks it, shows the diff, and writes it after a backup. With chezmoi, writes the source file, then applies it. | Done |
-| Keep or put back | For a file that differs from its source file: keeps this version in chezmoi, or puts chezmoi's back. | Done |
-| Add to chezmoi | For a listed file chezmoi does not manage: shows it whole, then adds it with `chezmoi add`. | Done |
+| Save or use the saved version | For a file that changed since it was saved: saves this version in chezmoi, or puts chezmoi's back. | Done |
+| Add to your dotfiles | For a listed file chezmoi does not manage: shows it whole, then adds it with `chezmoi add`. | Done |
 | Backups and restore | Keeps every old version in `~/.local/state/neet/backups/dotfiles`, and restores one after showing what it changes. | Done |
 | Diff | Shows how a file differs from its source file in chezmoi, or what changed since its last backup. | Done |
 | Configure | Changes a program's settings one at a time, then reviews them like an edit. Git first; more programs to come. | Done |
