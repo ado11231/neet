@@ -7,6 +7,7 @@ pub mod large;
 pub mod removal;
 pub mod rewrite;
 pub mod rules;
+mod run;
 pub mod safety;
 pub mod scan;
 pub mod size;
