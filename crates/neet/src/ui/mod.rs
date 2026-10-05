@@ -4,6 +4,7 @@ mod art;
 mod clean;
 mod disk;
 mod dotfiles;
+mod editor;
 mod format;
 mod help;
 mod home;
@@ -46,6 +47,10 @@ pub fn run(terminal: &mut DefaultTerminal) -> io::Result<()> {
             && key.kind == KeyEventKind::Press
         {
             app.handle_key(key);
+        }
+        if let Some(path) = app.take_edit() {
+            let result = editor::suspend(terminal, &path);
+            app.edited(result);
         }
     }
     Ok(())
