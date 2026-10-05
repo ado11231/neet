@@ -274,6 +274,13 @@ impl CleanupRoots {
         &self.home
     }
 
+    /// Whether `path`, a real path with no links in it, is a protected
+    /// folder or inside one. See the protected folders in SAFETY.md.
+    #[must_use]
+    pub fn protects(&self, path: &Path) -> bool {
+        names(path).is_none_or(|names| self.is_protected(&names))
+    }
+
     /// The names of the real home folder
     fn home_names(&self) -> Vec<&str> {
         names(&self.home).unwrap_or_default()
