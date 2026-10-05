@@ -112,7 +112,8 @@
 | chezmoi status | Reads chezmoi's folder without running it, and shows whether each file matches its source file. | Done |
 | Edit | Opens a copy in your editor, then checks it, shows the diff, and writes it after a backup. With chezmoi, writes the source file, then applies it. | Done |
 | Keep or put back | For a file that differs from its source file: keeps this version in chezmoi, or puts chezmoi's back. | Done |
-| Backups and restore | Keeps every old version in `~/.local/state/neet/backups/dotfiles`. Restoring from the screen is next. | Proposed |
+| Backups and restore | Keeps every old version in `~/.local/state/neet/backups/dotfiles`, and restores one after showing what it changes. | Done |
+| Diff | Shows how a file differs from its source file in chezmoi, or what changed since its last backup. | Done |
 | Configure | Changes a program's settings one at a time, starting with Git. | Proposed |
 | Export | Reviews for secrets, commits, and pushes when you press `y`, or starts a repository in chezmoi's layout. | Proposed |
 
