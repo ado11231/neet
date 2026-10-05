@@ -28,6 +28,14 @@ const MIN_SIDE_WIDTH: u16 = 130;
 /// Width of the table and the box under it, when the largest items are beside them
 const TABLE_WIDTH: u16 = 86;
 
+/// The screen's boxes are never wider than this together. On a wider
+/// terminal they sit in the middle.
+const MAX_WIDTH: u16 = 150;
+
+/// From this many spare rows, boxes stand a row apart and the steps get a
+/// blank row above and below.
+const ROOMY: u16 = 8;
+
 /// What the background work found, once it is done
 enum Asked {
     Waiting(Receiver<Option<Finding>>),
@@ -478,7 +486,7 @@ impl QuickClean {
             field(
                 "Cleanup",
                 vec![
-                    Span::raw(format!("+~{}", format::size(cleanup)))
+                    Span::raw(format!("~{}", format::size(cleanup)))
                         .green()
                         .bold(),
                     Span::raw(" by neet"),
@@ -489,9 +497,7 @@ impl QuickClean {
             lines.push(field(
                 "By hand",
                 vec![
-                    Span::raw(format!("+{}", format::size(manual)))
-                        .yellow()
-                        .bold(),
+                    Span::raw(format::size(manual)).yellow().bold(),
                     Span::raw(" by you"),
                 ],
             ));
@@ -509,7 +515,12 @@ impl QuickClean {
 
     /// The largest items of the selected row, at most `rows` lines, or why
     /// there is no list
-    fn largest_lines(&self, context: &Context, width: u16, rows: usize) -> Vec<Line<'static>> {
+    fn largest_lines(
+        &self,
+        context: &Context,
+        width: u16,
+        rows: usize,
+    ) -> Result<Vec<Line<'static>>, Line<'static>> {
         let item = self.selected();
         let width = usize::from(width.saturating_sub(4));
         let entries: Vec<(u64, String)> = match item {
@@ -552,12 +563,12 @@ impl QuickClean {
             },
         };
         if entries.is_empty() {
-            return vec![Line::from(match item {
+            return Err(Line::from(match item {
                 Item::Clutter(Kind::SimulatorRuntimes | Kind::TempFiles) => {
                     "Outside home. No scan details."
                 }
                 _ => "Nothing to list.",
-            })];
+            }));
         }
         let mut lines: Vec<Line> = entries
             .iter()
@@ -577,7 +588,7 @@ impl QuickClean {
                 format::count(u64::try_from(entries.len() - lines.len()).unwrap_or(u64::MAX))
             )));
         }
-        lines
+        Ok(lines)
     }
 }
 
@@ -596,17 +607,30 @@ fn box_height(lines: &[Line<'static>], width: u16) -> u16 {
     super::visual::wrapped_rows(lines, width.saturating_sub(4)) + 2
 }
 
-/// Draws a box holding `lines` in `area`. Leading spaces are kept, so
-/// right aligned sizes stay lined up.
-fn draw_box(frame: &mut Frame, area: Rect, title: &str, lines: Vec<Line<'static>>) {
+/// Draws a box holding `lines` in `area`, with `rows` blank rows above and
+/// below them. Leading spaces are kept, so right aligned sizes stay lined up.
+fn draw_box(frame: &mut Frame, area: Rect, title: &str, lines: Vec<Line<'static>>, rows: u16) {
     frame.render_widget(
         Paragraph::new(lines).wrap(Wrap { trim: false }).block(
             super::visual::block()
                 .title(title.to_string())
-                .padding(Padding::horizontal(1)),
+                .padding(Padding::new(1, 1, rows, rows)),
         ),
         area,
     );
+}
+
+/// A box with one short line in its middle, for when there is no list
+fn draw_note(frame: &mut Frame, area: Rect, title: &str, note: Line<'static>) {
+    let block = super::visual::block()
+        .title(title.to_string())
+        .padding(Padding::horizontal(1));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let [middle] = Layout::vertical([Constraint::Length(1)])
+        .flex(Flex::Center)
+        .areas(inner);
+    frame.render_widget(Paragraph::new(note).centered(), middle);
 }
 
 fn quick_columns(statuses: &[Status], width: u16) -> super::visual::Columns<5> {
@@ -664,43 +688,52 @@ impl Screen for QuickClean {
         self.poll(tree);
         // Border, header, gap, then one row per item
         let table_height = u16::try_from(ITEMS.len()).unwrap_or(u16::MAX) + 4;
-        // Each box is sized to what it holds, and the boxes are centred top
-        // to bottom, so a tall screen has no box left mostly empty.
+        // Each box is sized to what it holds, and together they form one
+        // rectangle in the middle of the screen, so a tall or wide screen
+        // has no box left mostly empty.
         let (title, about) = self.about_lines();
         if area.width >= MIN_SIDE_WIDTH {
-            // The table and how to clear the row on the left; free space
-            // and the row's largest items on the right
-            let right_width = area.width - TABLE_WIDTH;
+            let width = area.width.min(MAX_WIDTH);
+            let [area] = Layout::horizontal([Constraint::Length(width)])
+                .flex(Flex::Center)
+                .areas(area);
+            let plain = table_height + box_height(&about, TABLE_WIDTH);
+            let roomy = area.height >= plain + ROOMY;
+            let (gap, padding) = if roomy { (1, 1) } else { (0, 0) };
+            let right_width = width - TABLE_WIDTH - 2 * gap;
             let after = self.after_lines(context, right_width.saturating_sub(4));
             let after_height = box_height(&after, right_width);
-            let room = usize::from(area.height.saturating_sub(after_height + 2));
-            let largest = self.largest_lines(context, right_width, room);
-            let left_height = table_height + box_height(&about, TABLE_WIDTH);
-            let right_height = after_height + box_height(&largest, right_width);
-            let height = left_height.max(right_height).min(area.height);
+            let about_height = box_height(&about, TABLE_WIDTH) + 2 * padding;
+            // The right column ends where the left one does.
+            let height = (table_height + gap + about_height).min(area.height);
             let [area] = Layout::vertical([Constraint::Length(height)])
                 .flex(Flex::Center)
                 .areas(area);
             let [left, right] =
                 Layout::horizontal([Constraint::Length(TABLE_WIDTH), Constraint::Fill(1)])
+                    .spacing(2 * gap)
                     .areas(area);
-            let [table, below, _] = Layout::vertical([
+            let [table, _, below] = Layout::vertical([
                 Constraint::Length(table_height),
-                fit_or_fill(box_height(&about, TABLE_WIDTH), table_height, area.height),
+                Constraint::Length(gap),
                 Constraint::Fill(1),
             ])
             .areas(left);
             self.draw_table(frame, table, context);
-            draw_box(frame, below, &title, about);
-            let [top, bottom, _] = Layout::vertical([
+            draw_box(frame, below, &title, about, padding);
+            let [top, _, bottom] = Layout::vertical([
                 Constraint::Length(after_height),
-                Constraint::Length(box_height(&largest, right_width)),
+                Constraint::Length(gap),
                 Constraint::Fill(1),
             ])
             .areas(right);
-            draw_box(frame, top, " After cleanup ", after);
+            draw_box(frame, top, " After cleanup ", after, 0);
             if bottom.height >= 3 {
-                draw_box(frame, bottom, " Largest ", largest);
+                let rows = usize::from(bottom.height - 2);
+                match self.largest_lines(context, bottom.width, rows) {
+                    Ok(lines) => draw_box(frame, bottom, " Largest ", lines, 0),
+                    Err(note) => draw_note(frame, bottom, " Largest ", note),
+                }
             }
         } else {
             let after = self.after_lines(context, area.width.saturating_sub(4));
@@ -719,9 +752,9 @@ impl Screen for QuickClean {
             ])
             .areas(area);
             self.draw_table(frame, table, context);
-            draw_box(frame, below, &title, about);
+            draw_box(frame, below, &title, about, 0);
             if with_after {
-                draw_box(frame, rest, " After cleanup ", after);
+                draw_box(frame, rest, " After cleanup ", after, 0);
             }
         }
     }
@@ -963,6 +996,18 @@ mod tests {
         let rows: Vec<&str> = text.lines().collect();
         let last = rows.iter().rposition(|row| row.contains('└')).unwrap();
         assert!(last < 44, "the boxes end at row {last}");
+        // One rectangle: both columns end on the same row, and it is no
+        // wider than the cap, in the middle.
+        assert_eq!(rows[last].matches('└').count(), 2, "{}", rows[last]);
+        let start = rows[last].chars().position(|c| c == '└').unwrap();
+        let end = rows[last]
+            .chars()
+            .collect::<Vec<_>>()
+            .iter()
+            .rposition(|&c| c == '┘')
+            .unwrap();
+        assert!(end + 1 - start <= usize::from(MAX_WIDTH), "{start}..{end}");
+        assert!(start >= 4, "starts at column {start}");
     }
 
     #[test]
