@@ -3,6 +3,7 @@ mod apps;
 mod art;
 mod clean;
 mod disk;
+mod dotfiles;
 mod format;
 mod help;
 mod home;
