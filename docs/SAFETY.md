@@ -16,8 +16,9 @@
 8. [App Removal](#app-removal)
 9. [Build Folders And Installers](#build-folders-and-installers)
 10. [Tools neet Runs](#tools-neet-runs)
-11. [Planned Features](#planned-features)
-12. [Tests](#tests)
+11. [Dotfiles](#dotfiles)
+12. [Planned Features](#planned-features)
+13. [Tests](#tests)
 
 ## The Promises
 
@@ -226,14 +227,126 @@ min_age_days = 0
   3. Moves it into `~/.Trash` itself, keeping its name, or adding a number if the Trash already has a `Docker.raw`. Finder cannot reach into another app's container folder, and hangs when asked, so Finder's Put Back does not know where it came from.
 * Docker Desktop makes a new, empty disk image the next time it opens. To undo, move `Docker.raw` from the Trash back to `~/Library/Containers/com.docker.docker/Data/vms/0/data/` before opening Docker Desktop again.
 
+## Dotfiles
+
+* Dotfiles changes settings files in place, not through the Trash. Every change shows a diff first, is saved as a backup, and can be undone.
+* This section is written before the feature is built. Each part ships view only first.
+
+### Which Files
+
+* Only these files are listed. Paths are inside your home folder.
+
+| Group | Files |
+| --- | --- |
+| Shell | `.zshrc`, `.zprofile`, `.zshenv`, `.zlogin`, `.zlogout`, `.bashrc`, `.bash_profile`, `.profile`, `.inputrc`, `.config/fish/config.fish` |
+| Git | `.gitconfig`, `.config/git/config`, `.config/git/ignore`, `.gitignore_global` |
+| SSH | `.ssh/config` |
+| Editors | `.vimrc`, `.config/nvim/init.lua`, `.config/nvim/init.vim`, `.nanorc`, `.editorconfig` |
+| Terminal | `.tmux.conf`, `.config/tmux/tmux.conf`, `.config/kitty/kitty.conf`, `.config/ghostty/config`, `.config/alacritty/alacritty.toml`, `.config/starship.toml`, `.wezterm.lua` |
+| Tools | `.npmrc`, `.config/mise/config.toml`, `.config/gh/config.yml`, `.Brewfile` |
+
+* Adding a file needs a change to this table and to the code, together.
+* Never listed, read, or exported:
+  1. Shell and editor history, such as `.zsh_history`, `.bash_history`, and `.viminfo`.
+  2. Files that hold passwords or tokens: `.netrc`, `.git-credentials`, `.config/gh/hosts.yml`, and everything in `~/.aws`, `~/.docker`, and `~/.kube`.
+  3. Everything in `~/.ssh` except `config`.
+  4. Files a shell makes for itself, such as `.zcompdump`.
+* `.npmrc` can hold a token. It is marked **may hold secrets**, and starts left out of exports.
+
+### What May Change
+
+* Only the files in the table, and, with [chezmoi](#chezmoi), the source file chezmoi keeps for each one.
+* View only, never changed:
+  1. `.ssh/config`. Changing it waits for the SSH feature.
+  2. A file that is a link leading outside your home folder, or into a [protected folder](#protected-folders).
+  3. A file neet cannot write as you. neet never uses `sudo` here.
+  4. With chezmoi: templates, encrypted files, and files chezmoi builds from scripts or changes in place.
+* A file that is a link inside your home folder is changed where the link leads. The link itself stays.
+
+### How A Change Runs
+
+1. You make the change: edit a copy in your editor, or set a value in Configure. Your editor is `$VISUAL`, then `$EDITOR`, then `nano`.
+2. neet checks the new text, when it knows how. See [Checks](#checks).
+3. It shows the diff, and asks. Only `y` goes ahead.
+4. It checks the file did not change since you opened it: the same identity on disk, the same last change time, and the same contents. If it changed, nothing is written.
+5. It saves a [backup](#backups).
+6. It writes a new copy beside the file, with the same permissions, flushes it to disk, and swaps it in. A crash leaves the old file or the new one, never half of one.
+7. With chezmoi, it writes the source file, then runs `chezmoi apply` for that one file.
+
+### Checks
+
+* A check only reads the file. It never runs it.
+
+| File | Check |
+| --- | --- |
+| zsh files | `zsh -n` |
+| bash files and `.profile` | `bash -n` |
+| fish | `fish --no-execute` |
+| Git files | `git config --file <copy> --list` |
+| TOML files | Read with neet's own TOML reader. |
+| Everything else | None. The screen says there is no check. |
+
+* `ssh -G` is not used for `.ssh/config`: it runs `Match exec` commands while it reads.
+* A failed check is shown with its message. You can go back to your editor, or drop the change. A file that fails its check is never written.
+
+### Backups
+
+* Kept in `~/.local/state/neet/backups/dotfiles/`, by file, then by the time of the change.
+* The folder can only be read by you. Each backup keeps the file's permissions.
+* Every change saves one first: edits, Configure, restores, and chezmoi's `apply` and `re-add`. With chezmoi, both the file in your home folder and its source file are saved.
+* neet never removes a backup. Remove old ones yourself.
+* **Restore:** pick a backup, see the diff against the file now, and confirm. The file now is backed up first, so a restore can be undone too.
+
+### Configure
+
+* Configure changes one setting at a time, from a list neet knows for each program. Anything else is changed by editing.
+* Each format changes only the lines of the settings it knows. Every other line, comment, and their order stay as they are.
+
+| Program | Settings | Written with |
+| --- | --- | --- |
+| Git | `user.name`, `user.email`, `init.defaultBranch`, `core.editor`, `pull.rebase`, `push.autoSetupRemote` | `git config --file <file> <key> <value>` |
+
+* More programs are added one at a time. Each is listed here before it ships.
+* Shell settings, when added, only go in a block neet owns, between `# >>> neet >>>` and `# <<< neet <<<`. Lines outside it are never changed.
+
+### chezmoi
+
+* neet works with [chezmoi](https://www.chezmoi.io) when it is installed and `chezmoi source-path` names a source folder.
+* Each listed file shows whether chezmoi manages it, and whether it is **in sync**, **changed in home**, or **changed in source**.
+* Commands neet runs:
+
+| Command | When | Changes |
+| --- | --- | --- |
+| `chezmoi source-path` | When Dotfiles opens. | Nothing. |
+| `chezmoi managed` | When Dotfiles opens. | Nothing. |
+| `chezmoi apply --exclude=scripts -- <file>` | After a change to a source file, or to put the source version back. | That one file in your home folder. |
+| `chezmoi re-add -- <file>` | To keep the version in your home folder. | That file's source file. |
+| `chezmoi add -- <file>` | To let chezmoi manage a listed file. | Adds one source file. |
+
+* neet never runs `chezmoi apply` without a file, `chezmoi update`, or chezmoi's scripts.
+* Templates are never changed, and neet never asks chezmoi to render one on its own. A template can run commands, or ask a password manager.
+
+### Export
+
+* Export puts your dotfiles in a Git repository, ready for GitHub.
+* **Review for secrets first.** neet looks through every file that will be exported for:
+  1. Private key blocks, such as `-----BEGIN OPENSSH PRIVATE KEY-----`.
+  2. Known token shapes, such as `ghp_`, `github_pat_`, `sk-`, `AKIA`, and `xox`.
+  3. Settings named like secrets, such as `password`, `token`, `secret`, and `_authToken`, with a value.
+* Each match is listed with its file and line, its value hidden except the first four characters. You can leave the file out, or edit it, before anything is written.
+* This is a review, not a promise that nothing secret remains.
+* **With chezmoi:** neet adds the changed source files with `git add -- <files>`, and commits with a message you see first. It never adds files you did not change here.
+* **Without chezmoi:** neet writes a new folder you pick, in chezmoi's layout, with a README listing the files, then runs `git init` and commits. The folder must not exist, or be empty, and may not be in `~/Library`, a cloud folder, or a protected folder. Anyone can set up a new Mac from it with `chezmoi init --apply <repository>`.
+* **Pushing** only happens after a box that names the remote and branch, and only `y` goes ahead. Then neet runs `git push`. With no remote, it can create a private repository with `gh repo create --private --source <folder> --push`, after the same kind of box.
+* neet never force pushes, pulls, merges, or rebases. If the remote has commits you do not, neet does not push, and says to pull first.
+
 ## Planned Features
 
 * Later features change files or settings in place, not through the Trash. Each has a fixed list of what it may change.
 
 | Feature | May Change | How |
 | --- | --- | --- |
-| Dotfiles | Only the listed settings files. | Edit with a backup |
-| Shell PATH | Only the shell files among the dotfiles. Never `/etc/paths`. | Edit with a backup |
+| Shell PATH | Only the shell files in [Dotfiles](#which-files). Never `/etc/paths`. | Edit with a backup |
 | SSH permissions | `~/.ssh` and the files directly inside it. | Change permissions |
 | SSH known hosts | `~/.ssh/known_hosts` | `ssh-keygen -R` |
 | SSH agent | Nothing on disk. | `ssh-add` |
@@ -249,7 +362,6 @@ min_age_days = 0
 * A command that needs admin rights is shown first, then run once with `sudo`.
 * neet itself never runs as root.
 * neet never reads the inside of a private key.
-* Dotfile exports leave out private keys and known secret files, and show anything that looks like a password before writing. This is a review, not a promise that nothing secret remains.
 * The AI tools view only reads settings, instruction files, and skills. It never opens sign in files, chat history, or databases.
 
 ## Tests
@@ -269,6 +381,7 @@ min_age_days = 0
   11. App removal refusing Apple's apps, links, apps in subfolders, open apps, files outside the table, and partial names.
   12. Build folders and installers: accepted in Documents, Desktop, and Downloads, and refused when nested, in `~/Library` or a hidden folder, inside `.git` or `~/.ssh`, a link, a lone `target`, or a file that is not an installer.
   13. Tool commands: only runtime IDs reach `simctl`, and what `simctl` and `docker` print is read as data.
+  14. Dotfiles, once built: files outside the list, never listed files, links that lead out, a file changed after it was opened, a failed check, a crash in the middle of a write, restoring every backup, and secrets found before an export.
 * Before release, a harmless test item is moved to the Trash by hand and restored with Put Back. This passed on macOS 26.5.
 * Removing an app owned by root was tried the same way, and Put Back restored it.
 * Planned features add their own tests, for changes outside their lists, links that lead out, and undoing each change.
