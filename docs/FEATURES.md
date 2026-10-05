@@ -122,7 +122,7 @@
 | --- | --- |
 | Startup items | List programs that start on their own, including ones with no icon, and turn them off in a way you can undo. Items that belong to macOS are view only. |
 | SSH | Show hosts, key details, and agent keys, fix file permissions that are too open, and remove old known hosts. Never shows a private key. |
-| Dotfiles | List your settings files, such as `~/.zshrc` and `~/.gitconfig`, grouped by program. Edit one in your editor, or change a program's settings one at a time, starting with Git, each with a check, a diff, and a backup you can restore. Works with chezmoi: edits go to chezmoi's source file, and each file shows whether it is in sync. Export to a Git repository after a review for secrets, then commit and push when you press `y`. |
+| Dotfiles | List your settings files, such as `~/.zshrc` and `~/.gitconfig`, grouped by program. Edit one in your editor, or change a program's settings one at a time, starting with Git, each with a check, a diff, and a backup you can restore. Works with chezmoi: edits go to chezmoi's source file, and each file shows whether it matches it. neet runs chezmoi only when its templates and hooks cannot run a program. Export to a Git repository after a review for secrets, then commit and push when you press `y`. |
 | Shell PATH | Show the folders your shell searches for programs, in order, flag problems, show which copy of a program runs, and reorder them with a backup. |
 | AI tool files | Show the settings, instruction files, and skills that Claude Code and Codex keep on your Mac. View only. |
 | Power and display | Switch power modes, graphics switching, and display refresh rate, and show what keeps the Mac awake. Every change can be undone. |
@@ -144,7 +144,6 @@
 | Space breakdown | Which numbers does macOS report reliably for volumes, snapshots, and purgeable space? |
 | Project build folders | Many projects live in Documents or Desktop, which neet never touches. Can a narrow check allow only ignored build folders there? |
 | Shell PATH | How can neet find where each folder was added, and should edits go in a block neet owns? |
-| Dotfiles | Which chezmoi commands render templates, and can neet find each file's source, and apply one file, without running a template that calls a password manager or another program? |
 | AI tool files | Where does each tool keep project skills, across versions? |
 | Treemap and preferences | How should they work, and what should be saved? |
 
