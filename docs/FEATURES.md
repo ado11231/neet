@@ -114,7 +114,7 @@
 | Keep or put back | For a file that differs from its source file: keeps this version in chezmoi, or puts chezmoi's back. | Done |
 | Backups and restore | Keeps every old version in `~/.local/state/neet/backups/dotfiles`, and restores one after showing what it changes. | Done |
 | Diff | Shows how a file differs from its source file in chezmoi, or what changed since its last backup. | Done |
-| Configure | Changes a program's settings one at a time, starting with Git. | Proposed |
+| Configure | Changes a program's settings one at a time, then reviews them like an edit. Git first; more programs to come. | Done |
 | Export | Reviews for secrets, commits, and pushes when you press `y`, or starts a repository in chezmoi's layout. | Proposed |
 
 * What may change, and how, is in [SAFETY.md](SAFETY.md#dotfiles). neet runs chezmoi only when its templates and hooks cannot run a program.
