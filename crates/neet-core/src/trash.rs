@@ -2,11 +2,10 @@
 //! them. See how a cleanup runs in `docs/SAFETY.md`.
 
 use std::fs;
-use std::io::{self, Read};
+use std::io;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::process::Command;
+use std::time::Duration;
 
 /// The path is passed as an argument, never written into the script, so no
 /// name can change what the script does. It becomes a file reference before
@@ -37,7 +36,7 @@ pub fn move_to_trash(path: &Path) -> io::Result<()> {
     command
         .args(SCRIPT.iter().flat_map(|line| ["-e", line]))
         .arg(path);
-    let Some((success, stderr)) = run_with_timeout(&mut command, FINDER_TIMEOUT)? else {
+    let Some((success, stderr)) = crate::run::with_timeout(&mut command, FINDER_TIMEOUT)? else {
         return Err(io::Error::new(
             io::ErrorKind::TimedOut,
             "Finder did not answer within a minute. It may still move the item \
@@ -56,37 +55,6 @@ pub fn move_to_trash(path: &Path) -> io::Result<()> {
         ));
     }
     Err(io::Error::other(message))
-}
-
-/// Runs `command` and returns whether it succeeded, with what it printed as
-/// errors. Returns `None`, after stopping it, if it runs longer than
-/// `timeout`.
-fn run_with_timeout(
-    command: &mut Command,
-    timeout: Duration,
-) -> io::Result<Option<(bool, String)>> {
-    let mut child = command
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    let deadline = Instant::now() + timeout;
-    let status = loop {
-        if let Some(status) = child.try_wait()? {
-            break status;
-        }
-        if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Ok(None);
-        }
-        thread::sleep(Duration::from_millis(50));
-    };
-    let mut stderr = String::new();
-    if let Some(mut pipe) = child.stderr.take() {
-        pipe.read_to_string(&mut stderr)?;
-    }
-    Ok(Some((status.success(), stderr)))
 }
 
 /// Moves one file into `trash` itself, without Finder, keeping its name, or
@@ -120,35 +88,8 @@ pub fn move_into_trash(path: &Path, trash: &Path) -> io::Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::{move_into_trash, run_with_timeout};
+    use super::move_into_trash;
     use std::fs;
-    use std::process::Command;
-    use std::time::{Duration, Instant};
-
-    #[test]
-    fn stops_a_command_that_does_not_answer_in_time() {
-        let started = Instant::now();
-
-        let result = run_with_timeout(
-            Command::new("/bin/sleep").arg("10"),
-            Duration::from_millis(200),
-        )
-        .expect("command should start");
-
-        assert!(result.is_none());
-        assert!(started.elapsed() < Duration::from_secs(5));
-    }
-
-    #[test]
-    fn returns_what_a_command_printed_when_it_finishes() {
-        let result = run_with_timeout(
-            Command::new("/bin/sh").args(["-c", "echo refused >&2; exit 1"]),
-            Duration::from_secs(5),
-        )
-        .expect("command should start");
-
-        assert_eq!(result, Some((false, "refused\n".to_string())));
-    }
 
     #[test]
     fn moves_into_the_trash_without_replacing_anything() {
