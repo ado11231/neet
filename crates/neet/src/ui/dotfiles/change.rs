@@ -59,6 +59,8 @@ pub(super) enum Mode {
         diff: Diff,
         hidden: bool,
     },
+    /// `c`: a program's settings, open for changes
+    Configure(Box<super::configure::Configure>),
     /// What happened, until a key is pressed
     Note {
         title: String,
