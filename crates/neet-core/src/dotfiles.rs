@@ -15,6 +15,7 @@ use std::time::SystemTime;
 use crate::safety::CleanupRoots;
 
 pub mod change;
+pub mod configure;
 
 /// Which program a file belongs to, in the order the screen shows them
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
