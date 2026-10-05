@@ -66,7 +66,7 @@ neet/
 | `main.rs` | Handles `--help` and `--version`, then opens the interface. |
 | `ui/mod.rs` | The main loop: draw, wait for a key, pass it on. |
 | `ui/app.rs` | The screen stack, the keys every screen shares, and the state every screen can read: the scan, the disk space, and what Clean can free. |
-| `ui/home.rs` | Home: the art, the menu, and the details panel. |
+| `ui/home.rs` | Home: the art, the menu, and the Disk and Home folder boxes. |
 | `ui/art.rs` | The Home art. |
 | `ui/scan.rs` | Runs the home folder scan in the background. |
 | `ui/skipped.rs` | Skipped: folders the scan could not read. |

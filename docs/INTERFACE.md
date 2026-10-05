@@ -43,37 +43,40 @@
 ## Home
 
 ```text
-+--------------------------------+  +- neet ------------------------------+
-|                                |  | > 1 Quick Clean   start here        |
-|                                |  |   2 Deep Clean    ~8.8 GB found     |
-|                                |  |   3 Remove App                      |
-|              Art               |  |   4 Large Files                     |
-|                                |  |   5 Disk          412.2 GB used     |
-|                                |  |     ...                             |
-|                                |  |     Quit                            |
-|                                |  +-------------------------------------+
-|                                |  +-------------------------------------+
-|                                |  | Quick Clean                         |
-|                                |  | Start here: everything taking space |
-|                                |  | [########......] 83% used           |
-|                                |  | 82.0 GB free of 494.4 GB            |
-|                                |  | Scanning your home folder...        |
-+--------------------------------+  +-------------------------------------+
+  .     *      .        +       .        +- neet ------------------------------+
+      .     .      *        .            | > 1 Quick Clean                     |
+  *        .           .        *        |   2 Deep Clean                      |
+       .        Art        .             |   ...                               |
+   .       *          .          .       |   6 Startup       soon              |
+       .        .        *       .       |     Quit                            |
+  +        .        .        .           +-------------------------------------+
+     .        *         .       *        + Quick Clean ------------------------+
+  .      .        .        .        .    | Find reclaimable space.             |
+      *       .        +       .         +-------------------------------------+
+  .       .       .        .       *     + Disk -------------------------------+
+     .        *        .       .         | ##################.......  64% used |
+  *      .        .         .       .    | Free     88.1 GB of 245.1 GB        |
+     .       .        *        .         | Used     157.0 GB                   |
+  .      +        .        .        .    | Finder   96.2 GB free . 8.1 GB ...  |
+      .       .        .       *         +-------------------------------------+
+  *       .       *        .       .     + Home folder ------------------------+
+     .        .       .        .         | Size     at least 58.8 GB           |
+  .      *        .        +        .    | Items    714,329 . scanned in 8s    |
+      .       .        .       .         | Blocked  147 paths . s shows them   |
+  +       .       *        .       *     | Can free ~1.8 GB in caches and logs |
+     .        .       .        .         +-------------------------------------+
  up/down move . enter open . s skipped . ? help . q quit
 ```
 
-* **Left:** the neet art. It takes about 45% of the width, and is hidden when the terminal is narrower than 90 columns.
-* **Right, top:** the menu, one numbered row per feature.
+* **Left:** the neet art, with stars spread across the whole column, however tall or wide the terminal is. It takes about 45% of the width, and more on a wide screen, since the right side is at most 72 columns. It is hidden when the terminal is narrower than 90 columns.
+* **Right:** the menu and three boxes, each sized to its lines, centred top to bottom like the art. When they do not all fit, the last boxes are left out.
+* **Menu:** one numbered row per feature.
   1. The rows go from the quickest way to free space to the most detailed: Quick Clean, Deep Clean, Remove App, Large Files, then Disk.
-  2. Quick Clean comes first, marked `start here`, and is selected when neet opens.
-  3. Deep Clean shows `finding...`, then the total that every rule found. This is worked out again after each cleanup, and when you press `r` in Deep Clean.
-  4. Disk shows how much of the disk is used.
-  5. Features not built yet remain readable and have a yellow `soon` label. The selection skips them.
-* **Right, bottom:** details for the selected row:
-  1. What the feature does.
-  2. A 16 character gauge of how full the disk is, then free and total space on the next line. The gauge turns yellow at 75% and red at 90%.
-  3. When macOS can clear 100 MB or more on its own, a line says how much free space Finder shows, counting that purgeable space. It is read about once a minute.
-  4. Scan progress, then the home folder's total size. If some folders could not be read, the size is marked `at least`, and a yellow line says how many were blocked by macOS or could not be read, and to press `s`.
+  2. Quick Clean comes first, and is selected when neet opens.
+  3. Features not built yet remain readable and have a yellow `soon` label. The selection skips them. No other row has a note.
+* **The selected row:** its name as the title, and what it does.
+* **Disk:** a gauge of how full the disk is, as wide as the box allows. It turns yellow at 75% and red at 90%, and the free space is green, yellow, or red to match. Then free, total, and used space. When macOS can clear 100 MB or more on its own, a last line says how much free space Finder shows, counting that purgeable space. It is read about once a minute.
+* **Home folder:** scan progress, then the folder's total size and item count. If some folders could not be read, the size is marked `at least`, and yellow lines say how many were blocked by macOS or could not be read, and to press `s`. **Can free** shows `finding...`, then in green the total every Deep Clean rule found. It is worked out again after each cleanup, and when you press `r` in Deep Clean.
 
 | Key | Action |
 | --- | --- |
