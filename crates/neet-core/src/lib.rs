@@ -4,6 +4,7 @@ pub mod clutter;
 pub mod disk;
 pub mod large;
 pub mod removal;
+pub mod rewrite;
 pub mod rules;
 pub mod safety;
 pub mod scan;
