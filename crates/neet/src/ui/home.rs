@@ -1,8 +1,8 @@
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::{Constraint, Flex, Layout, Rect};
 use ratatui::style::Stylize;
-use ratatui::text::{Line, Span, Text};
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState, Padding, Paragraph, Wrap};
 
 use super::app::{Action, Context, Screen};
@@ -23,6 +23,10 @@ const MIN_ART_WIDTH: u16 = 90;
 
 /// Columns kept clear between the art and the menu.
 const ART_GAP: u16 = 2;
+
+/// The menu and its boxes are never wider than this. On a wide screen the
+/// sky takes the rest.
+const MAX_RIGHT_WIDTH: u16 = 72;
 
 enum Target {
     Screen(fn() -> Box<dyn Screen>),
@@ -140,7 +144,7 @@ impl Home {
         }
     }
 
-    fn draw_menu(&mut self, frame: &mut Frame, area: Rect, context: &Context) {
+    fn draw_menu(&mut self, frame: &mut Frame, area: Rect) {
         let items = ENTRIES.iter().enumerate().map(|(index, entry)| {
             // Only rows 1 to 9 have a number key.
             let number = match entry.target {
@@ -152,9 +156,6 @@ impl Home {
                 Span::raw(number).fg(super::visual::ACCENT),
                 Span::raw(format!("{:<14}", entry.label)),
             ];
-            if let Some(summary) = summary(entry.label, context) {
-                spans.push(Span::raw(summary).fg(super::visual::ACCENT));
-            }
             if matches!(entry.target, Target::Soon) {
                 spans.push(Span::raw("soon").yellow().italic());
             }
@@ -171,75 +172,77 @@ impl Home {
         frame.render_stateful_widget(list, area, &mut self.list);
     }
 
-    fn draw_info(&self, frame: &mut Frame, area: Rect, context: &Context) {
-        let scan = context.scan;
-        let disk = context.disk;
+    /// The boxes under the menu: the selected row, the disk, and the home
+    /// folder, each sized to its lines
+    fn panels(&self, width: u16, context: &Context) -> Vec<(String, Vec<Line<'static>>)> {
         let entry = &ENTRIES[self.selected()];
-        let mut lines = vec![
-            Line::from(entry.label).style(super::visual::HEADING),
-            Line::from(entry.about),
-            Line::default(),
-        ];
-        lines.extend(disk_lines(disk));
-        lines.push(Line::default());
-        lines.extend(scan_lines(scan));
-        let text = Text::from(lines);
-        let info = Paragraph::new(text)
-            .wrap(Wrap { trim: true })
-            .block(super::visual::block().padding(Padding::horizontal(1)));
-        frame.render_widget(info, area);
+        let inner = width.saturating_sub(4);
+        vec![
+            (format!(" {} ", entry.label), vec![Line::from(entry.about)]),
+            (" Disk ".to_string(), disk_lines(context.disk, inner)),
+            (
+                " Home folder ".to_string(),
+                scan_lines(context.scan, context.cleanable),
+            ),
+        ]
     }
 }
 
-/// A short note beside a menu row, such as how much Clean can free.
-fn summary(label: &str, context: &Context) -> Option<String> {
-    match label {
-        "Disk" => context
-            .disk
-            .map(|disk| format!("{} used", format::size(disk.used()))),
-        "Quick Clean" => Some("overview".to_string()),
-        "Deep Clean" => Some(context.cleanable.map_or_else(
-            || "finding…".to_string(),
-            |size| format!("~{} found", format::size(size)),
-        )),
-        _ => None,
-    }
+/// A label and its value, lined up with the other labels
+fn field(label: &str, value: Vec<Span<'static>>) -> Line<'static> {
+    let mut spans = vec![Span::raw(format!("{label:<9}")).bold()];
+    spans.extend(value);
+    Line::from(spans)
 }
 
-/// How many characters wide the disk gauge is.
-const GAUGE_WIDTH: usize = 16;
+/// The disk gauge is never narrower or wider than this.
+const GAUGE_WIDTH: (usize, usize) = (16, 40);
 
 /// Purgeable space smaller than this is not worth a line.
 const MIN_PURGEABLE: u64 = 100_000_000;
 
-/// A gauge of how full the disk is, from the disk's own totals, then the
-/// free space on its own line, so neither wraps in a narrow panel. When macOS
-/// can clear space on its own, a last line says why Finder shows more free.
-fn disk_lines(disk: Option<DiskSpace>) -> Vec<Line<'static>> {
+/// A gauge of how full the disk is, as wide as the box allows, then how much
+/// is free, colored by how little is left. When macOS can clear space on its
+/// own, a last line says why Finder shows more free.
+fn disk_lines(disk: Option<DiskSpace>, width: u16) -> Vec<Line<'static>> {
     let Some(disk) = disk else {
-        return vec![Line::from("Disk space unavailable.")];
+        return vec![Line::from("Disk space unavailable.").yellow()];
     };
     let used = format::percent(disk.used(), disk.total);
-    let gauge = Span::raw(format::bar(disk.used(), disk.total, GAUGE_WIDTH));
-    let gauge = match used {
-        90.. => gauge.red(),
-        75..90 => gauge.yellow(),
-        _ => gauge.fg(super::visual::ACCENT),
+    let color = match used {
+        90.. => ratatui::style::Color::Red,
+        75..90 => ratatui::style::Color::Yellow,
+        _ => super::visual::ACCENT,
+    };
+    let gauge_width = usize::from(width)
+        .saturating_sub(10)
+        .clamp(GAUGE_WIDTH.0, GAUGE_WIDTH.1);
+    let free = Span::raw(format::size(disk.available)).bold();
+    let free = match used {
+        90.. => free.red(),
+        75..90 => free.yellow(),
+        _ => free.green(),
     };
     let mut lines = vec![
-        Line::from(vec![gauge, Span::raw(format!(" {used}% used")).bold()]),
-        Line::from(format!(
-            "{} free of {}",
-            format::size(disk.available),
-            format::size(disk.total)
-        )),
+        Line::from(vec![
+            Span::raw(format::bar(disk.used(), disk.total, gauge_width)).fg(color),
+            Span::raw(format!(" {used}% used")).fg(color).bold(),
+        ]),
+        field(
+            "Free",
+            vec![free, Span::raw(format!(" of {}", format::size(disk.total)))],
+        ),
+        field("Used", vec![Span::raw(format::size(disk.used()))]),
     ];
     if let Some(purgeable) = disk.purgeable.filter(|size| *size >= MIN_PURGEABLE) {
-        lines.push(Line::from(format!(
-            "Finder: {} free · {} purgeable by macOS.",
-            format::size(disk.available.saturating_add(purgeable)),
-            format::size(purgeable)
-        )));
+        lines.push(field(
+            "Finder",
+            vec![Span::raw(format!(
+                "{} free · {} purgeable by macOS",
+                format::size(disk.available.saturating_add(purgeable)),
+                format::size(purgeable)
+            ))],
+        ));
     }
     lines
 }
@@ -253,28 +256,42 @@ fn paths(count: usize) -> String {
     )
 }
 
-/// Describes the home folder scan for the info panel.
-fn scan_lines(scan: &ScanStatus) -> Vec<Line<'static>> {
-    match scan {
+/// The home folder scan, and what Deep Clean found in it
+fn scan_lines(scan: &ScanStatus, cleanable: Option<u64>) -> Vec<Line<'static>> {
+    let mut lines = match scan {
         ScanStatus::Running(progress) => vec![
-            Line::from("Scanning home…").fg(super::visual::ACCENT),
-            Line::from(format!(
-                "{} items · {}",
-                format::count(progress.entries),
-                format::size(progress.bytes)
-            )),
+            field(
+                "Size",
+                vec![Span::raw("scanning…").fg(super::visual::ACCENT)],
+            ),
+            field(
+                "Items",
+                vec![Span::raw(format!(
+                    "{} so far · {}",
+                    format::count(progress.entries),
+                    format::size(progress.bytes)
+                ))],
+            ),
         ],
         ScanStatus::Done { scan, elapsed } => {
             let entries = u64::try_from(scan.tree.node_count() - 1).unwrap_or(u64::MAX);
             let total = scan.tree.get(scan.tree.root()).total_size;
             // An incomplete scan missed whatever it could not read.
             let at_least = if scan.is_complete() { "" } else { "at least " };
-            let mut lines = vec![Line::from(format!(
-                "Home: {at_least}{} · {} items · {}s",
-                format::size(total),
-                format::count(entries),
-                elapsed.as_secs()
-            ))];
+            let mut lines = vec![
+                field(
+                    "Size",
+                    vec![Span::raw(at_least), Span::raw(format::size(total)).bold()],
+                ),
+                field(
+                    "Items",
+                    vec![Span::raw(format!(
+                        "{} · scanned in {}s",
+                        format::count(entries),
+                        elapsed.as_secs()
+                    ))],
+                ),
+            ];
             let blocked = scan
                 .errors
                 .iter()
@@ -282,25 +299,41 @@ fn scan_lines(scan: &ScanStatus) -> Vec<Line<'static>> {
                 .count();
             let unreadable = scan.errors.len() - blocked;
             if blocked > 0 {
-                lines.push(
-                    Line::from(format!("Blocked: {} · s permissions", paths(blocked))).yellow(),
-                );
+                lines.push(field(
+                    "Blocked",
+                    vec![Span::raw(format!("{} · s shows them", paths(blocked))).yellow()],
+                ));
             }
             if unreadable > 0 {
-                lines.push(
-                    Line::from(format!("Unreadable: {} · s details", paths(unreadable))).yellow(),
-                );
+                lines.push(field(
+                    "Unread",
+                    vec![Span::raw(format!("{} · s shows them", paths(unreadable))).yellow()],
+                ));
             }
             if !scan.other_disks.is_empty() {
-                lines.push(Line::from(format!(
-                    "Other disks: {} folders skipped · s details",
-                    scan.other_disks.len()
-                )));
+                lines.push(field(
+                    "Skipped",
+                    vec![Span::raw(format!(
+                        "{} folders on other disks · s shows them",
+                        scan.other_disks.len()
+                    ))],
+                ));
             }
             lines
         }
         ScanStatus::Failed(reason) => vec![Line::from(format!("Scan failed: {reason}")).red()],
-    }
+    };
+    lines.push(field(
+        "Can free",
+        match cleanable {
+            None => vec![Span::raw("finding…").fg(super::visual::ACCENT)],
+            Some(size) => vec![
+                Span::raw(format!("~{}", format::size(size))).green().bold(),
+                Span::raw(" in caches and logs · 2 Deep Clean"),
+            ],
+        },
+    ));
+    lines
 }
 
 fn draw_art(frame: &mut Frame, area: Rect) {
@@ -310,9 +343,12 @@ fn draw_art(frame: &mut Frame, area: Rect) {
 impl Screen for Home {
     fn draw(&mut self, frame: &mut Frame, area: Rect, context: &Context) {
         let right = if area.width >= MIN_ART_WIDTH {
-            // About 45% of the width, but always a little wider than the art,
-            // so it never touches the menu.
-            let left_width = (area.width * 45 / 100).max(art::size().0 + ART_GAP);
+            // About 45% of the width, more when the menu reaches its widest,
+            // but always a little wider than the art, so it never touches
+            // the menu.
+            let left_width = (area.width * 45 / 100)
+                .max(area.width.saturating_sub(MAX_RIGHT_WIDTH))
+                .max(art::size().0 + ART_GAP);
             let [left, right] =
                 Layout::horizontal([Constraint::Length(left_width), Constraint::Fill(1)])
                     .areas(area);
@@ -322,10 +358,37 @@ impl Screen for Home {
             area
         };
         let menu_height = u16::try_from(ENTRIES.len() + 2).unwrap_or(u16::MAX);
-        let [menu, info] =
-            Layout::vertical([Constraint::Length(menu_height), Constraint::Fill(1)]).areas(right);
-        self.draw_menu(frame, menu, context);
-        self.draw_info(frame, info, context);
+        let mut panels = self.panels(right.width, context);
+        let heights = |panels: &[(String, Vec<Line<'static>>)]| -> Vec<u16> {
+            panels
+                .iter()
+                .map(|(_, lines)| {
+                    super::visual::wrapped_rows(lines, right.width.saturating_sub(4)) + 2
+                })
+                .collect()
+        };
+        // Boxes that do not fit are left out, the last first.
+        while panels.len() > 1 && menu_height + heights(&panels).iter().sum::<u16>() > right.height
+        {
+            panels.pop();
+        }
+        let mut constraints = vec![Constraint::Length(menu_height)];
+        constraints.extend(heights(&panels).into_iter().map(Constraint::Length));
+        // Centred, like the art beside it, instead of leaving a tall empty box.
+        let areas = Layout::vertical(constraints)
+            .flex(Flex::Center)
+            .split(right);
+        self.draw_menu(frame, areas[0]);
+        for ((title, lines), area) in panels.into_iter().zip(areas.iter().skip(1)) {
+            frame.render_widget(
+                Paragraph::new(lines).wrap(Wrap { trim: true }).block(
+                    super::visual::block()
+                        .title(title)
+                        .padding(Padding::horizontal(1)),
+                ),
+                *area,
+            );
+        }
     }
 
     fn handle_key(&mut self, key: KeyEvent, _context: &Context) -> Action {
@@ -450,22 +513,27 @@ mod tests {
         assert!(screen.contains("⣿"));
         assert!(screen.contains("Disk"));
         assert!(screen.contains("soon"));
-        assert!(screen.contains("1,234 items · 5.0 MB"));
+        assert!(screen.contains("1,234 so far · 5.0 MB"));
         assert!(screen.contains("80% used"));
-        assert!(screen.contains("100.0 GB free of 500.0 GB"));
-        assert!(screen.contains("Finder: 107.4 GB free · 7.4 GB"));
-        assert!(screen.contains("400.0 GB used"));
-        assert!(screen.contains("~18.4 GB found"));
+        assert!(screen.contains("Free     100.0 GB of 500.0 GB"));
+        assert!(screen.contains("Finder   107.4 GB free · 7.4 GB"));
+        assert!(screen.contains("Can free ~18.4 GB"));
+        // The menu says only which rows come later.
+        assert!(!screen.contains("overview"));
+        assert!(!screen.contains("found"));
     }
 
     #[test]
     fn purgeable_space_is_explained_only_when_it_matters() {
         let text = |purgeable| {
-            disk_lines(Some(DiskSpace {
-                total: 500_000_000_000,
-                available: 100_000_000_000,
-                purgeable,
-            }))
+            disk_lines(
+                Some(DiskSpace {
+                    total: 500_000_000_000,
+                    available: 100_000_000_000,
+                    purgeable,
+                }),
+                40,
+            )
             .iter()
             .map(ToString::to_string)
             .collect::<Vec<_>>()
@@ -501,12 +569,34 @@ mod tests {
             elapsed: std::time::Duration::ZERO,
         };
 
-        let text: Vec<String> = scan_lines(&scan).iter().map(ToString::to_string).collect();
+        let text: Vec<String> = scan_lines(&scan, None)
+            .iter()
+            .map(ToString::to_string)
+            .collect();
 
-        assert!(text[0].starts_with("Home: at least "));
-        assert!(text[1].contains("Blocked: 2 paths"));
-        assert!(text[2].contains("Unreadable: 1 path"));
+        assert!(text[0].starts_with("Size     at least "), "{text:?}");
+        assert!(text[2].contains("Blocked  2 paths"), "{text:?}");
+        assert!(text[3].contains("Unread   1 path"), "{text:?}");
+        assert!(text[4].contains("Can free finding…"), "{text:?}");
     }
+    #[test]
+    fn a_tall_screen_centres_the_boxes_instead_of_stretching_them() {
+        let screen = render(&mut Home::new(), 200, 60);
+        let rows: Vec<String> = screen
+            .chars()
+            .collect::<Vec<_>>()
+            .chunks(200)
+            .map(|row| row.iter().collect())
+            .collect();
+        let top = rows.iter().position(|row| row.contains("┌ neet")).unwrap();
+        let bottom = rows.iter().rposition(|row| row.contains('└')).unwrap();
+        assert!(top > 5, "menu starts at row {top}");
+        assert!(bottom < 54, "boxes end at row {bottom}");
+        // Never wider than the cap, so the sky takes the rest.
+        let width = rows[top].trim_end().chars().count() - rows[top].find('┌').unwrap();
+        assert!(width <= usize::from(MAX_RIGHT_WIDTH) + 2, "{width}");
+    }
+
     #[test]
     fn layout_stays_readable_across_terminal_sizes() {
         use crate::ui::visual::tests as view;
