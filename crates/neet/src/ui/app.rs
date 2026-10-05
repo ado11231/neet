@@ -28,6 +28,9 @@ pub enum Action {
     Home,
     /// Look again for what the cleanup rules cover
     Replan,
+    /// Leave the screen to open this file in your editor, then tell the
+    /// screen with [`Screen::edited`]
+    Edit(PathBuf),
     Quit,
 }
 
@@ -74,6 +77,9 @@ pub trait Screen {
     fn is_overlay(&self) -> bool {
         false
     }
+
+    /// Your editor closed after [`Action::Edit`], or could not open.
+    fn edited(&mut self, _result: Result<(), String>) {}
 }
 
 /// The disk's free space, reread every few seconds so the gauge stays current.
@@ -160,6 +166,8 @@ pub struct App {
     estimate: Estimate,
     home: Option<PathBuf>,
     disk: DiskWatch,
+    /// A file to open in your editor, once the screen is left
+    edit: Option<PathBuf>,
     quit: bool,
 }
 
@@ -173,6 +181,7 @@ impl App {
             estimate: Estimate::start(disk_root.clone()),
             home: disk_root.clone(),
             disk: DiskWatch::new(disk_root),
+            edit: None,
             quit: false,
         }
     }
@@ -186,6 +195,16 @@ impl App {
 
     pub fn should_quit(&self) -> bool {
         self.quit
+    }
+
+    /// The file a screen asked to open in your editor, if any
+    pub fn take_edit(&mut self) -> Option<PathBuf> {
+        self.edit.take()
+    }
+
+    /// Tells the screen that asked how the editor went.
+    pub fn edited(&mut self, result: Result<(), String>) {
+        self.top().edited(result);
     }
 
     fn top(&mut self) -> &mut dyn Screen {
@@ -256,6 +275,7 @@ impl App {
                 self.estimate = Estimate::start(self.home.clone());
             }
             Action::Replan => self.estimate = Estimate::start(self.home.clone()),
+            Action::Edit(path) => self.edit = Some(path),
             Action::Quit => self.quit = true,
         }
     }
