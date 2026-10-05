@@ -381,7 +381,7 @@
 +------------------------------------------------------- 7 files found +|                                              |
 + chezmoi -------------------------------------------------------------+|                                              |
 | Source   ~/.local/share/chezmoi                                      ||                                              |
-| May run  apply and re-add, one file at a time                        ||                                              |
+| May run  apply, re-add, and add, one file at a time                  ||                                              |
 |                                                                      ||                                              |
 |  4 in sync           matches its source file in chezmoi              ||                                              |
 |  1 differs           does not match its source file                  ||                                              |
@@ -407,6 +407,7 @@
 | `e` | Edit a copy in your editor, then review it. See [Edit](#edit). |
 | `r` | When the file differs from its source file: keep this version in chezmoi. |
 | `p` | When the file differs from its source file: put chezmoi's version back. |
+| `a` | When chezmoi does not manage the file: add it. See [Add To chezmoi](#add-to-chezmoi). |
 | `c` | Change the file's settings one at a time, for Git files. See [Configure](#configure). |
 | `d` | Show how the file differs from its source file, or else what changed since its last backup. Any other key goes back. |
 | `b` | List its backups, newest first. `Enter` shows what restoring one changes, then `y` restores it. |
@@ -518,6 +519,13 @@
 * `r` and `p` show the same layout as the review: what is kept or replaced, the backup, and the diff. Only `y` goes ahead.
 * `r` makes chezmoi's source file match the file in your home folder, with `chezmoi re-add`, or by writing the source file when neet may not run chezmoi.
 * `p` puts chezmoi's version back with `chezmoi apply`. When neet may not run chezmoi, it says which command to run instead.
+
+### Add To chezmoi
+
+* `a` shows the same layout: the source file it adds, such as `dot_tmux.conf`, how, and the whole file as new lines. Only `y` goes ahead.
+* It runs `chezmoi add` for that one file, or writes the source file itself, named as chezmoi would, when neet may not run chezmoi.
+* The file in your home folder stays as it is. The new source file waits for [Export](#export).
+* Not for a file `.chezmoiignore` leaves out, a view only file, or a link, which another tool may manage.
 
 ## Planned Screens
 

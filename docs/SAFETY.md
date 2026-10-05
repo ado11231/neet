@@ -294,6 +294,7 @@ min_age_days = 0
 * Kept in `~/.local/state/neet/backups/dotfiles/`, by file, then by the time of the change.
 * The folder can only be read by you. Each backup keeps the file's permissions.
 * Every change saves one first: edits, Configure, restores, and chezmoi's `apply` and `re-add`. With chezmoi, both the file in your home folder and its source file are saved.
+* Adding a file to chezmoi saves none: it only makes a new source file, and never writes over one.
 * neet never removes a backup. Remove old ones yourself.
 * **Restore:** pick a backup, see the diff against the file now, and confirm. The file now is backed up first, so a restore can be undone too.
 
@@ -335,6 +336,9 @@ min_age_days = 0
 | `chezmoi apply --no-tty --force --exclude=scripts,externals -- <file>` | After a change to a source file, or to put the source version back. | That one file in your home folder. |
 | `chezmoi re-add --no-tty -- <file>` | To keep the version in your home folder. | That file's source file. |
 | `chezmoi add --no-tty -- <file>` | To let chezmoi manage a listed file. | Adds one source file. |
+
+* Without chezmoi running, `a` writes the new source file itself, named the way `chezmoi add` names it: `dot_` for a leading `.`, `private_` for a file or folder only you can open, `empty_` for an empty file, and `executable_` for one that runs. It goes into folders chezmoi already has. The name was checked against chezmoi 2.72.2. The file is written beside its place first, then linked in, so it is whole or not there, and never replaces a file.
+* `a` never adds a link: another tool, such as GNU Stow, may manage it.
 
 * `--force` lets chezmoi replace a file it did not write last, which it otherwise stops to ask about. neet has already shown the diff, checked the file did not change, and backed it up. It touches only the one file named.
 * After each command, neet checks the file now matches, and says so if it does not.
