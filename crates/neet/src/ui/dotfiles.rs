@@ -1,9 +1,12 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::SystemTime;
 
+use neet_core::dotfiles::change::{self as core_change, Checked, Edit};
 use neet_core::dotfiles::{self, Dotfile, Group, Listing, Managed, Repo};
+use neet_core::rewrite::Backups;
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
@@ -14,6 +17,10 @@ use ratatui::widgets::{Block, Borders, Cell, Padding, Paragraph, Row, Table, Tab
 use super::app::{Action, Context, Screen};
 use super::format;
 use super::visual::{self, Columns};
+
+mod change;
+
+use change::{Diff, Fix, Mode, Review};
 
 /// From this width the selected file and its preview show on the right.
 const MIN_SIDE_WIDTH: u16 = 120;
@@ -42,10 +49,13 @@ enum Item {
 }
 
 /// Lists your settings files grouped by program, with how each stands with
-/// chezmoi. View only for now.
+/// chezmoi. `e` edits one, and `r` and `p` fix one that differs from
+/// chezmoi's source file.
 pub struct Dotfiles {
     home: PathBuf,
     listing: Listing,
+    backups: Backups,
+    mode: Mode,
     repo: RepoState,
     show_missing: bool,
     table: TableState,
@@ -63,22 +73,41 @@ impl Dotfiles {
         };
         let listing = dotfiles::list(&home);
         let mut screen = Self::from_listing(home, listing);
-        if let Some(chezmoi) = &screen.listing.chezmoi {
-            let (sender, receiver) = mpsc::channel();
-            let source = chezmoi.source.clone();
-            thread::spawn(move || {
-                // The receiver is gone only when the screen was closed.
-                let _ = sender.send(dotfiles::repo(&source));
-            });
-            screen.repo = RepoState::Reading(receiver);
-        }
+        screen.read_repo();
         screen
+    }
+
+    /// Reads the repository on its own thread, since Git can be slow.
+    fn read_repo(&mut self) {
+        let Some(chezmoi) = &self.listing.chezmoi else {
+            return;
+        };
+        let (sender, receiver) = mpsc::channel();
+        let source = chezmoi.source.clone();
+        thread::spawn(move || {
+            // The receiver is gone only when the screen was closed.
+            let _ = sender.send(dotfiles::repo(&source));
+        });
+        self.repo = RepoState::Reading(receiver);
+    }
+
+    /// Looks at every file again after a change. Files keep their place, so
+    /// the selection stays on the same one.
+    fn reload(&mut self) {
+        self.listing = dotfiles::list(&self.home);
+        self.preview = None;
+        self.read_repo();
+        if self.selected().is_none() {
+            self.select_first();
+        }
     }
 
     fn from_listing(home: PathBuf, listing: Listing) -> Self {
         let mut screen = Self {
+            backups: Backups::dotfiles(&home),
             home,
             listing,
+            mode: Mode::Browse,
             repo: RepoState::Read(None),
             show_missing: false,
             table: TableState::default(),
@@ -571,6 +600,211 @@ impl Dotfiles {
     }
 }
 
+/// Editing, and fixing files that differ from chezmoi's source file
+impl Dotfiles {
+    /// The source file's path inside chezmoi's folder, such as `dot_zshrc`
+    fn source_name(&self, file: &Dotfile) -> Option<String> {
+        let source = file.managed.as_ref()?.source()?;
+        let chezmoi = self.listing.chezmoi.as_ref()?;
+        Some(
+            source
+                .strip_prefix(&chezmoi.source)
+                .unwrap_or(source)
+                .display()
+                .to_string(),
+        )
+    }
+
+    /// `e`: opens a copy of the selected file in your editor.
+    fn start_edit(&mut self) -> Action {
+        let Some(index) = self.selected() else {
+            return Action::None;
+        };
+        let file = &self.listing.files[index];
+        let begun = Edit::begin(file, self.listing.chezmoi.as_ref()).and_then(|edit| {
+            edit.copy(&self.home)
+                .map(|copy| (edit, copy))
+                .map_err(|error| format!("A copy to edit could not be made: {error}."))
+        });
+        match begun {
+            Ok((edit, copy)) => {
+                self.mode = Mode::Editing {
+                    edit,
+                    copy: copy.clone(),
+                };
+                Action::Edit(copy)
+            }
+            Err(error) => {
+                self.mode = change::done(Err(error), "", None);
+                Action::None
+            }
+        }
+    }
+
+    /// `r` or `p`: shows what the fix changes, and asks.
+    fn ask_fix(&mut self, fix: Fix) {
+        let Some(index) = self.selected() else {
+            return;
+        };
+        let file = &self.listing.files[index];
+        let Some(Managed::Differs(source)) = &file.managed else {
+            self.mode = change::done(
+                Err("It does not differ from a source file in chezmoi.".to_string()),
+                "",
+                None,
+            );
+            return;
+        };
+        if fix == Fix::PutBack
+            && let Some(reason) = self
+                .listing
+                .chezmoi
+                .as_ref()
+                .and_then(|chezmoi| chezmoi.may_not_run.as_ref())
+        {
+            self.mode = change::done(
+                Err(format!(
+                    "neet will not run chezmoi: {reason}. Run chezmoi apply ~/{} yourself.",
+                    file.known.path
+                )),
+                "",
+                None,
+            );
+            return;
+        }
+        let (Ok(home), Ok(source)) = (fs::read(&file.path), fs::read(source)) else {
+            self.mode = change::done(
+                Err("The file or its source file could not be read.".to_string()),
+                "",
+                None,
+            );
+            return;
+        };
+        let diff = match fix {
+            Fix::Keep => Diff::new(&source, &home),
+            Fix::PutBack => Diff::new(&home, &source),
+        };
+        self.mode = Mode::Ask { fix, index, diff };
+    }
+
+    /// `y` on the question: runs the fix.
+    fn run_fix(&mut self, fix: Fix, index: usize) {
+        let file = &self.listing.files[index];
+        let chezmoi = self.listing.chezmoi.as_ref();
+        let now = SystemTime::now();
+        let result = match fix {
+            Fix::Keep => core_change::keep_home(file, chezmoi, &self.backups, now),
+            Fix::PutBack => core_change::put_back(file, chezmoi, &self.backups, now),
+        };
+        let shown = format!("~/{}", file.known.path);
+        let source = self.source_name(file);
+        self.mode = change::done(result, &shown, source.as_deref());
+        self.reload();
+    }
+
+    /// `y` on the review: writes the edit.
+    fn write_edit(&mut self) {
+        let Mode::Review(review) = std::mem::replace(&mut self.mode, Mode::Browse) else {
+            return;
+        };
+        if matches!(review.checked, Checked::Failed(_)) {
+            self.mode = Mode::Review(review);
+            return;
+        }
+        let result = change::finish(&review, &self.backups);
+        let index = self.selected();
+        let file = index.map(|index| &self.listing.files[index]);
+        let shown = file.map_or_else(String::new, |file| format!("~/{}", file.known.path));
+        let source = file.and_then(|file| self.source_name(file));
+        self.mode = change::done(result, &shown, source.as_deref());
+        self.reload();
+    }
+
+    /// What the review says is written
+    fn writes(&self, review: &Review) -> String {
+        let file = self.selected().map(|index| &self.listing.files[index]);
+        let shown = file.map_or_else(String::new, |file| format!("~/{}", file.known.path));
+        match file.and_then(|file| self.source_name(file)) {
+            Some(source) if review.edit.edits_source() && review.edit.applies() => {
+                format!("{source} in chezmoi, then chezmoi apply {shown}")
+            }
+            Some(source) if review.edit.edits_source() => {
+                format!("{source} in chezmoi. Then run chezmoi apply {shown} yourself")
+            }
+            _ => shown,
+        }
+    }
+
+    /// Draws the review, the question, or the note on top of the list.
+    fn draw_mode(&self, frame: &mut Frame, area: Rect) {
+        match &self.mode {
+            Mode::Browse | Mode::Editing { .. } => {}
+            Mode::Review(review) => {
+                change::draw_review(frame, area, review, self.writes(review));
+            }
+            Mode::Ask { fix, index, diff } => {
+                let (title, lines) = self.ask_lines(*fix, *index, diff);
+                let hidden = self.listing.files[*index].may_hold_secrets;
+                change::draw_ask(frame, area, &title, lines, diff, hidden);
+            }
+            Mode::Note {
+                title,
+                lines,
+                color,
+            } => super::tools::message(frame, area, title, lines.clone(), *color),
+        }
+    }
+
+    /// The question's lines for `r` or `p`
+    fn ask_lines(&self, fix: Fix, index: usize, diff: &Diff) -> (String, Vec<Line<'static>>) {
+        let file = &self.listing.files[index];
+        let shown = format!("~/{}", file.known.path);
+        let source = self.source_name(file).unwrap_or_default();
+        let may_run = self
+            .listing
+            .chezmoi
+            .as_ref()
+            .is_some_and(|chezmoi| chezmoi.may_not_run.is_none());
+        let field = |label: &str, value: String| {
+            Line::from(vec![
+                Span::raw(format!("{label:<9}")).bold(),
+                Span::raw(value),
+            ])
+        };
+        let mut counts = vec![Span::raw(format!("{:<9}", "Changes")).bold()];
+        counts.push(Span::raw(format!("+{}", diff.added)).green().bold());
+        counts.push(Span::raw(" "));
+        counts.push(Span::raw(format!("−{}", diff.removed)).red().bold());
+        match fix {
+            Fix::Keep => (
+                format!(" Keep this version of {} ", file.known.path),
+                vec![
+                    field("Keeps", format!("{shown} as it is now, in chezmoi")),
+                    field(
+                        "Writes",
+                        if may_run {
+                            format!("{source}, with chezmoi re-add")
+                        } else {
+                            source.clone()
+                        },
+                    ),
+                    field("Backup", format!("{source} first")),
+                    Line::from(counts),
+                ],
+            ),
+            Fix::PutBack => (
+                format!(" Put chezmoi's version of {} back ", file.known.path),
+                vec![
+                    field("Replaces", format!("{shown} with {source}")),
+                    field("Runs", format!("chezmoi apply {shown}")),
+                    field("Backup", format!("{shown} first")),
+                    Line::from(counts),
+                ],
+            ),
+        }
+    }
+}
+
 fn empty() -> Listing {
     Listing {
         files: Vec::new(),
@@ -681,6 +915,7 @@ impl Screen for Dotfiles {
                     .areas(body);
             self.draw_list(frame, list);
             self.draw_side(frame, side);
+            self.draw_mode(frame, area);
             return;
         }
         let below = self.selected().map(|index| {
@@ -705,28 +940,147 @@ impl Screen for Dotfiles {
             }
             _ => self.draw_list(frame, body),
         }
+        self.draw_mode(frame, area);
     }
 
     fn handle_key(&mut self, key: KeyEvent, _context: &Context) -> Action {
+        match &mut self.mode {
+            Mode::Browse => {}
+            Mode::Editing { .. } => return Action::None,
+            Mode::Note { .. } => {
+                self.mode = Mode::Browse;
+                return Action::None;
+            }
+            Mode::Review(review) => {
+                match key.code {
+                    KeyCode::Up | KeyCode::Char('k') => review.diff.scroll(false),
+                    KeyCode::Down | KeyCode::Char('j') => review.diff.scroll(true),
+                    KeyCode::Char('y') => self.write_edit(),
+                    KeyCode::Char('e') => {
+                        let Mode::Review(review) = std::mem::replace(&mut self.mode, Mode::Browse)
+                        else {
+                            return Action::None;
+                        };
+                        let copy = review.copy.clone();
+                        self.mode = Mode::Editing {
+                            edit: review.edit,
+                            copy: copy.clone(),
+                        };
+                        return Action::Edit(copy);
+                    }
+                    _ => {}
+                }
+                return Action::None;
+            }
+            Mode::Ask { fix, index, diff } => {
+                match key.code {
+                    KeyCode::Up | KeyCode::Char('k') => diff.scroll(false),
+                    KeyCode::Down | KeyCode::Char('j') => diff.scroll(true),
+                    KeyCode::Char('y') => {
+                        let (fix, index) = (*fix, *index);
+                        self.run_fix(fix, index);
+                    }
+                    _ => {}
+                }
+                return Action::None;
+            }
+        }
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => self.step(false),
             KeyCode::Down | KeyCode::Char('j') => self.step(true),
             KeyCode::Char('g') | KeyCode::Home => self.jump(false),
             KeyCode::Char('G') | KeyCode::End => self.jump(true),
             KeyCode::Char('.') => self.toggle_missing(),
+            KeyCode::Char('e') => return self.start_edit(),
+            KeyCode::Char('r') => self.ask_fix(Fix::Keep),
+            KeyCode::Char('p') => self.ask_fix(Fix::PutBack),
             _ => {}
         }
         Action::None
     }
 
+    fn back(&mut self) -> Action {
+        match std::mem::replace(&mut self.mode, Mode::Browse) {
+            Mode::Browse => Action::Back,
+            Mode::Review(review) => {
+                core_change::discard(&review.copy);
+                Action::None
+            }
+            Mode::Editing { edit, copy } => {
+                // The editor is still open; keep waiting for it.
+                self.mode = Mode::Editing { edit, copy };
+                Action::None
+            }
+            Mode::Ask { .. } | Mode::Note { .. } => Action::None,
+        }
+    }
+
+    fn is_dialog(&self) -> bool {
+        !matches!(self.mode, Mode::Browse)
+    }
+
+    fn edited(&mut self, result: Result<(), String>) {
+        let Mode::Editing { edit, copy } = std::mem::replace(&mut self.mode, Mode::Browse) else {
+            return;
+        };
+        let new = result.and_then(|()| change::read_copy(&copy));
+        match new {
+            Err(error) => {
+                core_change::discard(&copy);
+                self.mode = change::done(Err(error), "", None);
+            }
+            Ok(new) if new == edit.contents() => {
+                core_change::discard(&copy);
+                self.mode = Mode::Note {
+                    title: "No changes".to_string(),
+                    lines: vec![Line::from("Nothing was written.")],
+                    color: visual::ACCENT,
+                };
+            }
+            Ok(new) => {
+                let checked = core_change::check(edit.syntax(), &copy, edit.file_name());
+                let diff = Diff::new(edit.contents(), &new);
+                let hidden = self
+                    .selected()
+                    .is_some_and(|index| self.listing.files[index].may_hold_secrets);
+                self.mode = Mode::Review(Review {
+                    edit,
+                    copy,
+                    new,
+                    checked,
+                    diff,
+                    hidden,
+                });
+            }
+        }
+    }
+
     fn hints(&self) -> &'static str {
-        "↑↓ move · . missing files · esc home · ? help"
+        match &self.mode {
+            Mode::Browse => {
+                "↑↓ move · e edit · r keep · p put back · . missing files · esc home · ? help"
+            }
+            Mode::Editing { .. } => "Waiting for your editor to close",
+            Mode::Review(review) if matches!(review.checked, Checked::Failed(_)) => {
+                "e fix it · ↑↓ scroll · esc drop the change"
+            }
+            Mode::Review(_) => "y write · e edit again · ↑↓ scroll · esc drop the change",
+            Mode::Ask { fix: Fix::Keep, .. } => "y keep this version · ↑↓ scroll · esc go back",
+            Mode::Ask { .. } => "y put it back · ↑↓ scroll · esc go back",
+            Mode::Note { .. } => "any key continue",
+        }
     }
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
         &[
             ("↑ ↓  j k", "Move selection"),
             ("g  G", "Jump to the first or last file"),
+            (
+                "e",
+                "Edit a copy in your editor, then check, review, and write it",
+            ),
+            ("r", "Keep this version in chezmoi, when it differs"),
+            ("p", "Put chezmoi's version back, when it differs"),
             (".", "Show or hide the files that are not on this Mac"),
             ("Esc", "Go back"),
             ("q", "Quit"),
@@ -763,8 +1117,23 @@ mod tests {
             &home.join(".npmrc"),
             "//registry.npmjs.org/:_authToken=npm_secret\n",
         );
+        // A template that could run a program, so neet never runs chezmoi
+        // in these tests, even where it is installed.
+        write(&source.join(".chezmoiignore"), "{{ output \"true\" }}\n");
         let listing = dotfiles::list(&home);
+        assert!(listing.chezmoi.as_ref().unwrap().may_not_run.is_some());
         (dir, Dotfiles::from_listing(home, listing))
+    }
+
+    /// Plays your editor: writes `text` into the copy `e` made, then says
+    /// the editor closed.
+    fn edit_to(screen: &mut Dotfiles, text: &str) -> PathBuf {
+        let Action::Edit(copy) = screen.start_edit() else {
+            panic!("e must ask for the editor");
+        };
+        fs::write(&copy, text).unwrap();
+        screen.edited(Ok(()));
+        copy
     }
 
     fn render(screen: &mut Dotfiles, width: u16, height: u16) -> String {
@@ -894,5 +1263,123 @@ mod tests {
                 assert!(text.contains(" 1 differs "), "{width}x{height}\n{text}");
             }
         }
+    }
+
+    #[test]
+    fn edit_shows_the_check_and_diff_then_writes_the_source_file() {
+        let (_dir, mut screen) = screen();
+        let copy = edit_to(&mut screen, "export EDITOR=hx\n");
+        let text = render(&mut screen, 120, 30);
+
+        assert!(text.contains("Change to .zshrc"), "{text}");
+        assert!(text.contains("dot_zshrc in chezmoi. Then run chezmoi apply ~/.zshrc yourself"));
+        assert!(text.contains("zsh -n  passed"));
+        assert!(text.contains("+1 −1"));
+        assert!(text.contains("- export EDITOR=nvim"));
+        assert!(text.contains("+ export EDITOR=hx"));
+        assert!(screen.is_dialog());
+
+        press(&mut screen, KeyCode::Char('y'));
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains("Saved dot_zshrc"), "{text}");
+        assert!(text.contains("Run chezmoi apply ~/.zshrc to write ~/.zshrc."));
+        let source = screen.home.join(".local/share/chezmoi/dot_zshrc");
+        assert_eq!(fs::read_to_string(source).unwrap(), "export EDITOR=hx\n");
+        assert_eq!(
+            fs::read_to_string(screen.home.join(".zshrc")).unwrap(),
+            "export EDITOR=nvim\n"
+        );
+        assert!(!copy.exists());
+        assert_eq!(screen.backups.list(".zshrc").unwrap().len(), 1);
+        assert_eq!(screen.backups.list("chezmoi/dot_zshrc").unwrap().len(), 1);
+
+        press(&mut screen, KeyCode::Enter);
+        assert!(!screen.is_dialog());
+        assert!(render(&mut screen, 140, 30).contains("differs"));
+    }
+
+    #[test]
+    fn a_failed_check_cannot_be_written() {
+        let (_dir, mut screen) = screen();
+        edit_to(&mut screen, "if x\n");
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains("zsh -n  failed"), "{text}");
+        assert!(text.contains("Press e to fix it."));
+
+        press(&mut screen, KeyCode::Char('y'));
+        assert!(matches!(screen.mode, Mode::Review(_)));
+        let source = screen.home.join(".local/share/chezmoi/dot_zshrc");
+        assert_eq!(fs::read_to_string(source).unwrap(), "export EDITOR=nvim\n");
+
+        let Mode::Review(review) = &screen.mode else {
+            unreachable!()
+        };
+        let copy = review.copy.clone();
+        assert!(matches!(screen.back(), Action::None));
+        assert!(!copy.exists());
+        assert!(!screen.is_dialog());
+    }
+
+    #[test]
+    fn an_unchanged_edit_writes_nothing() {
+        let (_dir, mut screen) = screen();
+        edit_to(&mut screen, "export EDITOR=nvim\n");
+        assert!(render(&mut screen, 120, 30).contains("Nothing was written."));
+        assert_eq!(screen.backups.list(".zshrc").unwrap(), []);
+    }
+
+    #[test]
+    fn a_file_that_differs_is_fixed_before_it_is_edited() {
+        let (_dir, mut screen) = screen();
+        press(&mut screen, KeyCode::Down);
+        assert!(matches!(screen.start_edit(), Action::None));
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains("Press r to keep this"), "{text}");
+        press(&mut screen, KeyCode::Enter);
+
+        press(&mut screen, KeyCode::Char('r'));
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains("Keep this version of .gitconfig"), "{text}");
+        assert!(text.contains("-     name = Someone"));
+        assert!(text.contains("+     name = You"));
+        press(&mut screen, KeyCode::Char('y'));
+        assert!(render(&mut screen, 120, 30).contains("chezmoi now keeps this version"));
+        let source = screen.home.join(".local/share/chezmoi/dot_gitconfig");
+        assert_eq!(
+            fs::read_to_string(source).unwrap(),
+            "[user]\n\tname = You\n"
+        );
+
+        press(&mut screen, KeyCode::Enter);
+        assert!(render(&mut screen, 140, 30).contains("in sync"));
+    }
+
+    #[test]
+    fn put_back_says_what_to_run_when_neet_may_not_run_chezmoi() {
+        let (_dir, mut screen) = screen();
+        press(&mut screen, KeyCode::Down);
+        press(&mut screen, KeyCode::Char('p'));
+        let text = render(&mut screen, 120, 30);
+        assert!(
+            text.contains("Run chezmoi apply ~/.gitconfig yourself"),
+            "{text}"
+        );
+        assert_eq!(
+            fs::read_to_string(screen.home.join(".gitconfig")).unwrap(),
+            "[user]\n\tname = You\n"
+        );
+    }
+
+    #[test]
+    fn a_token_never_shows_in_the_diff() {
+        let (_dir, mut screen) = screen();
+        press(&mut screen, KeyCode::Char('G'));
+        edit_to(&mut screen, "//registry.npmjs.org/:_authToken=npm_other\n");
+        let text = render(&mut screen, 120, 30);
+        assert!(
+            text.contains("Hidden, since it may hold a token."),
+            "{text}"
+        );
+        assert!(!text.contains("npm_"));
     }
 }

@@ -169,6 +169,12 @@ impl Edit {
             .map_or(self.home.path(), |source| source.opened.path())
     }
 
+    /// Whether it writes chezmoi's source file instead of the file itself
+    #[must_use]
+    pub fn edits_source(&self) -> bool {
+        self.source.is_some()
+    }
+
     /// Whether chezmoi then writes the file in the home folder
     #[must_use]
     pub fn applies(&self) -> bool {
