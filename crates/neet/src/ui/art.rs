@@ -143,9 +143,12 @@ impl Widget for Night {
                 .any(|&(ax, ay, _)| x.abs_diff(ax) <= 2 && y.abs_diff(ay) <= 1)
         };
 
+        // The sky reaches the edges of the column on every side, however
+        // large the terminal, so a full screen is not a small island of
+        // stars.
         let sky = Sky {
-            radius_x: (f64::from(width) / 2.0 + 16.0).min(f64::from(area.width) / 2.0 + 3.0),
-            radius_y: (f64::from(height) / 2.0 + 5.0).min(f64::from(area.height) / 2.0 + 2.0),
+            radius_x: f64::from(area.width) / 2.0 + 3.0,
+            radius_y: f64::from(area.height) / 2.0 + 2.0,
         };
         let centre_x = i32::from(left) + i32::from(width / 2);
         let centre_y = i32::from(top) + i32::from(height / 2);
@@ -226,6 +229,17 @@ mod tests {
         for (x, y) in [(0, 0), (1, 0), (0, 1), (59, 0), (58, 0), (0, 22), (59, 22)] {
             assert!(!is_star(x, y), "star in the corner at {x}, {y}");
         }
+    }
+
+    #[test]
+    fn stars_reach_the_far_rows_of_a_tall_screen() {
+        let buf = render(90, 60);
+        let has_star = |rows: std::ops::Range<u16>| {
+            rows.flat_map(|y| (0..90).map(move |x| (x, y)))
+                .any(|(x, y)| STARS.contains(&buf[(x, y)].symbol()))
+        };
+        assert!(has_star(2..8), "no stars near the top");
+        assert!(has_star(52..58), "no stars near the bottom");
     }
 
     #[test]
