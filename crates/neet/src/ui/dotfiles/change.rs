@@ -31,6 +31,8 @@ pub(super) enum Fix {
 /// What the screen is doing besides listing files
 pub(super) enum Mode {
     Browse,
+    /// `Enter`: what can be done with the selected file
+    Actions(super::actions::Menu),
     /// Your editor is open on `copy`.
     Editing {
         edit: Edit,
@@ -302,9 +304,9 @@ pub(super) fn done(result: Result<Done, String>, file: &str, source: Option<&str
             Color::Green,
         ),
         Ok(Done::Kept) => (
-            "Kept",
+            "Saved",
             vec![
-                Line::from(format!("✓ chezmoi now keeps this version of {file}"))
+                Line::from(format!("✓ Saved this version of {file} in your dotfiles"))
                     .green()
                     .bold(),
                 Line::from(format!(
@@ -335,7 +337,7 @@ pub(super) fn done(result: Result<Done, String>, file: &str, source: Option<&str
         Ok(Done::Added(name)) => (
             "Added",
             vec![
-                Line::from(format!("✓ chezmoi now manages {file}"))
+                Line::from(format!("✓ {file} is now in your dotfiles"))
                     .green()
                     .bold(),
                 Line::from(format!(

@@ -483,7 +483,7 @@ pub fn restore(
 }
 
 fn differs() -> String {
-    "It differs from its source file in chezmoi. Press r to keep this version, or p to put the source back, first."
+    "It changed since it was saved in your dotfiles. Press Enter to save this version or use the saved one first."
         .to_string()
 }
 
@@ -694,7 +694,7 @@ mod tests {
             Edit::begin(&differs, Some(&chezmoi))
                 .err()
                 .unwrap()
-                .contains("Press r")
+                .contains("Press Enter")
         );
         let stale = dotfile(&home, Some(Managed::InSync(source)));
         assert!(
