@@ -10,6 +10,7 @@ use super::apps::RemoveApp;
 use super::art;
 use super::clean::Clean;
 use super::disk::Disk;
+use super::dotfiles::Dotfiles;
 use super::format;
 use super::large::LargeFiles;
 use super::quick::QuickClean;
@@ -79,8 +80,8 @@ const ENTRIES: &[Entry] = &[
     },
     Entry {
         label: "Dotfiles",
-        about: "List, edit, check, back up, and export settings files.",
-        target: Target::Soon,
+        about: "See your settings files and how they stand with chezmoi.",
+        target: Target::Screen(|| Box::new(Dotfiles::new())),
     },
     Entry {
         label: "AI Tools",
@@ -419,6 +420,8 @@ mod tests {
         assert_eq!(ENTRIES[home.selected()].label, "Large Files");
         press(&mut home, KeyCode::Down);
         assert_eq!(ENTRIES[home.selected()].label, "Disk");
+        press(&mut home, KeyCode::Down);
+        assert_eq!(ENTRIES[home.selected()].label, "Dotfiles");
         press(&mut home, KeyCode::Down);
         assert_eq!(ENTRIES[home.selected()].label, "Quit");
     }
