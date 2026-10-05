@@ -104,7 +104,13 @@ fn rows(lines: &[Line], width: u16) -> u16 {
 
 /// A box in the middle of `area`, just big enough for `lines`, so short
 /// news does not sit in a big empty box
-fn message(frame: &mut Frame, area: Rect, title: &str, lines: Vec<Line<'static>>, color: Color) {
+pub(super) fn message(
+    frame: &mut Frame,
+    area: Rect,
+    title: &str,
+    lines: Vec<Line<'static>>,
+    color: Color,
+) {
     let widest = lines.iter().map(Line::width).max().unwrap_or(0);
     let width = u16::try_from(widest + 6)
         .unwrap_or(u16::MAX)
