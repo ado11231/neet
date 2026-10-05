@@ -70,8 +70,8 @@
  up/down move . enter open . s skipped . ? help . q quit
 ```
 
-* **Left:** the neet art, with stars spread across the whole column, however tall or wide the terminal is. It takes about 45% of the width, and more on a wide screen, since the right side is at most 72 columns. It is hidden when the terminal is narrower than 90 columns.
-* **Right:** the menu and three boxes, each sized to its lines, centred top to bottom like the art. When they do not all fit, the last boxes are left out.
+* **Left:** the neet art. Stars cover the whole screen evenly, corners and the space above and below the boxes included, and never sit between or right beside the boxes. It takes about 45% of the width, and more on a wide screen, since the right side is at most 72 columns. It is hidden when the terminal is narrower than 90 columns.
+* **Right:** the menu and three boxes, each sized to its lines, a row apart, centred top to bottom like the art. When room is short, the rows between them go first, then the last boxes.
 * **Menu:** one numbered row per feature.
   1. The rows go from the quickest way to free space to the most detailed: Quick Clean, Deep Clean, Remove App, Large Files, then Disk.
   2. Quick Clean comes first, and is selected when neet opens.

@@ -3,7 +3,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
 use ratatui::style::Stylize;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{List, ListItem, ListState, Padding, Paragraph, Wrap};
+use ratatui::widgets::{Clear, List, ListItem, ListState, Padding, Paragraph, Wrap};
 
 use super::app::{Action, Context, Screen};
 use super::apps::RemoveApp;
@@ -24,6 +24,9 @@ const MIN_ART_WIDTH: u16 = 90;
 /// Blank rows above and below the selected row's description, so its box
 /// stands a little taller than the others.
 const ABOUT_PADDING: u16 = 1;
+
+/// Rows between the menu and each box under it
+const BOX_GAP: u16 = 1;
 
 /// Columns kept clear between the art and the menu.
 const ART_GAP: u16 = 2;
@@ -340,13 +343,10 @@ fn scan_lines(scan: &ScanStatus, cleanable: Option<u64>) -> Vec<Line<'static>> {
     lines
 }
 
-fn draw_art(frame: &mut Frame, area: Rect) {
-    frame.render_widget(art::Night, area);
-}
-
 impl Screen for Home {
     fn draw(&mut self, frame: &mut Frame, area: Rect, context: &Context) {
-        let right = if area.width >= MIN_ART_WIDTH {
+        let wide = area.width >= MIN_ART_WIDTH;
+        let right = if wide {
             // About 45% of the width, more when the menu reaches its widest,
             // but always a little wider than the art, so it never touches
             // the menu.
@@ -356,7 +356,8 @@ impl Screen for Home {
             let [left, right] =
                 Layout::horizontal([Constraint::Length(left_width), Constraint::Fill(1)])
                     .areas(area);
-            draw_art(frame, left);
+            // Stars across the whole screen; the boxes go on top.
+            frame.render_widget(art::Night { art: left }, area);
             right
         } else {
             area
@@ -376,17 +377,33 @@ impl Screen for Home {
                 })
                 .collect()
         };
-        // Boxes that do not fit are left out, the last first.
-        while panels.len() > 1 && menu_height + heights(&panels).iter().sum::<u16>() > right.height
-        {
+        let total = |panels: &[(String, Vec<Line<'static>>)], gap: u16| -> u16 {
+            let gaps = u16::try_from(panels.len()).unwrap_or(u16::MAX) * gap;
+            menu_height + gaps + heights(panels).iter().sum::<u16>()
+        };
+        // When room is short, the gaps go first, then boxes, the last first.
+        while panels.len() > 1 && total(&panels, 0) > right.height {
             panels.pop();
         }
+        let gap = if total(&panels, BOX_GAP) > right.height {
+            0
+        } else {
+            BOX_GAP
+        };
         let mut constraints = vec![Constraint::Length(menu_height)];
         constraints.extend(heights(&panels).into_iter().map(Constraint::Length));
-        // Centred, like the art beside it, instead of leaving a tall empty box.
+        // Centred, like the art beside it.
         let areas = Layout::vertical(constraints)
             .flex(Flex::Center)
+            .spacing(gap)
             .split(right);
+        if wide {
+            // No stars between or right beside the boxes.
+            let last = areas.last().copied().unwrap_or(areas[0]);
+            let x = right.x.saturating_sub(1);
+            let stack = Rect::new(x, areas[0].y, right.right() - x, last.bottom() - areas[0].y);
+            frame.render_widget(Clear, stack);
+        }
         self.draw_menu(frame, areas[0]);
         for (index, ((title, lines), area)) in
             panels.into_iter().zip(areas.iter().skip(1)).enumerate()
@@ -618,6 +635,20 @@ mod tests {
         let bottom = rows.iter().rposition(|row| row.contains('└')).unwrap();
         assert!(top > 5, "menu starts at row {top}");
         assert!(bottom < 54, "boxes end at row {bottom}");
+        // Stars above the menu, on the right side too, but none between the
+        // boxes, which stand a row apart.
+        let start = rows[top].find('┌').unwrap();
+        let above: String = rows[top - 2]
+            .chars()
+            .skip(rows[top][..start].chars().count())
+            .collect();
+        assert!(above.contains(['·', '*', '✦', '+']), "{above:?}");
+        let gap = rows.iter().position(|row| row.contains("┌ Disk")).unwrap() - 1;
+        let between: String = rows[gap]
+            .chars()
+            .skip(rows[top][..start].chars().count())
+            .collect();
+        assert!(between.trim().is_empty(), "{between:?}");
         // Never wider than the cap, so the sky takes the rest.
         let width = rows[top].trim_end().chars().count() - rows[top].find('┌').unwrap();
         assert!(width <= usize::from(MAX_RIGHT_WIDTH) + 2, "{width}");
