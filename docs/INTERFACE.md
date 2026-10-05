@@ -368,7 +368,88 @@
 | Projects | A list of build folders in code projects, with project, last change, folder, and size. Folders that cannot be cleaned show the reason. | `Space` selects, `s` sorts, `Enter` reviews. |
 | Startup | Sections for login items, background items, launch agents, and launch daemons. Each row shows the program, whether it runs, and whether it is signed. | Turn off, turn back on. |
 | SSH | Sections for hosts, keys, agent keys, known hosts, and permission problems. | Fix permissions, add or remove agent keys, remove known hosts. |
-| Dotfiles | Settings files grouped by shell, Git, SSH, editors, and terminal. | Edit with a backup, export. |
 | PATH | Each folder in search order, with how many programs it holds, where it was added, and any problem. A preview shows the programs it holds. | `w` finds which copy of a program runs. `K` / `J` move a folder. `a` adds, `x` removes, `Enter` saves with a backup. |
 | AI Tools | Sections for tools, settings, instruction files, skills, and project skills. View only. | `Enter` opens a file. |
 | Settings | Sections for power mode, graphics switching, refresh rate, Game Mode, what keeps the Mac awake, and wake settings. | Each change shows what it will do first, and can be undone. |
+
+### Dotfiles
+
+* A draft. The rules it follows are in [SAFETY.md](SAFETY.md#dotfiles).
+
+```text
++ Dotfiles ----------------------------------------- chezmoi . you/dotfiles . 2 to commit . up to date +
++ Files -------------------------------------------------+  + .zprofile -------------------------------+
+|        Size    Changed       Status                    |  | Path     ~/.zprofile                     |
+| Shell                                                  |  | Source   dot_zprofile                    |
+|   .zshrc       895 B   12 days ago   in sync           |  | Changed  2 days ago                      |
+| > .zprofile    193 B   2 days ago    changed in home   |  | Check    zsh -n  passed                  |
+|   .zshenv       89 B   12 days ago   in sync           |  | Backups  3                               |
+| Git                                                    |  |                                          |
+|   .gitconfig   284 B   8 days ago    in sync           |  | Changed in home since chezmoi            |
+|   git/ignore    41 B   1 month ago   in sync           |  | wrote it. r keeps it, p puts the         |
+| SSH                                                    |  | source back.                             |
+|   config       312 B   3 months ago  view only         |  +------------------------------------------+
+| Terminal                                               |  + Preview ---------------------------------+
+|   kitty.conf   2.1 KB  1 month ago   in sync           |  | eval "$(/opt/homebrew/bin/brew shell...  |
+|   starship     1.4 KB  1 month ago   in sync           |  | export EDITOR=nvim                       |
+| Tools                                                  |  |                                          |
+|   .npmrc       112 B   1 month ago   may hold secrets  |  |                                          |
++--------------------------------------- 11 files found -+  +------------------------------------------+
+```
+
+* **Top edge:** whether chezmoi is in use, the repository, how many files wait to be committed, and whether it is ahead of or behind the remote, as last fetched. Without chezmoi it says so, and `x` offers to start a repository.
+* **Files:** only the files that exist, grouped by shell, Git, SSH, editors, terminal, and tools. `.` shows the missing ones too, so you can create one. Long paths keep their file name.
+  1. Size and when it last changed.
+  2. Status: **in sync** in green, **changed in home** or **changed in source** in yellow, **not in chezmoi**, **view only** with the reason in the details, and **may hold secrets** in red.
+* **Right:** the selected file: its path, its source file in chezmoi, when it changed, its check and whether the file passes it now, and how many backups it has. Below, a note on its status and the keys that fix it. Under that, a preview of the start of the file.
+* Below 120 columns, the details sit under the list, and the preview is hidden.
+
+| Key | Action |
+| --- | --- |
+| `Up` / `Down` | Move the selection. |
+| `e` | Edit a copy in your editor. When it closes: the check, the diff, then `y` writes it. |
+| `c` | Configure the selected program's settings, one at a time. |
+| `d` | Show the diff between the file and its source file, or its latest backup. |
+| `b` | List its backups, newest first. `Enter` shows the diff, then `y` restores it. |
+| `r` / `p` | When changed in home: `r` keeps the home version in chezmoi, `p` puts the source version back. |
+| `a` | Let chezmoi manage the file. |
+| `x` | Export: review for secrets, commit, then push. |
+| `.` | Show or hide missing files. |
+
+#### Configure
+
+```text
++ Git settings . ~/.gitconfig -----------------------------------------------+
+|   Setting              Value                About                          |
+| > user.name            Your Name            Name on your commits.          |
+|   user.email           you@example.com      Email on your commits.         |
+|   init.defaultBranch   master               Branch name for new repos.     |
+|   core.editor          not set              Editor for commit messages.    |
+|   pull.rebase          false                Rebase instead of merge.       |
++-------------------------------------------------- Enter changes . y saves -+
++ Change --------------------------------------------------------------------+
+|   [init]                                                                   |
+| -     defaultBranch = master                                               |
+| +     defaultBranch = main                                                 |
++----------------------------------------------------------------------------+
+```
+
+* Each setting shows its value now, or **not set**, and what it does. `Enter` changes it: on and off flip, choices cycle, text opens a box to type in.
+* **Change** shows the diff of everything changed so far. `y` saves it all as one change, with one backup. `Esc` drops it.
+
+#### Export
+
+```text
++ Export . you/dotfiles -----------------------------------------------------+
+| Review for secrets                                                         |
+|   ok    .zshrc, .zprofile, .gitconfig, kitty.conf, starship.toml           |
+|   !     .npmrc  line 2  //registry.npmjs.org/:_authToken=npm_****          |
+|                                                                            |
+| Commit  2 files . "Update zprofile and gitconfig"                          |
+| Push    origin/master . 1 commit                                           |
++-------------------------------------- Space leaves out . m message . y go -+
+```
+
+* **Review for secrets** comes first. Each match shows its file, line, and the start of its value. `Space` leaves the file out, `e` edits it.
+* **Commit** lists the files and the message. `m` changes the message.
+* **Push** names the remote and branch. `y` commits, then asks again in its own box before pushing. Without a remote, that box offers a new private GitHub repository.
