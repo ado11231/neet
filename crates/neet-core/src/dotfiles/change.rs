@@ -11,7 +11,7 @@ use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::{Chezmoi, Dotfile, Managed, Syntax};
-use crate::rewrite::{self, Backups, Opened, WriteError};
+use crate::rewrite::{self, Backup, Backups, Opened, WriteError};
 
 /// How long a syntax check may take
 const CHECK_TIMEOUT: Duration = Duration::from_secs(10);
@@ -353,6 +353,24 @@ pub fn put_back(
     }
 }
 
+/// Puts `backup` back over the file in the home folder. The file now is
+/// backed up first, so the restore can be undone too.
+///
+/// # Errors
+///
+/// Returns why nothing was changed, in plain words.
+pub fn restore(
+    file: &Dotfile,
+    backup: &Backup,
+    backups: &Backups,
+    now: SystemTime,
+) -> Result<Done, String> {
+    open_home(file)?;
+    rewrite::restore(&file.path, backup, backups, file.known.path, now)
+        .map_err(|error| plain(&error))?;
+    Ok(Done::Written)
+}
+
 fn differs() -> String {
     "It differs from its source file in chezmoi. Press r to keep this version, or p to put the source back, first."
         .to_string()
@@ -625,5 +643,25 @@ mod tests {
 
         let error = put_back(&file, Some(&chezmoi), &backups, SystemTime::now()).unwrap_err();
         assert!(error.contains("chezmoi apply ~/.zshrc"), "{error}");
+    }
+
+    #[test]
+    fn restores_a_backup_of_the_home_file() {
+        let (_dir, home, backups) = setup();
+        let file = dotfile(&home, None);
+        let edit = Edit::begin(&file, None).unwrap();
+        edit.finish(b"new\n", &backups, SystemTime::now()).unwrap();
+        let saved = backups.list(".zshrc").unwrap();
+
+        assert_eq!(
+            restore(&file, &saved[0], &backups, SystemTime::now()),
+            Ok(Done::Written)
+        );
+        assert_eq!(fs::read_to_string(home.join(".zshrc")).unwrap(), "old\n");
+        assert_eq!(backups.list(".zshrc").unwrap().len(), 2);
+
+        let mut view_only = dotfile(&home, None);
+        view_only.view_only = Some(super::super::ViewOnly::SshConfig);
+        assert!(restore(&view_only, &saved[0], &backups, SystemTime::now()).is_err());
     }
 }
