@@ -1359,10 +1359,14 @@ mod tests {
         let (_dir, mut screen) = screen();
         press(&mut screen, KeyCode::Down);
         press(&mut screen, KeyCode::Char('p'));
-        let text = render(&mut screen, 120, 30);
+        // The reason differs by Mac, so the note is read before it wraps.
+        let Mode::Note { lines, .. } = &screen.mode else {
+            panic!("p must say why it cannot run");
+        };
+        let note: String = lines.iter().map(ToString::to_string).collect();
         assert!(
-            text.contains("Run chezmoi apply ~/.gitconfig yourself"),
-            "{text}"
+            note.contains("Run chezmoi apply ~/.gitconfig yourself"),
+            "{note}"
         );
         assert_eq!(
             fs::read_to_string(screen.home.join(".gitconfig")).unwrap(),
