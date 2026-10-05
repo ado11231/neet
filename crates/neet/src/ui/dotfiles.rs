@@ -20,10 +20,13 @@ use super::visual::{self, Columns};
 
 mod change;
 mod configure;
+mod export;
 
 use change::{Diff, Fix, Mode, Review};
 use configure::Configure;
+use export::{Export, Step};
 use neet_core::dotfiles::configure as settings;
+use neet_core::dotfiles::export as publish;
 use neet_core::rewrite::Backup;
 
 /// From this width the selected file and its preview show on the right.
@@ -788,22 +791,8 @@ impl Dotfiles {
                 }
                 return Action::None;
             }
-            Mode::Backups {
-                index,
-                list,
-                selected,
-            } => {
-                match key.code {
-                    KeyCode::Up | KeyCode::Char('k') => *selected = selected.saturating_sub(1),
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        *selected = (*selected + 1).min(list.len().saturating_sub(1));
-                    }
-                    KeyCode::Enter => {
-                        let (index, backup) = (*index, list[*selected].clone());
-                        self.ask_restore(index, backup);
-                    }
-                    _ => {}
-                }
+            Mode::Backups { .. } => {
+                self.backups_key(key);
                 return Action::None;
             }
             Mode::Restore {
@@ -819,6 +808,19 @@ impl Dotfiles {
                         self.run_restore(index, &backup);
                     }
                     _ => {}
+                }
+                return Action::None;
+            }
+            Mode::Export(export_view) => {
+                if let Step::Commit = export_view.key(key) {
+                    self.commit_export();
+                }
+                return Action::None;
+            }
+            Mode::Push { top, target, .. } => {
+                if key.code == KeyCode::Char('y') {
+                    let (top, target) = (top.clone(), target.clone());
+                    self.push(&top, &target);
                 }
                 return Action::None;
             }
@@ -838,6 +840,117 @@ impl Dotfiles {
             }
         }
         Action::None
+    }
+
+    /// Commits made here and not yet on the remote, as last read
+    fn ahead(&self) -> Option<usize> {
+        match &self.repo {
+            RepoState::Read(Some(repo)) => repo.ahead_behind.map(|(ahead, _)| ahead),
+            _ => None,
+        }
+    }
+
+    /// `x`: reviews the source files waiting to be committed, or offers to
+    /// push when only commits wait.
+    fn start_export(&mut self) {
+        if self.listing.chezmoi.is_none() {
+            self.mode = Mode::Note {
+                title: "Export".to_string(),
+                lines: vec![Line::from(
+                    "Export works with chezmoi's repository for now. Starting a repository without chezmoi comes next.",
+                )],
+                color: visual::ACCENT,
+            };
+            return;
+        }
+        match publish::plan(&self.listing) {
+            Err(error) => self.mode = change::done(Err(error), "", None),
+            Ok(plan) if plan.pending.is_empty() => {
+                let ahead = self.ahead();
+                if ahead.is_some_and(|ahead| ahead > 0) {
+                    self.ask_push(plan.top, ahead);
+                } else {
+                    self.mode = Mode::Note {
+                        title: "Nothing to export".to_string(),
+                        lines: vec![Line::from(
+                            "Every listed dotfile's source file is committed, and nothing waits to be pushed.",
+                        )],
+                        color: visual::ACCENT,
+                    };
+                }
+            }
+            Ok(plan) => {
+                let target = publish::push_target(&plan.top)
+                    .unwrap_or_else(|_| "no remote branch yet".to_string());
+                self.mode = Mode::Export(Box::new(Export::new(plan, target)));
+            }
+        }
+    }
+
+    /// `y` in Export: commits the chosen files, then asks about pushing.
+    fn commit_export(&mut self) {
+        let Mode::Export(mut export_view) = std::mem::replace(&mut self.mode, Mode::Browse) else {
+            return;
+        };
+        if let Err(error) = export::commit(&export_view) {
+            export_view.error = Some(error);
+            self.mode = Mode::Export(export_view);
+            return;
+        }
+        let ahead = self.ahead().map(|ahead| ahead + 1);
+        let top = export_view.plan.top.clone();
+        self.reload();
+        self.ask_push(top, ahead);
+    }
+
+    fn ask_push(&mut self, top: PathBuf, ahead: Option<usize>) {
+        self.mode = match publish::push_target(&top) {
+            Ok(target) => Mode::Push { top, target, ahead },
+            Err(error) => Mode::Note {
+                title: "Committed".to_string(),
+                lines: vec![
+                    Line::from("✓ Committed").green().bold(),
+                    Line::from(format!("{error} Push it yourself once it has one.")),
+                ],
+                color: visual::ACCENT,
+            },
+        };
+    }
+
+    /// `y` on the push question
+    fn push(&mut self, top: &Path, target: &str) {
+        self.mode = match publish::push(top) {
+            Ok(()) => Mode::Note {
+                title: "Pushed".to_string(),
+                lines: vec![Line::from(format!("✓ Pushed to {target}")).green().bold()],
+                color: ratatui::style::Color::Green,
+            },
+            Err(error) => change::done(Err(error), "", None),
+        };
+        self.read_repo();
+    }
+
+    /// Keys on the list of backups
+    fn backups_key(&mut self, key: KeyEvent) {
+        let Mode::Backups {
+            index,
+            list,
+            selected,
+        } = &mut self.mode
+        else {
+            return;
+        };
+        match key.code {
+            KeyCode::Up | KeyCode::Char('k') => *selected = selected.saturating_sub(1),
+            KeyCode::Down | KeyCode::Char('j') => {
+                *selected = (*selected + 1).min(list.len().saturating_sub(1));
+            }
+            KeyCode::Enter => {
+                let (index, backup) = (*index, list[*selected].clone());
+                self.ask_restore(index, backup);
+            }
+            _ => {}
+        }
     }
 
     /// Checks the new contents and shows the review.
@@ -972,6 +1085,14 @@ impl Dotfiles {
                 diff,
                 hidden,
             } => change::draw_ask(frame, area, title, lines.clone(), diff, *hidden),
+            Mode::Export(export_view) => export_view.draw(frame, area),
+            Mode::Push { target, ahead, .. } => super::tools::message(
+                frame,
+                area,
+                "Push",
+                export::push_lines(target, *ahead),
+                visual::ACCENT,
+            ),
             Mode::Configure(configure) => {
                 let shown = self.selected().map_or_else(String::new, |index| {
                     format!("~/{}", self.listing.files[index].known.path)
@@ -1331,6 +1452,7 @@ impl Screen for Dotfiles {
             KeyCode::Char('b') => self.open_backups(),
             KeyCode::Char('d') => self.show_diff(),
             KeyCode::Char('c') => self.start_configure(),
+            KeyCode::Char('x') => self.start_export(),
             _ => {}
         }
         Action::None
@@ -1348,6 +1470,12 @@ impl Screen for Dotfiles {
                 self.mode = Mode::Editing { edit, copy };
                 Action::None
             }
+            Mode::Export(mut export_view) => {
+                if export_view.typing.take().is_some() {
+                    self.mode = Mode::Export(export_view);
+                }
+                Action::None
+            }
             Mode::Configure(mut configure) => {
                 if configure.typing.take().is_some() {
                     self.mode = Mode::Configure(configure);
@@ -1357,6 +1485,7 @@ impl Screen for Dotfiles {
                 Action::None
             }
             Mode::Ask { .. }
+            | Mode::Push { .. }
             | Mode::Backups { .. }
             | Mode::Restore { .. }
             | Mode::Show { .. }
@@ -1365,7 +1494,11 @@ impl Screen for Dotfiles {
     }
 
     fn takes_text(&self) -> bool {
-        matches!(&self.mode, Mode::Configure(configure) if configure.typing.is_some())
+        match &self.mode {
+            Mode::Configure(configure) => configure.typing.is_some(),
+            Mode::Export(export_view) => export_view.typing.is_some(),
+            _ => false,
+        }
     }
 
     fn is_dialog(&self) -> bool {
@@ -1397,7 +1530,7 @@ impl Screen for Dotfiles {
     fn hints(&self) -> &'static str {
         match &self.mode {
             Mode::Browse => {
-                "↑↓ move · e edit · c configure · d diff · b backups · r keep · p put back · . missing · esc home · ? help"
+                "↑↓ move · e edit · c configure · d diff · b backups · r keep · p put back · x export · . missing · esc home · ? help"
             }
             Mode::Editing { .. } => "Waiting for your editor to close",
             Mode::Review(review) if matches!(review.checked, Checked::Failed(_)) => {
@@ -1413,6 +1546,11 @@ impl Screen for Dotfiles {
                 "type the value · enter keep it · esc cancel"
             }
             Mode::Configure(_) => "↑↓ move · enter change · y review · esc drop the changes",
+            Mode::Export(export_view) if export_view.typing.is_some() => {
+                "type the message · enter keep it · esc cancel"
+            }
+            Mode::Export(_) => "↑↓ move · space in or out · m message · y commit · esc go back",
+            Mode::Push { .. } => "y push · esc not now",
             Mode::Note { .. } => "any key continue",
         }
     }
@@ -1432,6 +1570,7 @@ impl Screen for Dotfiles {
                 "Show how it differs from its source file or last backup",
             ),
             ("b", "List its backups, then restore one"),
+            ("x", "Export: review for secrets, commit, then push"),
             (".", "Show or hide the files that are not on this Mac"),
             ("Esc", "Go back"),
             ("q", "Quit"),
@@ -1879,5 +2018,110 @@ mod tests {
         let (_dir, mut screen) = screen();
         press(&mut screen, KeyCode::Char('c'));
         assert!(render(&mut screen, 120, 30).contains("Configure knows Git's settings"));
+    }
+
+    fn git(dir: &Path, args: &[&str]) -> String {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "git {args:?}");
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    }
+
+    /// A home folder whose chezmoi source folder is a repository with a
+    /// remote, and two source files changed since the last commit
+    fn export_screen() -> (tempfile::TempDir, Dotfiles, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        let home = root.join("home");
+        let source = home.join(".local/share/chezmoi");
+        write(&source.join("dot_zshrc"), "export A=1\n");
+        write(&source.join("dot_npmrc"), "x=1\n");
+        let remote = root.join("remote.git");
+        git(
+            &root,
+            &[
+                "init",
+                "-q",
+                "--bare",
+                "-b",
+                "main",
+                remote.to_str().unwrap(),
+            ],
+        );
+        git(&source, &["init", "-q", "-b", "main"]);
+        git(&source, &["config", "user.name", "You"]);
+        git(&source, &["config", "user.email", "you@example.com"]);
+        git(&source, &["add", "."]);
+        git(&source, &["commit", "-q", "-m", "first"]);
+        git(
+            &source,
+            &["remote", "add", "origin", remote.to_str().unwrap()],
+        );
+        git(&source, &["push", "-q", "-u", "origin", "main"]);
+        write(&source.join("dot_zshrc"), "export A=2\n");
+        write(&home.join(".zshrc"), "export A=2\n");
+        let token = "//registry.npmjs.org/:_authToken=npm_abcdefghijklmnopqrstuvwxyz";
+        write(&source.join("dot_npmrc"), &format!("{token}\n"));
+        write(&home.join(".npmrc"), &format!("{token}\n"));
+        let listing = dotfiles::list(&home);
+        (dir, Dotfiles::from_listing(home, listing), remote)
+    }
+
+    #[test]
+    fn export_reviews_commits_the_chosen_files_and_pushes() {
+        let (_dir, mut screen, remote) = export_screen();
+        press(&mut screen, KeyCode::Char('x'));
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains("Export"), "{text}");
+        assert!(text.contains("[x] dot_zshrc"), "{text}");
+        assert!(text.contains("nothing found"));
+        assert!(text.contains("[ ] dot_npmrc"));
+        assert!(text.contains("Update zshrc"));
+        assert!(text.contains("to origin/main, after a question"));
+        assert!(!text.contains("abcdefgh"));
+
+        press(&mut screen, KeyCode::Down);
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains("npm token  npm_****"), "{text}");
+
+        press(&mut screen, KeyCode::Char('m'));
+        assert!(screen.takes_text());
+        for _ in 0.."Update zshrc".len() {
+            press(&mut screen, KeyCode::Backspace);
+        }
+        for character in "Use hx".chars() {
+            press(&mut screen, KeyCode::Char(character));
+        }
+        press(&mut screen, KeyCode::Enter);
+        press(&mut screen, KeyCode::Char('y'));
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains("Push your commits to origin/main?"), "{text}");
+        let source = screen.home.join(".local/share/chezmoi");
+        assert_eq!(git(&source, &["log", "-1", "--format=%s"]).trim(), "Use hx");
+        assert_eq!(
+            git(&source, &["show", "--name-only", "--format="]).trim(),
+            "dot_zshrc"
+        );
+
+        press(&mut screen, KeyCode::Char('y'));
+        assert!(render(&mut screen, 120, 30).contains("Pushed to origin/main"));
+        assert_eq!(
+            git(&remote, &["log", "-1", "--format=%s", "main"]).trim(),
+            "Use hx"
+        );
+    }
+
+    #[test]
+    fn export_says_when_nothing_waits() {
+        let (_dir, mut screen, _remote) = export_screen();
+        let source = screen.home.join(".local/share/chezmoi");
+        git(&source, &["checkout", "-q", "--", "."]);
+        screen.reload();
+        press(&mut screen, KeyCode::Char('x'));
+        assert!(render(&mut screen, 120, 30).contains("Nothing to export"));
     }
 }
