@@ -349,10 +349,11 @@ min_age_days = 0
   3. Settings named like secrets, such as `password`, `token`, `secret`, and `_authToken`, with a value.
 * Each match is listed with its file and line, its value hidden except the first four characters. You can leave the file out, or edit it, before anything is written.
 * This is a review, not a promise that nothing secret remains.
-* **With chezmoi:** neet adds the changed source files with `git add -- <files>`, and commits with a message you see first. It never adds files you did not change here.
+* **With chezmoi:** neet offers only the source files of listed dotfiles that Git shows as changed, each with what the review found. You pick which go in. neet adds them with `git add -- <files>`, and commits only those with `git commit -m <message> -- <files>`, even if other changes are staged. You see the message first. Your repository's own Git hooks run as usual.
 * **Without chezmoi:** neet writes a new folder you pick, in chezmoi's layout, with a README listing the files, then runs `git init` and commits. The folder must not exist, or be empty, and may not be in `~/Library`, a cloud folder, or a protected folder. Anyone can set up a new Mac from it with `chezmoi init --apply <repository>`.
 * **Pushing** only happens after a box that names the remote and branch, and only `y` goes ahead. Then neet runs `git push`. With no remote, it can create a private repository with `gh repo create --private --source <folder> --push`, after the same kind of box.
-* neet never force pushes, pulls, merges, or rebases. If the remote has commits you do not, neet does not push, and says to pull first.
+* neet never force pushes, pulls, merges, or rebases. It pushes only to the remote branch the branch already tracks. If the remote has commits you do not, Git refuses the push, and neet says to pull first.
+* Git runs with fsmonitor turned off and with no password prompt, so it never waits for typing or starts another program on its own.
 
 ## Planned Features
 
