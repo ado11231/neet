@@ -10,11 +10,12 @@
 2. [Disk](#disk)
 3. [Cleanup](#cleanup)
 4. [Apps](#apps)
-5. [The Program](#the-program)
-6. [Planned Features](#planned-features)
-7. [Open Questions](#open-questions)
-8. [Never Planned](#never-planned)
-9. [Terms](#terms)
+5. [Dotfiles](#dotfiles)
+6. [The Program](#the-program)
+7. [Planned Features](#planned-features)
+8. [Open Questions](#open-questions)
+9. [Never Planned](#never-planned)
+10. [Terms](#terms)
 
 ## Status
 
@@ -103,6 +104,20 @@
 
 * What Remove App may find and remove is in [SAFETY.md](SAFETY.md#app-removal).
 
+## Dotfiles
+
+| Feature | What It Does | Status |
+| --- | --- | --- |
+| List | Shows your settings files, such as `~/.zshrc` and `~/.gitconfig`, grouped by program, with size, last change, and a preview. | Done |
+| chezmoi status | Reads chezmoi's folder without running it, and shows whether each file matches its source file. | Done |
+| Edit | Opens a copy in your editor, then checks it, shows the diff, and writes it after a backup. With chezmoi, writes the source file, then applies it. | Done |
+| Keep or put back | For a file that differs from its source file: keeps this version in chezmoi, or puts chezmoi's back. | Done |
+| Backups and restore | Keeps every old version in `~/.local/state/neet/backups/dotfiles`. Restoring from the screen is next. | Proposed |
+| Configure | Changes a program's settings one at a time, starting with Git. | Proposed |
+| Export | Reviews for secrets, commits, and pushes when you press `y`, or starts a repository in chezmoi's layout. | Proposed |
+
+* What may change, and how, is in [SAFETY.md](SAFETY.md#dotfiles). neet runs chezmoi only when its templates and hooks cannot run a program.
+
 ## The Program
 
 | Feature | What It Does | Status |
@@ -122,7 +137,6 @@
 | --- | --- |
 | Startup items | List programs that start on their own, including ones with no icon, and turn them off in a way you can undo. Items that belong to macOS are view only. |
 | SSH | Show hosts, key details, and agent keys, fix file permissions that are too open, and remove old known hosts. Never shows a private key. |
-| Dotfiles | List your settings files, such as `~/.zshrc` and `~/.gitconfig`, grouped by program. Edit one in your editor, or change a program's settings one at a time, starting with Git, each with a check, a diff, and a backup you can restore. Works with chezmoi: edits go to chezmoi's source file, and each file shows whether it matches it. neet runs chezmoi only when its templates and hooks cannot run a program. Export to a Git repository after a review for secrets, then commit and push when you press `y`. |
 | Shell PATH | Show the folders your shell searches for programs, in order, flag problems, show which copy of a program runs, and reorder them with a backup. |
 | AI tool files | Show the settings, instruction files, and skills that Claude Code and Codex keep on your Mac. View only. |
 | Power and display | Switch power modes, graphics switching, and display refresh rate, and show what keeps the Mac awake. Every change can be undone. |

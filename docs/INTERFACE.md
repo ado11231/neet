@@ -15,7 +15,8 @@
 7. [Review, Confirm, And Move](#review-confirm-and-move)
 8. [Large Files](#large-files)
 9. [Remove App](#remove-app)
-10. [Planned Screens](#planned-screens)
+10. [Dotfiles](#dotfiles)
+11. [Planned Screens](#planned-screens)
 
 ## Every Screen
 
@@ -358,6 +359,99 @@
 
 * An app that is open cannot be opened here. The note says to quit it first.
 
+## Dotfiles
+
+```text
+ Dotfiles ----------------------------------------------------------- chezmoi . you/dotfiles . 2 to commit . up to date
++ Files ---------------------------------------------------------------++ .zprofile -----------------------------------+
+|   Name                         Size  Changed        Status           || Path     ~/.zprofile                         |
+|                                                                      || Source   dot_zprofile                        |
+|   Shell                                                              || Size     42 B                                |
+|     .zshrc                     96 B  today          in sync          || Changed  today                               |
+| >   .zprofile                  42 B  today          differs          || Mode     644                                 |
+|   Git                                                                || Check    zsh -n                              |
+|     .gitconfig                 19 B  today          in sync          ||                                              |
+|   SSH                                                                || It differs from its source file in chezmoi.  |
+|     .ssh/config                 7 B  today          view only        |+----------------------------------------------+
+|   Terminal                                                           |+ Preview -------------------------------------+
+|     kitty/kitty.conf           13 B  today          in sync          || eval "$(/opt/homebrew/bin/brew shellenv)"    |
+|     starship.toml              20 B  today          in sync          ||                                              |
+|   Tools                                                              ||                                              |
+|     .npmrc                      2 B  today          may hold secrets ||                                              |
++------------------------------------------------------- 7 files found +|                                              |
++ chezmoi -------------------------------------------------------------+|                                              |
+| Source   ~/.local/share/chezmoi                                      ||                                              |
+| May run  apply and re-add, one file at a time                        ||                                              |
+|                                                                      ||                                              |
+|  4 in sync           matches its source file in chezmoi              ||                                              |
+|  1 differs           does not match its source file                  ||                                              |
+|  1 view only         neet will not change it; the details say why    ||                                              |
+|  1 may hold secrets  preview hidden, left out of exports             ||                                              |
++----------------------------------------------------------------------+|                                              |
+                                                                        +----------------------------------------------+
+```
+
+* What may change, and how, is in [SAFETY.md](SAFETY.md#dotfiles).
+* **Top line:** whether chezmoi is in use, the repository, how many files wait to be committed, and whether it is ahead of or behind the remote, as last fetched. It says so when neet will not run chezmoi.
+* **Files:** the listed files that exist, grouped by shell, Git, SSH, editors, terminal, and tools. `.` shows the missing ones too. Files in `~/.config` are shown without it.
+  1. Size and when it last changed.
+  2. Status: **in sync** in green, **differs** from its source file in yellow, **not in chezmoi**, **view only** in yellow with the reason in the details, and **may hold secrets** in red.
+* **chezmoi**, below the list when there is room: the source folder, what neet may run, and how many files have each status, with what it means.
+* **Right, from 120 columns:** the selected file: its path, where a link leads, its source file in chezmoi, size, when it changed, permissions, and its check. Below, what its status means. Under that, the start of the file. A file that may hold a token never shows its preview.
+* Below 120 columns, the details sit under the list, and the preview is hidden.
+
+| Key | Action |
+| --- | --- |
+| `Up` / `Down` | Move the selection. Group names are skipped. |
+| `g` / `G` | Jump to the first or last file. |
+| `e` | Edit a copy in your editor, then review it. See [Edit](#edit). |
+| `r` | When the file differs from its source file: keep this version in chezmoi. |
+| `p` | When the file differs from its source file: put chezmoi's version back. |
+| `.` | Show or hide the files that are not on this Mac. |
+
+### Edit
+
+```text
++ Change to .zshrc --------------------------------------------------------------------------------+
+| Writes   dot_zshrc in chezmoi, then chezmoi apply ~/.zshrc                                       |
+| Backup   first, in ~/.local/state/neet/backups/dotfiles                                          |
+| Check    zsh -n  passed                                                                          |
+| Changes  +1 -1                                                                                   |
++--------------------------------------------------------------------------------------------------+
++ Diff --------------------------------------------------------------------------------------------+
+| line 1                                                                                           |
+|   # ~/.zshrc                                                                                     |
+|                                                                                                  |
+| - export EDITOR=nvim                                                                             |
+| + export EDITOR=hx                                                                               |
+|   export PATH=$HOME/bin:$PATH                                                                    |
+|                                                                                                  |
+|   HISTSIZE=50000                                                                                 |
+```
+
+* `e` opens a copy of the file in your editor: `$VISUAL`, then `$EDITOR`, then `nano`. neet waits until it closes.
+* With chezmoi, the copy is of the source file, and a file that differs from it must be kept or put back first.
+* When the editor closes with changes, the review shows:
+  1. **Writes:** the file, or the source file and then `chezmoi apply` for it. When neet may not run chezmoi, it says to run `chezmoi apply` yourself.
+  2. **Backup:** where the old version goes.
+  3. **Check:** passed in green, failed in red with its message, or why there is no check.
+  4. **Changes** and the **Diff:** removed lines in red, added lines in green, with three lines around each change. A file that may hold a token hides its diff.
+* A file that fails its check cannot be written. `e` goes back to the editor with your changes.
+* Afterwards, a box says what was written, or why nothing was.
+
+| Key | Action |
+| --- | --- |
+| `y` | Write it. |
+| `e` | Edit again. |
+| `Up` / `Down` | Scroll the diff. |
+| `Esc` | Drop the change. Nothing is written. |
+
+### Keep Or Put Back
+
+* `r` and `p` show the same layout as the review: what is kept or replaced, the backup, and the diff. Only `y` goes ahead.
+* `r` makes chezmoi's source file match the file in your home folder, with `chezmoi re-add`, or by writing the source file when neet may not run chezmoi.
+* `p` puts chezmoi's version back with `chezmoi apply`. When neet may not run chezmoi, it says which command to run instead.
+
 ## Planned Screens
 
 * Draft layouts for later features. They may change before they are built.
@@ -372,51 +466,19 @@
 | AI Tools | Sections for tools, settings, instruction files, skills, and project skills. View only. | `Enter` opens a file. |
 | Settings | Sections for power mode, graphics switching, refresh rate, Game Mode, what keeps the Mac awake, and wake settings. | Each change shows what it will do first, and can be undone. |
 
-### Dotfiles
+### Dotfiles: Still To Come
 
-* A draft. The rules it follows are in [SAFETY.md](SAFETY.md#dotfiles).
-
-```text
-+ Dotfiles ----------------------------------------- chezmoi . you/dotfiles . 2 to commit . up to date +
-+ Files -------------------------------------------------+  + .zprofile -------------------------------+
-|        Size    Changed       Status                    |  | Path     ~/.zprofile                     |
-| Shell                                                  |  | Source   dot_zprofile                    |
-|   .zshrc       895 B   12 days ago   in sync           |  | Changed  2 days ago                      |
-| > .zprofile    193 B   2 days ago    differs           |  | Check    zsh -n  passed                  |
-|   .zshenv       89 B   12 days ago   in sync           |  | Backups  3                               |
-| Git                                                    |  |                                          |
-|   .gitconfig   284 B   8 days ago    in sync           |  | Differs from its source file.            |
-|   git/ignore    41 B   1 month ago   in sync           |  | r keeps this version, p puts the         |
-| SSH                                                    |  | source back.                             |
-|   config       312 B   3 months ago  view only         |  +------------------------------------------+
-| Terminal                                               |  + Preview ---------------------------------+
-|   kitty.conf   2.1 KB  1 month ago   in sync           |  | eval "$(/opt/homebrew/bin/brew shell...  |
-|   starship     1.4 KB  1 month ago   in sync           |  | export EDITOR=nvim                       |
-| Tools                                                  |  |                                          |
-|   .npmrc       112 B   1 month ago   may hold secrets  |  |                                          |
-+--------------------------------------- 11 files found -+  +------------------------------------------+
-```
-
-* **Top edge:** whether chezmoi is in use, and whether neet may run it, the repository, how many files wait to be committed, and whether it is ahead of or behind the remote, as last fetched. Without chezmoi it says so, and `x` offers to start a repository.
-* **Files:** only the files that exist, grouped by shell, Git, SSH, editors, terminal, and tools. `.` shows the missing ones too, so you can create one. Long paths keep their file name.
-  1. Size and when it last changed.
-  2. Status: **in sync** in green, **differs** from its source file in yellow, **not in chezmoi**, **view only** with the reason in the details, and **may hold secrets** in red.
-* **Right:** the selected file: its path, its source file in chezmoi, when it changed, its check and whether the file passes it now, and how many backups it has. Below, a note on its status and the keys that fix it. Under that, a preview of the start of the file.
-* Below 120 columns, the details sit under the list, and the preview is hidden.
+* Drafts for the rest of [Dotfiles](#dotfiles).
 
 | Key | Action |
 | --- | --- |
-| `Up` / `Down` | Move the selection. |
-| `e` | Edit a copy in your editor. When it closes: the check, the diff, then `y` writes it. |
 | `c` | Configure the selected program's settings, one at a time. |
 | `d` | Show the diff between the file and its source file, or its latest backup. |
 | `b` | List its backups, newest first. `Enter` shows the diff, then `y` restores it. |
-| `r` / `p` | When it differs from its source file: `r` keeps the home version in chezmoi, `p` puts the source version back. Both show the diff first. When neet may not run chezmoi, it says which command to run yourself. |
 | `a` | Let chezmoi manage the file. |
 | `x` | Export: review for secrets, commit, then push. |
-| `.` | Show or hide missing files. |
 
-#### Configure
+### Dotfiles: Configure
 
 ```text
 + Git settings . ~/.gitconfig -----------------------------------------------+
@@ -437,7 +499,7 @@
 * Each setting shows its value now, or **not set**, and what it does. `Enter` changes it: on and off flip, choices cycle, text opens a box to type in.
 * **Change** shows the diff of everything changed so far. `y` saves it all as one change, with one backup. `Esc` drops it.
 
-#### Export
+### Dotfiles: Export
 
 ```text
 + Export . you/dotfiles -----------------------------------------------------+
