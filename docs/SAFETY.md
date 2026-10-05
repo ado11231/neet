@@ -330,10 +330,12 @@ min_age_days = 0
 
 | Command | When | Changes |
 | --- | --- | --- |
-| `chezmoi apply --no-tty --exclude=scripts,externals -- <file>` | After a change to a source file, or to put the source version back. | That one file in your home folder. |
+| `chezmoi apply --no-tty --force --exclude=scripts,externals -- <file>` | After a change to a source file, or to put the source version back. | That one file in your home folder. |
 | `chezmoi re-add --no-tty -- <file>` | To keep the version in your home folder. | That file's source file. |
 | `chezmoi add --no-tty -- <file>` | To let chezmoi manage a listed file. | Adds one source file. |
 
+* `--force` lets chezmoi replace a file it did not write last, which it otherwise stops to ask about. neet has already shown the diff, checked the file did not change, and backed it up. It touches only the one file named.
+* After each command, neet checks the file now matches, and says so if it does not.
 * neet never runs `chezmoi status`, `diff`, `cat`, `managed`, `update`, or `apply` without a file. `status` without a file renders every template and runs `modify_` scripts. neet shows its own diff instead.
 * Templates are never changed or rendered by neet.
 * Checked with chezmoi 2.72.2, in a test folder where every kind of template and hook wrote down when it ran.
