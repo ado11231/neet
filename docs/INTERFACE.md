@@ -397,7 +397,7 @@
   1. Size and when it last changed.
   2. Status: **in sync** in green, **differs** from its source file in yellow, **not in chezmoi**, **view only** in yellow with the reason in the details, and **may hold secrets** in red.
 * **chezmoi**, below the list when there is room: the source folder, what neet may run, and how many files have each status, with what it means.
-* **Right, from 120 columns:** the selected file: its path, where a link leads, its source file in chezmoi, size, when it changed, permissions, and its check. Below, what its status means. Under that, the start of the file. A file that may hold a token never shows its preview.
+* **Right, from 120 columns:** the selected file: its path, where a link leads, its source file in chezmoi, size, when it changed, permissions, its check, and how many backups it has. Below, what its status means. Under that, the start of the file. A file that may hold a token never shows its preview.
 * Below 120 columns, the details sit under the list, and the preview is hidden.
 
 | Key | Action |
@@ -407,6 +407,8 @@
 | `e` | Edit a copy in your editor, then review it. See [Edit](#edit). |
 | `r` | When the file differs from its source file: keep this version in chezmoi. |
 | `p` | When the file differs from its source file: put chezmoi's version back. |
+| `d` | Show how the file differs from its source file, or else what changed since its last backup. Any other key goes back. |
+| `b` | List its backups, newest first. `Enter` shows what restoring one changes, then `y` restores it. |
 | `.` | Show or hide the files that are not on this Mac. |
 
 ### Edit
@@ -446,6 +448,12 @@
 | `Up` / `Down` | Scroll the diff. |
 | `Esc` | Drop the change. Nothing is written. |
 
+### Backups
+
+* `b` lists the file's backups in a box, newest first, each with the time it was saved, in UTC, and its size.
+* `Enter` shows the restore question: the time of the backup, that the file as it is now is backed up first, and the diff from now to the backup. Only `y` goes ahead.
+* With chezmoi, a restored file may then differ from its source file. `r` keeps it there.
+
 ### Keep Or Put Back
 
 * `r` and `p` show the same layout as the review: what is kept or replaced, the backup, and the diff. Only `y` goes ahead.
@@ -473,8 +481,6 @@
 | Key | Action |
 | --- | --- |
 | `c` | Configure the selected program's settings, one at a time. |
-| `d` | Show the diff between the file and its source file, or its latest backup. |
-| `b` | List its backups, newest first. `Enter` shows the diff, then `y` restores it. |
 | `a` | Let chezmoi manage the file. |
 | `x` | Export: review for secrets, commit, then push. |
 
