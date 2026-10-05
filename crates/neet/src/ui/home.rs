@@ -21,6 +21,10 @@ use neet_core::disk::DiskSpace;
 /// Below this width the art is hidden and the menu fills the screen.
 const MIN_ART_WIDTH: u16 = 90;
 
+/// Blank rows above and below the selected row's description, so its box
+/// stands a little taller than the others.
+const ABOUT_PADDING: u16 = 1;
+
 /// Columns kept clear between the art and the menu.
 const ART_GAP: u16 = 2;
 
@@ -359,11 +363,16 @@ impl Screen for Home {
         };
         let menu_height = u16::try_from(ENTRIES.len() + 2).unwrap_or(u16::MAX);
         let mut panels = self.panels(right.width, context);
+        // The first box is the selected row's, with its extra rows.
+        let padding = |index: usize| if index == 0 { ABOUT_PADDING } else { 0 };
         let heights = |panels: &[(String, Vec<Line<'static>>)]| -> Vec<u16> {
             panels
                 .iter()
-                .map(|(_, lines)| {
-                    super::visual::wrapped_rows(lines, right.width.saturating_sub(4)) + 2
+                .enumerate()
+                .map(|(index, (_, lines))| {
+                    super::visual::wrapped_rows(lines, right.width.saturating_sub(4))
+                        + 2
+                        + 2 * padding(index)
                 })
                 .collect()
         };
@@ -379,12 +388,15 @@ impl Screen for Home {
             .flex(Flex::Center)
             .split(right);
         self.draw_menu(frame, areas[0]);
-        for ((title, lines), area) in panels.into_iter().zip(areas.iter().skip(1)) {
+        for (index, ((title, lines), area)) in
+            panels.into_iter().zip(areas.iter().skip(1)).enumerate()
+        {
+            let rows = padding(index);
             frame.render_widget(
                 Paragraph::new(lines).wrap(Wrap { trim: true }).block(
                     super::visual::block()
                         .title(title)
-                        .padding(Padding::horizontal(1)),
+                        .padding(Padding::new(1, 1, rows, rows)),
                 ),
                 *area,
             );
@@ -518,6 +530,20 @@ mod tests {
         assert!(screen.contains("Free     100.0 GB of 500.0 GB"));
         assert!(screen.contains("Finder   107.4 GB free · 7.4 GB"));
         assert!(screen.contains("Can free ~18.4 GB"));
+        // The selected row's box has a blank row above and below its text.
+        let rows: Vec<String> = screen
+            .chars()
+            .collect::<Vec<_>>()
+            .chunks(120)
+            .map(|row| row.iter().collect())
+            .collect();
+        let title = rows
+            .iter()
+            .position(|row| row.contains("┌ Quick Clean"))
+            .unwrap();
+        assert!(rows[title + 1].trim_end().ends_with('│'));
+        assert!(!rows[title + 1].contains("Find"));
+        assert!(rows[title + 2].contains("Find reclaimable space."));
         // The menu says only which rows come later.
         assert!(!screen.contains("overview"));
         assert!(!screen.contains("found"));

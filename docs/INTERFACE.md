@@ -51,8 +51,10 @@
        .        .        *       .       |     Quit                            |
   +        .        .        .           +-------------------------------------+
      .        *         .       *        + Quick Clean ------------------------+
-  .      .        .        .        .    | Find reclaimable space.             |
-      *       .        +       .         +-------------------------------------+
+  .      .        .        .        .    |                                     |
+      *       .        +       .         | Find reclaimable space.             |
+  .        .        *        .           |                                     |
+     .        .         .       .        +-------------------------------------+
   .       .       .        .       *     + Disk -------------------------------+
      .        *        .       .         | ##################.......  64% used |
   *      .        .         .       .    | Free     88.1 GB of 245.1 GB        |
@@ -74,7 +76,7 @@
   1. The rows go from the quickest way to free space to the most detailed: Quick Clean, Deep Clean, Remove App, Large Files, then Disk.
   2. Quick Clean comes first, and is selected when neet opens.
   3. Features not built yet remain readable and have a yellow `soon` label. The selection skips them. No other row has a note.
-* **The selected row:** its name as the title, and what it does.
+* **The selected row:** its name as the title, and what it does, with a blank row above and below, so it stands a little taller than the boxes under it.
 * **Disk:** a gauge of how full the disk is, as wide as the box allows. It turns yellow at 75% and red at 90%, and the free space is green, yellow, or red to match. Then free, total, and used space. When macOS can clear 100 MB or more on its own, a last line says how much free space Finder shows, counting that purgeable space. It is read about once a minute.
 * **Home folder:** scan progress, then the folder's total size and item count. If some folders could not be read, the size is marked `at least`, and yellow lines say how many were blocked by macOS or could not be read, and to press `s`. **Can free** shows `finding...`, then in green the total every Deep Clean rule found. It is worked out again after each cleanup, and when you press `r` in Deep Clean.
 
