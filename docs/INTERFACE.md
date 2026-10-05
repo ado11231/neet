@@ -410,6 +410,7 @@
 | `c` | Change the file's settings one at a time, for Git files. See [Configure](#configure). |
 | `d` | Show how the file differs from its source file, or else what changed since its last backup. Any other key goes back. |
 | `b` | List its backups, newest first. `Enter` shows what restoring one changes, then `y` restores it. |
+| `x` | Export: review for secrets, commit, then push. See [Export](#export). |
 | `.` | Show or hide the files that are not on this Mac. |
 
 ### Edit
@@ -448,6 +449,38 @@
 | `e` | Edit again. |
 | `Up` / `Down` | Scroll the diff. |
 | `Esc` | Drop the change. Nothing is written. |
+
+### Export
+
+```text
++ Export ---------------------------------------------------------------------------------------+
+| Review for secrets, then pick what goes in.                                                    |
+|                                                                                                |
+|   [x] dot_zshrc                   nothing found                                                |
+| > [ ] dot_npmrc                   1 line that may be secret                                    |
+|         line 1  npm token  npm_****                                                            |
+|                                                                                                |
+| Commit   1 file . "Update zshrc"                                                               |
+| Push     to origin/main, after a question                                                       |
+|                                                                                                |
+| This is a review, not a promise that nothing secret remains.                                   |
++------------------------------------------------------------------------------------------------+
+```
+
+* `x` looks at the repository chezmoi's folder is in. It lists the source files of listed dotfiles that have changes not yet committed. Each one shows what the review for secrets found, and the selected file shows each finding's line, kind, and first four characters.
+* Files with findings, and files that may hold a token, start left out. `Space` puts a file in or takes it out.
+* **Commit** shows how many files go in, and the message. It names the files, such as `Update zshrc and gitconfig`, until you change it with `m`.
+* `y` commits only those files. Then a box asks whether to push, and names the remote branch. Only `y` pushes. A push is never forced, and if the remote has commits you do not, nothing is pushed and the note says to pull first.
+* With nothing to commit but commits not yet pushed, `x` goes straight to the push question.
+* Without chezmoi, `x` says so. Starting a repository in chezmoi's layout comes next.
+
+| Key | Action |
+| --- | --- |
+| `Up` / `Down` | Move between files. |
+| `Space` | Put the file in, or take it out. |
+| `m` | Change the commit message. `Enter` keeps it, `Esc` cancels. |
+| `y` | Commit, then ask about pushing. |
+| `Esc` | Go back. Nothing is committed. |
 
 ### Configure
 
@@ -507,21 +540,4 @@
 | Key | Action |
 | --- | --- |
 | `a` | Let chezmoi manage the file. |
-| `x` | Export: review for secrets, commit, then push. |
 
-### Dotfiles: Export
-
-```text
-+ Export . you/dotfiles -----------------------------------------------------+
-| Review for secrets                                                         |
-|   ok    .zshrc, .zprofile, .gitconfig, kitty.conf, starship.toml           |
-|   !     .npmrc  line 2  //registry.npmjs.org/:_authToken=npm_****          |
-|                                                                            |
-| Commit  2 files . "Update zprofile and gitconfig"                          |
-| Push    origin/master . 1 commit                                           |
-+-------------------------------------- Space leaves out . m message . y go -+
-```
-
-* **Review for secrets** comes first. Each match shows its file, line, and the start of its value. `Space` leaves the file out, `e` edits it.
-* **Commit** lists the files and the message. `m` changes the message.
-* **Push** names the remote and branch. `y` commits, then asks again in its own box before pushing. Without a remote, that box offers a new private GitHub repository.
