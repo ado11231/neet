@@ -304,8 +304,10 @@ min_age_days = 0
 
 | Program | Settings | Written with |
 | --- | --- | --- |
-| Git | `user.name`, `user.email`, `init.defaultBranch`, `core.editor`, `pull.rebase`, `push.autoSetupRemote` | `git config --file <file> <key> <value>` |
+| Git | `user.name`, `user.email`, `init.defaultBranch`, `core.editor`, `pull.rebase`, `push.autoSetupRemote` | `git config --file <copy> -- <key> <value>`, or `--unset-all` to remove one |
 
+* Changes are made on the edit copy, then go through the same check, diff, backup, and chezmoi steps as an edit.
+* Values are read with `git config --file <copy> --list`, which reads only that file, not the files it includes. A value with more than one line is refused.
 * More programs are added one at a time. Each is listed here before it ships.
 * Shell settings, when added, only go in a block neet owns, between `# >>> neet >>>` and `# <<< neet <<<`. Lines outside it are never changed.
 

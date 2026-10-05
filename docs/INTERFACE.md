@@ -407,6 +407,7 @@
 | `e` | Edit a copy in your editor, then review it. See [Edit](#edit). |
 | `r` | When the file differs from its source file: keep this version in chezmoi. |
 | `p` | When the file differs from its source file: put chezmoi's version back. |
+| `c` | Change the file's settings one at a time, for Git files. See [Configure](#configure). |
 | `d` | Show how the file differs from its source file, or else what changed since its last backup. Any other key goes back. |
 | `b` | List its backups, newest first. `Enter` shows what restoring one changes, then `y` restores it. |
 | `.` | Show or hide the files that are not on this Mac. |
@@ -448,6 +449,31 @@
 | `Up` / `Down` | Scroll the diff. |
 | `Esc` | Drop the change. Nothing is written. |
 
+### Configure
+
+```text
++ Git settings . ~/.gitconfig ------------------------------------------------------------------+
+|   Setting               Value                 About                                           |
+|                                                                                                |
+|   user.name             You                   Name on your commits.                           |
+|   user.email            you@example.com       Email on your commits.                          |
+|   init.defaultBranch    not set               Branch name for new repositories.               |
+|   core.editor           not set               Editor for commit messages.                     |
+| > pull.rebase           true                  Rebase instead of merge when pulling.           |
+|   push.autoSetupRemote  not set               Push a new branch without naming the remote.    |
++------------------------------------------------------------------------------------------------+
++ Changes ---------------------------------------------------------------------------------------+
+| user.email  you@example.com                                                                    |
+| pull.rebase  true                                                                              |
++------------------------------------------------------------------------------------------------+
+```
+
+* `c` opens the settings Configure knows for the file's program. Git is the first, for `.gitconfig` and `.config/git/config`. Other files say to use `e`.
+* Each setting shows its value in the file, or **not set**, and what it does. A value about to change is yellow.
+* `Enter` changes the selected setting: on and off settings go on, off, then not set. Text settings open a box to type in, where `Enter` keeps it, `Esc` cancels, and an empty value means not set.
+* **Changes** lists every change so far. `y` makes them all on the copy with Git, then opens the same review as [Edit](#edit), with the check and the diff. `Esc` drops them all.
+* As with editing, a file that differs from its source file in chezmoi must be kept or put back first.
+
 ### Backups
 
 * `b` lists the file's backups in a box, newest first, each with the time it was saved, in UTC, and its size.
@@ -480,30 +506,8 @@
 
 | Key | Action |
 | --- | --- |
-| `c` | Configure the selected program's settings, one at a time. |
 | `a` | Let chezmoi manage the file. |
 | `x` | Export: review for secrets, commit, then push. |
-
-### Dotfiles: Configure
-
-```text
-+ Git settings . ~/.gitconfig -----------------------------------------------+
-|   Setting              Value                About                          |
-| > user.name            Your Name            Name on your commits.          |
-|   user.email           you@example.com      Email on your commits.         |
-|   init.defaultBranch   master               Branch name for new repos.     |
-|   core.editor          not set              Editor for commit messages.    |
-|   pull.rebase          false                Rebase instead of merge.       |
-+-------------------------------------------------- Enter changes . y saves -+
-+ Change --------------------------------------------------------------------+
-|   [init]                                                                   |
-| -     defaultBranch = master                                               |
-| +     defaultBranch = main                                                 |
-+----------------------------------------------------------------------------+
-```
-
-* Each setting shows its value now, or **not set**, and what it does. `Enter` changes it: on and off flip, choices cycle, text opens a box to type in.
-* **Change** shows the diff of everything changed so far. `y` saves it all as one change, with one backup. `Esc` drops it.
 
 ### Dotfiles: Export
 
