@@ -120,7 +120,8 @@
 | Feature | Done When |
 | --- | --- |
 | Startup items | Finding, turning off, and turning back on each kind is checked on every supported macOS version. An incomplete list is labeled. |
-| SSH and dotfiles | Changes stay within their lists, and backup, restore, check, and export tests pass. |
+| Dotfiles | Changes stay within the list in SAFETY.md. Backup, restore, check, configure, and export tests pass. With chezmoi, edits reach the source file, and nothing is pushed without `y`. |
+| SSH | Changes stay within `~/.ssh`, and known hosts and permissions can be undone. |
 | Shell PATH | Changes stay within the shell files, and can be undone from their backups. |
 | AI tool files | Only the allowed files are read. Sign in files and chat history are never opened. |
 | Power and display | Setting names are checked on real Macs. A refresh rate you do not keep switches back. Every change can be undone. |
