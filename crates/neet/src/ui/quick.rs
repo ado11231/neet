@@ -8,7 +8,7 @@ use neet_core::clutter::{self, Finding, Kind};
 use neet_core::tree::{NodeId, Tree};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
-use ratatui::layout::{Constraint, Flex, Layout, Rect};
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Cell, Padding, Paragraph, Row, Table, TableState, Wrap};
@@ -130,7 +130,7 @@ fn who_span(who: Who) -> Span<'static> {
 /// What the item is
 fn about(item: Item) -> &'static str {
     match item {
-        Item::Rules => "Caches and logs the cleanup rules found. Apps make them again when needed.",
+        Item::Rules => "Caches and logs the cleanup rules found, for apps and developer tools.",
         Item::Clutter(Kind::Trash) => {
             "Items already in the Trash still take space until it is emptied."
         }
@@ -147,6 +147,61 @@ fn about(item: Item) -> &'static str {
             "Xcode runtimes and their simulators, outside the home folder."
         }
         Item::Clutter(Kind::TempFiles) => "Temporary app files in /private/var/folders.",
+    }
+}
+
+/// Where the item's files are
+fn place(item: Item) -> &'static str {
+    match item {
+        Item::Rules => {
+            "~/Library/Caches, ~/Library/Logs, and the caches of tools such as npm, pip, and Cargo."
+        }
+        Item::Clutter(Kind::Trash) => "~/.Trash, the Trash of your home folder.",
+        Item::Clutter(Kind::Installers) => {
+            "~/Downloads: disk images, packages, and other installers."
+        }
+        Item::Clutter(Kind::BuildFolders) => {
+            "node_modules folders, and target folders next to a Cargo.toml, in your projects."
+        }
+        Item::Clutter(Kind::DockerImage) => {
+            "Docker.raw, in ~/Library/Containers/com.docker.docker."
+        }
+        Item::Clutter(Kind::SimulatorRuntimes) => {
+            "/Library/Developer/CoreSimulator, shared by every user of the Mac."
+        }
+        Item::Clutter(Kind::TempFiles) => "Your own folder in /private/var/folders.",
+    }
+}
+
+/// What changes once the item is cleared
+fn afterwards(item: Item) -> &'static str {
+    match item {
+        Item::Rules => {
+            "Apps make them again as they need them, so some may open more slowly at first."
+        }
+        Item::Clutter(Kind::Trash) => "Its files are deleted for good.",
+        Item::Clutter(Kind::Installers) => "Download an installer again if you need it later.",
+        Item::Clutter(Kind::BuildFolders) => {
+            "The next install or build in each project takes longer while it makes them again."
+        }
+        Item::Clutter(Kind::DockerImage) => {
+            "Prune deletes unused images, containers, and build cache. A reset deletes everything Docker keeps."
+        }
+        Item::Clutter(Kind::SimulatorRuntimes) => {
+            "Xcode downloads a runtime again when a project needs it."
+        }
+        Item::Clutter(Kind::TempFiles) => "Nothing to do. The space comes back on its own.",
+    }
+}
+
+/// Whether clearing the item can be undone, in the color that says so
+fn undo(item: Item) -> Span<'static> {
+    match who(item) {
+        Who::Neet => Span::raw("Put Back in the Trash, until you empty it").green(),
+        Who::Tool => Span::raw("none, it is deleted for good").red(),
+        // Only the Trash is left to you, and emptying it cannot be undone.
+        Who::You => Span::raw("none, once the Trash is emptied").red(),
+        Who::Mac => Span::raw("nothing to undo").fg(super::visual::ACCENT),
     }
 }
 
@@ -415,9 +470,9 @@ impl QuickClean {
         frame.render_stateful_widget(table, area, &mut self.table);
     }
 
-    /// The selected row's name, the numbered steps that clear it, and what
-    /// it is
-    fn about_lines(&self) -> (String, Vec<Line<'static>>, Vec<Line<'static>>) {
+    /// The selected row's name, then its sections: the numbered steps that
+    /// clear it, what it is, where it is, and what happens after
+    fn about_lines(&self) -> (String, Vec<Vec<Line<'static>>>) {
         let item = self.selected();
         let color = match who(item) {
             Who::Neet => Color::Green,
@@ -436,7 +491,22 @@ impl QuickClean {
             Line::from("What it is").style(super::visual::HEADING),
             Line::from(about(item)),
         ];
-        (format!(" {} ", name(item)), steps, about)
+        let place = vec![
+            Line::from("Where it is").style(super::visual::HEADING),
+            Line::from(place(item)).fg(super::visual::ACCENT),
+        ];
+        let after = vec![
+            Line::from("After it is cleared").style(super::visual::HEADING),
+            Line::from(afterwards(item)),
+            Line::from(vec![
+                Span::raw(format!("{:<11}", "Undo")).bold(),
+                undo(item),
+            ]),
+        ];
+        (
+            format!(" {} ", name(item)),
+            vec![steps, about, place, after],
+        )
     }
 
     /// Every row that found something, largest first, with a bar in the
@@ -676,37 +746,6 @@ impl QuickClean {
     }
 }
 
-/// A box holding `sections`: the first at the top, the last at the bottom,
-/// and the space between shared evenly, so a tall box reads as full instead
-/// of empty below its text. Sections that do not fit are left out, the last
-/// first. Leading spaces are kept, so right aligned sizes stay lined up.
-fn draw_sections(
-    frame: &mut Frame,
-    area: Rect,
-    title: &str,
-    mut sections: Vec<Vec<Line<'static>>>,
-) {
-    let block = super::visual::block()
-        .title(title.to_string())
-        .padding(Padding::horizontal(1));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-    let rows = |lines: &[Line<'static>]| super::visual::wrapped_rows(lines, inner.width);
-    let needed = |sections: &[Vec<Line<'static>>]| -> u16 {
-        let gaps = u16::try_from(sections.len().saturating_sub(1)).unwrap_or(u16::MAX);
-        sections.iter().map(|lines| rows(lines)).sum::<u16>() + gaps
-    };
-    while sections.len() > 1 && needed(&sections) > inner.height {
-        sections.pop();
-    }
-    let areas = Layout::vertical(sections.iter().map(|lines| Constraint::Length(rows(lines))))
-        .flex(Flex::SpaceBetween)
-        .split(inner);
-    for (lines, area) in sections.into_iter().zip(areas.iter()) {
-        frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), *area);
-    }
-}
-
 fn quick_columns(statuses: &[Status], width: u16) -> super::visual::Columns<5> {
     let sizes = format::column_width(
         "Size",
@@ -768,8 +807,8 @@ impl Screen for QuickClean {
         // The table, with how to clear the selected row under it, and the
         // row's largest items down the right. Each box spreads its sections
         // from top to bottom, so a tall screen has no empty box.
-        let (title, steps, about) = self.about_lines();
-        let row = self.row_lines(context);
+        let (title, mut sections) = self.about_lines();
+        sections.push(self.row_lines(context));
         if area.width >= MIN_SIDE_WIDTH {
             let [left, side] =
                 Layout::horizontal([Constraint::Length(TABLE_WIDTH), Constraint::Fill(1)])
@@ -778,7 +817,7 @@ impl Screen for QuickClean {
                 Layout::vertical([Constraint::Length(table_height), Constraint::Fill(1)])
                     .areas(left);
             self.draw_table(frame, table, context, spaced);
-            draw_sections(frame, below, &title, vec![steps, about, row]);
+            super::visual::sections(frame, below, &title, sections);
             let inner_width = side.width.saturating_sub(4);
             let after = self.after_lines(context, inner_width);
             let found = self.found_lines(context, inner_width);
@@ -791,14 +830,19 @@ impl Screen for QuickClean {
                 self.largest_lines(context, side.width, rows)
                     .unwrap_or_else(|note| vec![note]),
             );
-            draw_sections(frame, side, " Space ", vec![list, found, after]);
+            super::visual::sections(frame, side, " Space ", vec![list, found, after]);
         } else {
             let [table, below] =
                 Layout::vertical([Constraint::Length(table_height), Constraint::Fill(1)])
                     .areas(area);
             self.draw_table(frame, table, context, spaced);
-            let after = self.after_lines(context, below.width.saturating_sub(4));
-            draw_sections(frame, below, &title, vec![steps, about, row, after]);
+            // A short screen keeps what matters most: the steps, what it
+            // is, its numbers, and the disk after the cleanup.
+            let numbers = sections.pop().unwrap_or_default();
+            let essentials = sections.drain(..2).chain([numbers]);
+            let mut shown: Vec<Vec<Line<'static>>> = essentials.collect();
+            shown.push(self.after_lines(context, below.width.saturating_sub(4)));
+            super::visual::sections(frame, below, &title, shown);
         }
     }
 
@@ -1051,6 +1095,26 @@ mod tests {
             rows[row_of("Caches and logs") + 1].trim_matches(['│', ' ']),
             ""
         );
+        // Under the table: how, what, where, after, and numbers, in order,
+        // with a rule between each.
+        let order = [
+            "How",
+            "What it is",
+            "Where it is",
+            "After it is cleared",
+            "In numbers",
+        ];
+        for pair in order.windows(2) {
+            let (above, below) = (row_of(pair[0]), row_of(pair[1]));
+            assert!(above < below, "{pair:?}");
+            assert!(
+                rows[above..below]
+                    .iter()
+                    .any(|row| row[..row.find("││").unwrap_or(row.len())].contains('╌')),
+                "no rule between {pair:?}:\n{text}"
+            );
+        }
+        assert!(text.contains("Undo       Put Back in the Trash, until you empty it"));
     }
 
     #[test]

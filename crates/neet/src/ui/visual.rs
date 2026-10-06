@@ -55,7 +55,20 @@ pub fn sections(
     for (lines, area) in sections.into_iter().zip(areas.iter()) {
         frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), *area);
     }
+    // A light dashed rule halfway down each wide gap, so the sections read as
+    // parts of one box rather than lines adrift in it
+    for pair in areas.windows(2) {
+        let gap = pair[1].y.saturating_sub(pair[0].bottom());
+        if gap >= DIVIDER_GAP {
+            let row =
+                ratatui::layout::Rect::new(inner.x, pair[0].bottom() + gap / 2, inner.width, 1);
+            frame.render_widget(Paragraph::new("╌".repeat(usize::from(inner.width))), row);
+        }
+    }
 }
+
+/// The fewest blank rows between sections that get a rule in the middle
+const DIVIDER_GAP: u16 = 3;
 
 /// Keys remain distinct from their actions, including when the footer wraps.
 pub fn hints(text: &str) -> Line<'static> {
