@@ -12,7 +12,7 @@ use neet_core::safety::CleanupRoots;
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
-use ratatui::style::Stylize;
+use ratatui::style::{Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Cell, Clear, Padding, Paragraph, Row, Table, TableState, Wrap};
 
@@ -191,7 +191,7 @@ impl Clean {
         for rule in planned.plan.rules.iter_mut().filter(|rule| rule.selected) {
             if let Some(app) = self.open_app(rule) {
                 rule.selected = false;
-                cleared.push(format!("{} ({app} is open)", rule.rule.name));
+                cleared.push(format!("{} ({} is open)", rule.rule.name, app_name(&app)));
             }
         }
         if !cleared.is_empty() {
@@ -259,7 +259,8 @@ impl Clean {
         }
         if let Some(app) = open_app {
             self.note = Some(format!(
-                "Close {app} first, then select {}.",
+                "Close {} first, then select {}.",
+                app_name(&app),
                 rule.rule.name
             ));
         } else if rule.rule.tier == Tier::Expert && !rule.selected {
@@ -364,9 +365,9 @@ fn tier_span(tier: Tier) -> Span<'static> {
 
 fn tier_meaning(tier: Tier) -> &'static str {
     match tier {
-        Tier::Safe => "Apps make these again. Picked for you.",
-        Tier::Caution => "May need a re-download or sign-in. You pick these.",
-        Tier::Expert => "May hold files you can't get back. Type its ID to pick it.",
+        Tier::Safe => "Apps make these again. Selected for you.",
+        Tier::Caution => "May need a re-download or sign-in. You select these.",
+        Tier::Expert => "May hold files you can't get back. Type its ID to select it.",
     }
 }
 
@@ -380,7 +381,7 @@ pub(super) fn display_path(home: &Path, path: &Path) -> String {
 
 pub(super) fn skip_reason(reason: &SkipReason, min_age_days: Option<u32>) -> String {
     match reason {
-        SkipReason::Refused(error) => format!("refused: {error}"),
+        SkipReason::Refused(error) => format!("kept for safety: {error}"),
         SkipReason::TooNew => match min_age_days {
             // Newer than the moment the plan started: written while neet looked
             Some(0) => "changed while neet was looking".to_string(),
@@ -389,10 +390,21 @@ pub(super) fn skip_reason(reason: &SkipReason, min_age_days: Option<u32>) -> Str
         },
         SkipReason::Unreadable(error) => format!("could not be read: {error}"),
         SkipReason::Overlaps => "found by another rule".to_string(),
-        SkipReason::Link => "a link, kept".to_string(),
-        SkipReason::AppOpen(app) => format!("{app} is open"),
+        SkipReason::Link => "a shortcut, kept".to_string(),
+        SkipReason::AppOpen(app) => format!("{} is open", app_name(app)),
         SkipReason::Replaced => "changed after you checked it".to_string(),
         SkipReason::MoveFailed(error) => format!("could not be moved: {error}"),
+    }
+}
+
+/// An app's name from its bundle ID, such as `Chrome` for
+/// `com.google.Chrome`
+pub(super) fn app_name(bundle: &str) -> String {
+    match bundle {
+        "com.google.Chrome" => "Chrome".to_string(),
+        "com.apple.dt.Xcode" => "Xcode".to_string(),
+        "com.apple.iphonesimulator" => "Simulator".to_string(),
+        other => other.rsplit('.').next().unwrap_or(other).to_string(),
     }
 }
 
@@ -432,8 +444,8 @@ fn rule_row(rule: &RulePlan, current: bool, columns: &super::visual::Columns<5>)
             Cell::from(checkbox(false, false)),
             Cell::from(name),
             Cell::from(tier_span(rule.rule.tier)),
-            Cell::from(Line::from("none").right_aligned()),
             Cell::from(Line::from("·").right_aligned()),
+            Cell::from(Line::from("none").right_aligned()),
         ]);
     }
     columns.row([
@@ -447,9 +459,26 @@ fn rule_row(rule: &RulePlan, current: bool, columns: &super::visual::Columns<5>)
     ])
 }
 
+/// Width of every label in the details and the totals
+const LABEL: usize = 10;
+
 /// A label and its value, lined up with the other labels
 fn field(label: &str, value: Span<'static>) -> Line<'static> {
-    Line::from(vec![Span::raw(format!("{label:<8}")).bold(), value])
+    Line::from(vec![Span::raw(format!("{label:<LABEL$}")).bold(), value])
+}
+
+/// A label, `lead`, and `text` wrapped to `width` at spaces, with every
+/// line after the first starting under the label's value
+fn field_wrapped(
+    label: &str,
+    lead: Vec<Span<'static>>,
+    text: &str,
+    style: Style,
+    width: usize,
+) -> Vec<Line<'static>> {
+    let mut first = vec![Span::raw(format!("{label:<LABEL$}")).bold()];
+    first.extend(lead);
+    super::visual::hanging(first, LABEL, text, style, width)
 }
 
 /// How many screen rows `lines` take when wrapped to `width` at spaces, as
@@ -482,7 +511,8 @@ fn detail_path(home: &Path, path: &Path, shared: bool, width: usize) -> String {
     format::shorten_path(&display_path(home, path), width)
 }
 
-/// Skipped paths, with a reason shared by more than two of them on one line
+/// Skipped paths, with a reason shared by more than two of them on one
+/// line, and the reasons lined up in a column
 fn skipped_lines(rule: &RulePlan, home: &Path, width: usize) -> Vec<Line<'static>> {
     let shared = shared_folder(rule).is_some();
     let mut groups: Vec<(String, Vec<&Path>)> = Vec::new();
@@ -493,52 +523,71 @@ fn skipped_lines(rule: &RulePlan, home: &Path, width: usize) -> Vec<Line<'static
             None => groups.push((reason, vec![&skipped.path])),
         }
     }
-    let mut lines = Vec::new();
+    let longest = groups
+        .iter()
+        .map(|(reason, _)| format::display_width(reason))
+        .max()
+        .unwrap_or(0);
+    let room = width.saturating_sub(longest + 2).max(width / 2);
+    let mut rows: Vec<(String, String)> = Vec::new();
     for (reason, paths) in groups {
         if paths.len() > 2 {
-            lines.push(Line::from(format!(
-                "{:>9}  {reason}",
-                format!("{} paths", count(paths.len()))
-            )));
+            rows.push((format!("{} items", count(paths.len())), reason));
             continue;
         }
         for path in paths {
-            let room = width.saturating_sub(format::display_width(&reason) + 13);
-            lines.push(Line::from(format!(
-                "{:>9}  {}  {reason}",
-                "",
-                detail_path(home, path, shared, room)
-            )));
+            rows.push((detail_path(home, path, shared, room), reason.clone()));
         }
     }
-    lines
+    let column = rows
+        .iter()
+        .map(|(name, _)| format::display_width(name))
+        .max()
+        .unwrap_or(0);
+    rows.into_iter()
+        .map(|(name, reason)| {
+            let padding = " ".repeat(column - format::display_width(&name) + 2);
+            Line::from(vec![Span::raw(name), Span::raw(padding), Span::raw(reason)])
+        })
+        .collect()
 }
 
 /// Width of the bar beside each item found
 const ITEM_BAR: usize = 10;
 
 /// What the selected rule removes, its risk, and what it needs, for the box
-/// at the top of the details
-fn about(rule: &RulePlan, home: &Path) -> Vec<Line<'static>> {
-    let mut lines = vec![
-        Line::from(rule.rule.description.clone()),
-        Line::default(),
-        Line::from(vec![
-            Span::raw(format!("{:<8}", "Risk")).bold(),
-            tier_span(rule.rule.tier).bold(),
-            Span::raw(format!("  {}", tier_meaning(rule.rule.tier))),
-        ]),
-    ];
+/// at the top of the details, with values wrapped to `width`
+fn about(rule: &RulePlan, home: &Path, width: usize) -> Vec<Line<'static>> {
+    let mut lines = vec![Line::from(rule.rule.description.clone()), Line::default()];
+    lines.extend(field_wrapped(
+        "Risk",
+        vec![tier_span(rule.rule.tier).bold(), Span::raw("  ")],
+        tier_meaning(rule.rule.tier),
+        Style::default(),
+        width,
+    ));
     if !rule.rule.requires_quit.is_empty() {
-        lines.push(field("Quit", Span::raw(rule.rule.requires_quit.join(", "))));
+        let apps: Vec<String> = rule
+            .rule
+            .requires_quit
+            .iter()
+            .map(|bundle| app_name(bundle))
+            .collect();
+        lines.extend(field_wrapped(
+            "Close",
+            Vec::new(),
+            &format!("{} before cleaning", apps.join(" & ")),
+            Style::default(),
+            width,
+        ));
     }
     if rule.rule.min_age_days > 0 {
-        lines.push(field(
+        lines.extend(field_wrapped(
             "Keeps",
-            Span::raw(format!(
-                "files changed in the last {} days",
-                rule.rule.min_age_days
-            )),
+            Vec::new(),
+            &format!("files changed in the last {} days", rule.rule.min_age_days),
+            Style::default(),
+            width,
         ));
     }
     let folder = shared_folder(rule).map_or_else(
@@ -552,7 +601,14 @@ fn about(rule: &RulePlan, home: &Path) -> Vec<Line<'static>> {
         },
         |folder| display_path(home, folder),
     );
-    lines.push(field("Folder", Span::raw(folder).fg(super::visual::ACCENT)));
+    let folder = format::shorten_path(&folder, width.saturating_sub(LABEL));
+    lines.extend(field_wrapped(
+        "Folder",
+        Vec::new(),
+        &folder,
+        Style::default().fg(super::visual::ACCENT),
+        width,
+    ));
     lines
 }
 
@@ -607,7 +663,7 @@ impl Clean {
             .iter()
             .map(|other| {
                 let mut lines = notes.clone();
-                lines.extend(about(other, home));
+                lines.extend(about(other, home, width));
                 rows_used(&lines, width)
             })
             .max()
@@ -622,7 +678,7 @@ impl Clean {
         ])
         .areas(area);
         let mut top = notes;
-        top.extend(about(rule, home));
+        top.extend(about(rule, home, width));
         frame.render_widget(
             Paragraph::new(top).wrap(Wrap { trim: false }).block(
                 super::visual::block()
@@ -644,7 +700,7 @@ impl Clean {
             if skipped.len() > most {
                 let more = skipped.len() - (most - 1).max(1);
                 skipped.truncate((most - 1).max(1));
-                skipped.push(Line::from(format!("{:>9}  & {} more", "", count(more))));
+                skipped.push(Line::from(format!("& {} more", count(more))));
             }
             let room = inner.saturating_sub(skipped.len() + 2);
             sections.push(found_lines(rule, home, room, width));
@@ -693,7 +749,7 @@ impl Clean {
         let home = planned.home.as_path();
         let width = usize::from(area.width.saturating_sub(4));
         let mut top = notes;
-        top.extend(about(rule, home));
+        top.extend(about(rule, home, width));
         let top_height = u16::try_from(rows_used(&top, width) + 2).unwrap_or(u16::MAX);
 
         let mut skipped = skipped_lines(rule, home, width);
@@ -705,7 +761,7 @@ impl Clean {
                 let keep = most.saturating_sub(3).max(1);
                 let more = skipped.len() - keep;
                 skipped.truncate(keep);
-                skipped.push(Line::from(format!("{:>9}  & {} more", "", count(more))));
+                skipped.push(Line::from(format!("& {} more", count(more))));
             }
             u16::try_from(skipped.len() + 2).unwrap_or(u16::MAX)
         };
@@ -740,11 +796,7 @@ impl Clean {
                 Paragraph::new(skipped).block(
                     super::visual::block()
                         .title(
-                            Line::from(format!(
-                                " Skipped · {} left in place ",
-                                count(rule.skipped.len())
-                            ))
-                            .bold(),
+                            Line::from(format!(" Skipped · {} ", count(rule.skipped.len()))).bold(),
                         )
                         .padding(Padding::horizontal(1)),
                 ),
@@ -762,7 +814,7 @@ impl Clean {
 /// found nothing
 fn draw_location(frame: &mut Frame, area: Rect, planned: &Planned, chart: Vec<Line<'static>>) {
     let mut sections = vec![chart];
-    sections.extend(by_risk(planned));
+    sections.extend(by_risk(planned, usize::from(area.width.saturating_sub(4))));
     sections.extend(found_nothing(planned));
     super::visual::sections(frame, area, " Location ", sections);
 }
@@ -845,7 +897,7 @@ fn problems(errors: &[RuleError]) -> Vec<Line<'static>> {
                 .as_ref()
                 .map_or_else(String::new, |id| format!(" rule `{id}`"));
             Line::from(format!(
-                "Not loaded: {}{rule}: {}",
+                "Could not load {}{rule}: {}",
                 error.file, error.message
             ))
             .yellow()
@@ -879,8 +931,8 @@ fn totals(planned: &Planned) -> Line<'static> {
     if !planned.errors.is_empty() {
         spans.push(
             Span::raw(format!(
-                "· {} rule problems, listed in the details ",
-                count(planned.errors.len())
+                "· {} could not load, see the details ",
+                count_rules(planned.errors.len())
             ))
             .yellow(),
         );
@@ -894,13 +946,19 @@ fn found_overall(planned: &Planned) -> Line<'static> {
     let found = rules.iter().filter(|rule| !rule.items.is_empty()).count();
     let size: u64 = rules.iter().map(RulePlan::size).sum();
     let mut spans = vec![Span::raw(format!(
-        " {} of {} rules found {} ",
+        " Found {} in {} of {} ",
+        format::size(size),
         count(found),
-        count(rules.len()),
-        format::size(size)
+        count_rules(rules.len())
     ))];
     if !planned.errors.is_empty() {
-        spans.push(Span::raw(format!("· {} rule problems ", count(planned.errors.len()))).yellow());
+        spans.push(
+            Span::raw(format!(
+                "· {} could not load ",
+                count_rules(planned.errors.len())
+            ))
+            .yellow(),
+        );
     }
     Line::from(spans)
 }
@@ -916,7 +974,7 @@ fn selection(planned: &Planned) -> Vec<Line<'static>> {
     if chosen.is_empty() {
         return vec![
             Line::from("Nothing selected yet.").bold(),
-            Line::from("Press Space to pick a rule."),
+            Line::from("Press Space to select a rule."),
         ];
     }
     let mut lines: Vec<Line<'static>> = chosen
@@ -935,13 +993,13 @@ fn selection(planned: &Planned) -> Vec<Line<'static>> {
         ))
         .green()
         .bold(),
-        Span::raw(format!("in all, {}", items(planned.plan.selected_count()))).bold(),
+        Span::raw(format!("total · {}", items(planned.plan.selected_count()))).bold(),
     ]));
     lines
 }
 
-/// What each risk the rules use means, with how many rules have it
-fn risks(planned: &Planned) -> Vec<Line<'static>> {
+/// What each risk the rules use means, wrapped to `width`
+fn risks(planned: &Planned, width: usize) -> Vec<Line<'static>> {
     let mut lines = vec![Line::from("Risk levels").style(super::visual::HEADING)];
     for tier in [Tier::Safe, Tier::Caution, Tier::Expert] {
         let rules = planned
@@ -954,11 +1012,13 @@ fn risks(planned: &Planned) -> Vec<Line<'static>> {
             continue;
         }
         let padding = " ".repeat(9 - tier_name(tier).len());
-        lines.push(Line::from(vec![
-            tier_span(tier).bold(),
-            Span::raw(padding),
-            Span::raw(tier_meaning(tier)),
-        ]));
+        lines.extend(super::visual::hanging(
+            vec![tier_span(tier).bold(), Span::raw(padding)],
+            9,
+            tier_meaning(tier),
+            Style::default(),
+            width,
+        ));
     }
     lines
 }
@@ -971,40 +1031,38 @@ fn in_all(planned: &Planned) -> Vec<Line<'static>> {
     let size: u64 = rules.iter().map(RulePlan::size).sum();
     let selected = planned.plan.selected_size();
     let selected = Span::raw(format::size(selected));
-    let selected = if planned.plan.selected_count() == 0 {
-        selected
+    let (selected, next) = if planned.plan.selected_count() == 0 {
+        (selected, "Press Space to select rules, then Enter.")
     } else {
-        selected.green().bold()
+        (selected.green().bold(), "Press Enter to review the list.")
     };
     vec![
         Line::from("Total").style(super::visual::HEADING),
-        wide(
+        field(
             "Found",
             Span::raw(format!(
-                "{} · {} of {} rules · {}",
+                "{} · {} of {} · {}",
                 format::size(size),
                 count(found),
-                count(rules.len()),
+                count_rules(rules.len()),
                 items(found_items)
             )),
         ),
-        wide("Selected", selected),
-        wide("Next", Span::raw("Press Enter to check the list first.")),
-        wide(
+        field("Selected", selected),
+        field("Next", Span::raw(next)),
+        field(
             "Goes to",
             Span::raw("the Trash, so you can put it back").green(),
         ),
     ]
 }
 
-/// A label and its value, with room for longer labels than [`field`]
-fn wide(label: &str, value: Span<'static>) -> Line<'static> {
-    Line::from(vec![Span::raw(format!("{label:<10}")).bold(), value])
-}
-
 /// Every risk the rules use, with the space its rules found, a bar of it
-/// against everything found, and how many of its rules found something
-fn by_risk(planned: &Planned) -> Option<Vec<Line<'static>>> {
+/// against everything found when `width` has room, and how many of its
+/// rules found something
+fn by_risk(planned: &Planned, width: usize) -> Option<Vec<Line<'static>>> {
+    // Size, bar, risk and the longest count text side by side
+    let show_bar = width >= 11 + ITEM_BAR + 2 + 9 + 24;
     let rules = &planned.plan.rules;
     let total: u64 = rules.iter().map(RulePlan::size).sum();
     let mut lines = vec![Line::from("Risk").style(super::visual::HEADING)];
@@ -1023,18 +1081,23 @@ fn by_risk(planned: &Planned) -> Option<Vec<Line<'static>>> {
         };
         let padding = " ".repeat(9 - tier_name(tier).len());
         let rules_text = if found == 0 {
-            format!("{}, nothing found", count_rules(of_tier.len()))
+            format!("nothing found in {}", count_rules(of_tier.len()))
         } else {
-            format!("{} of {} found", count(found), count_rules(of_tier.len()))
+            format!(
+                "found in {} of {}",
+                count(found),
+                count_rules(of_tier.len())
+            )
         };
-        lines.push(Line::from(vec![
-            format::size_span(size, format!("{:>9}  ", format::size(size))),
-            bar,
-            Span::raw("  "),
-            tier_span(tier),
-            Span::raw(padding),
-            Span::raw(rules_text),
-        ]));
+        let mut spans = vec![format::size_span(
+            size,
+            format!("{:>9}  ", format::size(size)),
+        )];
+        if show_bar {
+            spans.extend([bar, Span::raw("  ")]);
+        }
+        spans.extend([tier_span(tier), Span::raw(padding), Span::raw(rules_text)]);
+        lines.push(Line::from(spans));
     }
     (lines.len() > 1).then_some(lines)
 }
@@ -1061,12 +1124,8 @@ fn found_nothing(planned: &Planned) -> Option<Vec<Line<'static>>> {
         return None;
     }
     Some(vec![
-        Line::from(format!(
-            "No findings · {} {}",
-            count(names.len()),
-            if names.len() == 1 { "rule" } else { "rules" }
-        ))
-        .style(super::visual::HEADING),
+        Line::from(format!("Nothing found · {}", count_rules(names.len())))
+            .style(super::visual::HEADING),
         Line::from(names.join(", ")),
     ])
 }
@@ -1141,9 +1200,9 @@ impl Screen for Clean {
                     .map_or_else(Instant::now, |estimate| estimate.started);
                 Loading {
                     title: "Deep Clean",
-                    doing: "Finding files the rules cover",
+                    doing: "Looking for files to clean",
                     progress: format!("{}s", started.elapsed().as_secs()),
-                    note: "Read-only scan. This happens once, and again when you press r.",
+                    note: "Nothing is changed while neet looks. Press r later to look again.",
                 }
                 .draw(frame, area);
                 return;
@@ -1151,9 +1210,9 @@ impl Screen for Clean {
             State::Planning { started, .. } => {
                 Loading {
                     title: "Deep Clean",
-                    doing: "Finding files the rules cover",
+                    doing: "Looking for files to clean",
                     progress: format!("{}s", started.elapsed().as_secs()),
-                    note: "Read-only scan.",
+                    note: "Nothing is changed while neet looks.",
                 }
                 .draw(frame, area);
                 return;
@@ -1163,7 +1222,7 @@ impl Screen for Clean {
                     .title(" Deep Clean ")
                     .padding(Padding::horizontal(1));
                 frame.render_widget(
-                    Paragraph::new(format!("Planning failed. {reason}"))
+                    Paragraph::new(format!("Deep Clean could not look for files. {reason}"))
                         .red()
                         .block(block),
                     area,
@@ -1187,7 +1246,11 @@ impl Screen for Clean {
                 frame,
                 cart,
                 " Selected ",
-                vec![selection(planned), risks(planned), in_all(planned)],
+                vec![
+                    selection(planned),
+                    risks(planned, usize::from(cart.width.saturating_sub(4))),
+                    in_all(planned),
+                ],
             );
             (list, detail, found_overall(planned))
         } else {
@@ -1277,7 +1340,7 @@ impl Screen for Clean {
                 "Space",
                 "Select or clear a rule. An expert rule asks you to type its ID",
             ),
-            ("Enter", "Review every path the selected rules found"),
+            ("Enter", "Review every file the selected rules found"),
             ("r", "Look again, such as after removing files yourself"),
             ("Esc", "Back to Home"),
             ("q", "Quit"),
@@ -1431,8 +1494,9 @@ mod tests {
         assert!(screen.contains("[ ]  npm cache"));
         assert!(screen.contains("caution"));
         assert!(screen.contains("none"));
-        assert!(screen.contains("in all, 1 item"));
-        assert!(screen.contains("Folder  ~/Library/Developer/Xcode/DerivedData"));
+        assert!(screen.contains("total · 1 item"));
+        assert!(screen.contains("Folder    ~/Library/"));
+        assert!(screen.contains("Xcode/DerivedData"));
         assert!(screen.contains("App-abc"));
         assert!(screen.contains("Found · 1 item · 4.1 KB"));
         assert!(screen.contains("Location"));
@@ -1487,7 +1551,7 @@ mod tests {
         select_rule(&mut clean, "npm-cache");
         press(&mut clean, KeyCode::Char(' '));
         assert!(is_selected(&clean, "npm-cache"));
-        assert!(render(&mut clean).contains("in all, 2 items"));
+        assert!(render(&mut clean).contains("total · 2 items"));
 
         press(&mut clean, KeyCode::Char(' '));
         assert!(!is_selected(&clean, "npm-cache"));
@@ -1583,7 +1647,7 @@ mod tests {
         select_rule(&mut clean, "xcode-derived-data");
         press(&mut clean, KeyCode::Char(' '));
         assert!(!is_selected(&clean, "xcode-derived-data"));
-        assert!(render(&mut clean).contains("Close com.apple.dt.Xcode first"));
+        assert!(render(&mut clean).contains("Close Xcode first"));
 
         select_rule(&mut clean, "npm-cache");
         press(&mut clean, KeyCode::Char(' '));
@@ -1619,7 +1683,7 @@ mod tests {
             let _ = wait.recv();
             make_plan(&home, None)
         });
-        assert!(render(&mut clean).contains("Finding files"));
+        assert!(render(&mut clean).contains("Looking for files"));
         go.send(()).expect("plan should still be waiting");
         let deadline = Instant::now() + Duration::from_secs(10);
         while !matches!(clean.state, State::Ready(_)) {
@@ -1666,8 +1730,8 @@ mod tests {
 
         let screen = render(&mut Clean::ready(planned));
 
-        assert!(screen.contains("1 rule problems"));
-        assert!(screen.contains("Not loaded:"));
+        assert!(screen.contains("1 rule could not load"));
+        assert!(screen.contains("Could not load"));
     }
     #[test]
     fn a_tall_screen_keeps_the_detail_boxes_in_place() {

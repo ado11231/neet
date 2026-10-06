@@ -107,6 +107,44 @@ pub fn after_cleanup(
     lines
 }
 
+/// `first` then `text` wrapped to `width` at spaces, with every line after
+/// the first indented by `indent`
+pub fn hanging(
+    first: Vec<Span<'static>>,
+    indent: usize,
+    text: &str,
+    style: Style,
+    width: usize,
+) -> Vec<Line<'static>> {
+    let used: usize = first
+        .iter()
+        .map(|span| super::format::display_width(&span.content))
+        .sum();
+    let mut lines = Vec::new();
+    let mut spans = first;
+    let mut room = width.saturating_sub(used).max(1);
+    let mut current = String::new();
+    for word in text.split(' ') {
+        // A word too long for any line is cut in the middle to fit
+        let word = super::format::shorten_middle(word, width.saturating_sub(indent).max(1));
+        let word = word.as_str();
+        let needed = super::format::display_width(&current) + usize::from(!current.is_empty());
+        if !current.is_empty() && needed + super::format::display_width(word) > room {
+            spans.push(Span::styled(std::mem::take(&mut current), style));
+            lines.push(Line::from(std::mem::take(&mut spans)));
+            spans.push(Span::raw(" ".repeat(indent)));
+            room = width.saturating_sub(indent).max(1);
+        }
+        if !current.is_empty() {
+            current.push(' ');
+        }
+        current.push_str(word);
+    }
+    spans.push(Span::styled(current, style));
+    lines.push(Line::from(spans));
+    lines
+}
+
 /// From this width, [`side_by_side`] puts its two stacks next to each other
 pub const SIDE_BY_SIDE: u16 = 100;
 
