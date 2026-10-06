@@ -9,15 +9,18 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Stylize;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Cell, Padding, Paragraph, Row, Table, TableState, Wrap};
+use ratatui::widgets::{Cell, Padding, Paragraph, Row, Table, TableState};
 
 use super::app::{Action, Context, Screen};
 use super::format;
 use super::loading::scanning;
 use super::scan::ScanStatus;
 
-/// How many characters wide each size bar is.
-const BAR_WIDTH: usize = 12;
+/// How many characters wide each size bar is, as on the other screens
+const BAR_WIDTH: usize = 10;
+
+/// Width of the labels on the right, as on the other screens
+const LABEL: usize = 10;
 
 /// Below this width the preview column is hidden.
 const MIN_PREVIEW_WIDTH: u16 = 100;
@@ -167,8 +170,8 @@ fn columns(width: u16, tree: &Tree, rows: &[NodeId], selected: bool) -> super::v
     .max(9);
     super::visual::Columns::new(
         width,
-        [(12, 0), (sizes, 0), (4, 0), (16, 1)],
-        &[0],
+        [(sizes, 0), (10, 0), (4, 0), (16, 1)],
+        &[1],
         selected,
     )
 }
@@ -176,13 +179,12 @@ fn columns(width: u16, tree: &Tree, rows: &[NodeId], selected: bool) -> super::v
 fn header(columns: &super::visual::Columns<4>) -> Row<'static> {
     columns
         .row([
-            Cell::from(""),
             Cell::from(Line::from("Size").right_aligned()),
+            Cell::from(""),
             Cell::from(Line::from("%").right_aligned()),
             Cell::from("Name"),
         ])
         .style(super::visual::HEADING)
-        .bottom_margin(1)
 }
 
 fn row(
@@ -202,7 +204,6 @@ fn row(
         name
     };
     columns.row([
-        Cell::from(format::size_bar(node.total_size, parent_total, BAR_WIDTH)),
         Cell::from(
             Line::from(format::size_span(
                 node.total_size,
@@ -210,6 +211,7 @@ fn row(
             ))
             .right_aligned(),
         ),
+        Cell::from(format::size_bar(node.total_size, parent_total, BAR_WIDTH)),
         Cell::from(
             Line::from(format!(
                 "{}%",
@@ -223,21 +225,29 @@ fn row(
 
 fn draw_folder(frame: &mut Frame, area: Rect, tree: &Tree, browser: &mut Browser) {
     let folder = tree.get(browser.current);
-    let title = format!(" {} ", display_path(tree, browser.current));
+    let sort = format!(
+        " By {} · s sorts by {} ",
+        browser.sort.label(),
+        browser.sort.next().label()
+    );
+    let title = format!(
+        " {} ",
+        format::shorten_path(
+            &display_path(tree, browser.current),
+            usize::from(area.width)
+                .saturating_sub(format::display_width(&sort) + 6)
+                .max(10),
+        )
+    );
     let summary = format!(
-        " {} · {} {} · sort: {} ",
-        format::size(folder.total_size),
-        format::count(folder.total_items),
-        if folder.total_items == 1 {
-            "item"
-        } else {
-            "items"
-        },
-        browser.sort.label()
+        " {} · {} ",
+        items(folder.total_items),
+        format::size(folder.total_size)
     );
     let block = super::visual::block()
         .title(title)
-        .title_bottom(Line::from(summary).right_aligned())
+        .title(Line::from(sort).right_aligned())
+        .title_bottom(Line::from(summary))
         .padding(Padding::horizontal(1));
 
     if browser.rows.is_empty() {
@@ -258,124 +268,227 @@ fn draw_folder(frame: &mut Frame, area: Rect, tree: &Tree, browser: &mut Browser
     frame.render_stateful_widget(table, area, &mut browser.list);
 }
 
-fn draw_preview(frame: &mut Frame, area: Rect, tree: &Tree, browser: &Browser) {
-    let block = super::visual::block().padding(Padding::horizontal(1));
+/// The selected item on the right, what is inside it when it is a folder,
+/// and the steps, `with_steps` when they are not on the left already
+fn draw_preview(frame: &mut Frame, area: Rect, tree: &Tree, browser: &Browser, with_steps: bool) {
     let Some(id) = browser.selected() else {
-        frame.render_widget(block, area);
+        frame.render_widget(super::visual::block(), area);
         return;
     };
-    let node = tree.get(id);
-    let block = block.title(
-        Line::from(format!(" {} ", display_name(tree, id)))
-            .bold()
-            .fg(super::visual::ACCENT),
-    );
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let details = about(tree, id, browser);
-    let height = super::visual::wrapped_rows(&details, inner.width);
-    let [top, rest] =
-        Layout::vertical([Constraint::Length(height), Constraint::Fill(1)]).areas(inner);
-    frame.render_widget(Paragraph::new(details).wrap(Wrap { trim: false }), top);
-
-    if node.kind != NodeKind::Directory || rest.height < 3 {
-        return;
+    let width = usize::from(area.width.saturating_sub(4));
+    let mut sections = vec![about(tree, id, browser, width)];
+    if tree.get(id).kind == NodeKind::Directory {
+        sections.push(inside(tree, id, browser.sort, width));
     }
-    let rows = sorted_children(tree, id, browser.sort);
-    let [heading, list] =
-        Layout::vertical([Constraint::Length(2), Constraint::Fill(1)]).areas(rest);
-    let title = if rows.is_empty() {
-        "Empty folder.".to_string()
-    } else {
-        format!("Inside, by {}", browser.sort.label())
-    };
-    frame.render_widget(
-        Paragraph::new(vec![Line::default(), Line::from(title)]),
-        heading,
-    );
-    // This table is already inside the preview border and has no selection gutter.
-    let columns = columns(list.width.saturating_add(4), tree, &rows, false);
-    let items = rows
-        .iter()
-        .map(|&child| row(tree, child, node.total_size, &columns));
-    frame.render_widget(
-        Table::new(items, columns.widths())
-            .column_spacing(2)
-            .header(if list.height >= 4 {
-                header(&columns)
-            } else {
-                Row::default()
-            }),
-        list,
+    if with_steps {
+        sections.push(steps(width));
+    }
+    super::visual::sections(
+        frame,
+        area,
+        &format::shorten_middle(&display_name(tree, id), width.saturating_sub(2)),
+        sections,
     );
 }
 
-/// What the selected item is, how big, and whether neet can clean it.
-fn about(tree: &Tree, id: NodeId, browser: &Browser) -> Vec<Line<'static>> {
+/// What the selected folder holds, largest first, with a bar against the
+/// folder, as many as fit
+fn inside(tree: &Tree, id: NodeId, sort: Sort, width: usize) -> Vec<Line<'static>> {
+    let node = tree.get(id);
+    let rows = sorted_children(tree, id, sort);
+    let mut lines =
+        vec![Line::from(format!("Inside · by {}", sort.label())).style(super::visual::HEADING)];
+    if rows.is_empty() {
+        lines.push(Line::from("Nothing, the folder is empty."));
+        return lines;
+    }
+    let room = width.saturating_sub(13 + BAR_WIDTH);
+    for &child in rows.iter().take(MAX_INSIDE) {
+        let size = tree.get(child).total_size;
+        let name = Span::raw(format::shorten_middle(&display_name(tree, child), room));
+        lines.push(Line::from(vec![
+            format::size_span(size, format!("{:>9}  ", format::size(size))),
+            format::size_bar(size, node.total_size, BAR_WIDTH),
+            Span::raw("  "),
+            if tree.get(child).kind == NodeKind::Directory {
+                name.fg(super::visual::ACCENT)
+            } else {
+                name
+            },
+        ]));
+    }
+    if rows.len() > MAX_INSIDE {
+        lines.push(Line::from(format!(
+            "{:>9}  & {} more",
+            "",
+            format::count(u64::try_from(rows.len() - MAX_INSIDE).unwrap_or(u64::MAX))
+        )));
+    }
+    lines
+}
+
+/// The folder being listed: where it is, its size, how many items it
+/// holds, and its largest item
+fn this_folder(tree: &Tree, browser: &Browser, width: usize) -> Vec<Line<'static>> {
+    let folder = tree.get(browser.current);
+    let mut lines = vec![
+        field(
+            "Location",
+            Span::raw(format::shorten_path(
+                &display_path(tree, browser.current),
+                width.saturating_sub(LABEL),
+            ))
+            .fg(super::visual::ACCENT),
+        ),
+        field(
+            "Size",
+            format::size_span(folder.total_size, format::size(folder.total_size)),
+        ),
+        field("Items", Span::raw(format::count(folder.total_items))),
+    ];
+    let largest = folder
+        .children
+        .iter()
+        .copied()
+        .max_by_key(|&child| tree.get(child).total_size);
+    if let Some(largest) = largest {
+        let share = format!(
+            " · {}%",
+            format::percent(tree.get(largest).total_size, folder.total_size)
+        );
+        let name = format::shorten_middle(
+            &display_name(tree, largest),
+            width.saturating_sub(LABEL + share.len()),
+        );
+        lines.push(field("Largest", Span::raw(format!("{name}{share}"))));
+    }
+    lines
+}
+
+/// At most this many items are listed in the Inside box
+const MAX_INSIDE: usize = 12;
+
+/// How to move around, and that nothing is removed here
+fn steps(width: usize) -> Vec<Line<'static>> {
+    let mut lines = vec![Line::from("Steps").style(super::visual::HEADING)];
+    for (number, text) in [
+        "Press → or Enter to open a folder.",
+        "Press ← to go back up.",
+        "Press s to sort by size, name or items.",
+        "Disk only shows files. Clean them with Deep Clean, Remove App or Large Files.",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        lines.extend(super::visual::hanging(
+            vec![
+                Span::raw(format!("{}. ", number + 1))
+                    .fg(super::visual::ACCENT)
+                    .bold(),
+            ],
+            3,
+            text,
+            ratatui::style::Style::default(),
+            width,
+        ));
+    }
+    lines
+}
+
+/// `1 item` or `27 items`
+fn items(value: u64) -> String {
+    format!(
+        "{} {}",
+        format::count(value),
+        if value == 1 { "item" } else { "items" }
+    )
+}
+
+/// A label and its value, lined up with the other labels
+fn field(label: &str, value: Span<'static>) -> Line<'static> {
+    Line::from(vec![Span::raw(format!("{label:<LABEL$}")).bold(), value])
+}
+
+/// What the selected item is, how big, and whether neet can clean it, with
+/// values fitted to `width`
+fn about(tree: &Tree, id: NodeId, browser: &Browser, width: usize) -> Vec<Line<'static>> {
     let node = tree.get(id);
     let parent_total = tree.get(browser.current).total_size;
-    let mut lines = vec![Line::from(display_path(tree, id))];
-    if let Some(meaning) = meaning(tree, id) {
-        lines.push(Line::default());
-        lines.push(Line::from(meaning));
-    }
-    lines.push(Line::default());
-
-    let label = |text: &str| Span::raw(format!("{text:<9}")).bold();
-    lines.push(Line::from(vec![
-        label("Size"),
-        format::size_span(node.total_size, format::size(node.total_size)),
-        Span::raw(format!(
-            "  {}% of {}",
-            format::percent(node.total_size, parent_total),
-            display_path(tree, browser.current)
-        )),
-    ]));
+    let path = display_path(tree, id);
+    let folder = path.rsplit_once('/').map_or("~", |(parent, _)| parent);
+    let mut lines = vec![
+        field(
+            "Folder",
+            Span::raw(format::shorten_path(folder, width.saturating_sub(LABEL)))
+                .fg(super::visual::ACCENT),
+        ),
+        field(
+            "Size",
+            format::size_span(node.total_size, format::size(node.total_size)),
+        ),
+        field(
+            "Share",
+            Span::raw(format!(
+                "{}% of this folder",
+                format::percent(node.total_size, parent_total)
+            )),
+        ),
+    ];
+    let mut hint = meaning(tree, id);
     match node.kind {
-        NodeKind::Directory => lines.push(Line::from(vec![
-            label("Items"),
-            Span::raw(format::count(node.total_items)),
-        ])),
-        NodeKind::Symlink => lines.push(Line::from(vec![
-            label("Kind"),
-            Span::raw("Link, not followed"),
-        ])),
-        NodeKind::File | NodeKind::Other => {}
+        NodeKind::Directory => {
+            lines.push(field("Items", Span::raw(format::count(node.total_items))));
+        }
+        NodeKind::Symlink => lines.push(field("Type", Span::raw("a shortcut, not followed"))),
+        NodeKind::File | NodeKind::Other => {
+            let (kind, about) = super::large::kind_of(&node.name.to_string_lossy());
+            lines.push(field("Type", Span::raw(kind)));
+            hint = hint.or(about);
+        }
     }
     if let Some(changed) = node
         .modified
         .and_then(|modified| SystemTime::now().duration_since(modified).ok())
     {
-        lines.push(Line::from(vec![
-            label("Changed"),
-            Span::raw(format::age(changed)),
-        ]));
+        lines.push(field("Changed", Span::raw(format::age(changed))));
     }
-    lines.push(Line::default());
-    lines.push(cleanable(&tree.path(id), browser.roots.as_ref()));
+    let mut cleanup = field("Cleanup", Span::raw(""));
+    cleanup
+        .spans
+        .extend(cleanable(&tree.path(id), browser.roots.as_ref()).spans);
+    lines.push(cleanup);
+    if let Some(hint) = hint {
+        lines.push(Line::default());
+        lines.extend(super::visual::hanging(
+            Vec::new(),
+            0,
+            hint,
+            ratatui::style::Style::default(),
+            width,
+        ));
+    }
     lines
 }
 
 /// Whether neet cleans an item, in one colored line.
 fn cleanable(path: &std::path::Path, roots: Option<&CleanupRoots>) -> Line<'static> {
     let Some(roots) = roots else {
-        return Line::from("Home unavailable. Cleanup blocked.");
+        return Line::from("unknown, the home folder could not be read");
     };
     match roots.validate_deletable(path) {
         Ok(_) => Line::from(vec![
             Span::raw("✓ ").green().bold(),
-            Span::raw("Inside cleanup folders.").green(),
+            Span::raw("in a folder neet cleans").green(),
         ]),
         Err(SafetyError::IsRoot) => Line::from(vec![
             Span::raw("◆ ").yellow(),
-            Span::raw("Cleanup root. Only contents can be moved.").yellow(),
+            Span::raw("a folder neet cleans; only what's inside can go").yellow(),
         ]),
         Err(SafetyError::Protected) => Line::from(vec![
             Span::raw("✗ ").red().bold(),
-            Span::raw("Protected. Removal blocked.").red(),
+            Span::raw("protected, neet never removes it").red(),
         ]),
-        Err(_) => Line::from(vec![Span::raw("· "), Span::raw("Outside cleanup folders.")]),
+        Err(_) => Line::from("not a folder neet cleans"),
     }
 }
 
@@ -502,8 +615,26 @@ impl Screen for Disk {
                     let [folder, preview] =
                         Layout::horizontal([Constraint::Percentage(55), Constraint::Fill(1)])
                             .areas(area);
-                    draw_folder(frame, folder, tree, browser);
-                    draw_preview(frame, preview, tree, browser);
+                    // The table, only as tall as its rows, and boxes about
+                    // the folder below it, when there is room
+                    let table = u16::try_from(browser.rows.len().max(1) + 3).unwrap_or(u16::MAX);
+                    let below = folder.height >= table.saturating_add(10);
+                    if below {
+                        let [table, rest] =
+                            Layout::vertical([Constraint::Length(table), Constraint::Fill(1)])
+                                .areas(folder);
+                        draw_folder(frame, table, tree, browser);
+                        let width = usize::from(rest.width.saturating_sub(4));
+                        super::visual::sections(
+                            frame,
+                            rest,
+                            "This folder",
+                            vec![this_folder(tree, browser, width), steps(width)],
+                        );
+                    } else {
+                        draw_folder(frame, folder, tree, browser);
+                    }
+                    draw_preview(frame, preview, tree, browser, !below);
                 } else {
                     draw_folder(frame, area, tree, browser);
                 }
@@ -515,7 +646,7 @@ impl Screen for Disk {
                     .title(" Disk ")
                     .padding(Padding::horizontal(1));
                 frame.render_widget(
-                    Paragraph::new(format!("Scan failed: {reason}"))
+                    Paragraph::new(format!("The scan failed: {reason}"))
                         .red()
                         .wrap(ratatui::widgets::Wrap { trim: true })
                         .block(block),
@@ -552,7 +683,7 @@ impl Screen for Disk {
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
         &[
-            ("↑ ↓  j k", "Move selection"),
+            ("↑ ↓  j k", "Move between items"),
             ("→  Enter  l", "Open the selected folder"),
             ("←  h", "Go up to the parent folder"),
             ("s", "Sort by size, name, or items"),
@@ -696,7 +827,7 @@ mod tests {
         let screen = render(&mut disk, &scan, 120);
         assert!(screen.contains("big/"));
         assert!(screen.contains("inner.bin"));
-        assert!(screen.contains("sort: size"));
+        assert!(screen.contains("By size"));
 
         let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
         disk.handle_key(
@@ -747,8 +878,8 @@ mod tests {
             .unwrap();
         let buffer = terminal.backend().buffer();
 
-        // The first row follows the border, header, and header spacing.
-        let arrow = &buffer[(2, 3)];
+        // The first row follows the border and the header.
+        let arrow = &buffer[(2, 2)];
         assert_eq!(arrow.symbol(), "▸");
         assert!(arrow.modifier.contains(ratatui::style::Modifier::BOLD));
         assert!(!arrow.modifier.contains(ratatui::style::Modifier::REVERSED));
@@ -764,10 +895,10 @@ mod tests {
         let roots = CleanupRoots::new(dir.path()).expect("roots should be made");
         let status = |path: &str| cleanable(&dir.path().join(path), Some(&roots)).to_string();
 
-        assert!(status("Library/Caches/app").contains("Inside cleanup folders"));
-        assert!(status("Library/Caches").contains("Cleanup root"));
-        assert!(status("Documents").contains("Protected"));
-        assert!(status("notes").contains("Outside cleanup folders"));
+        assert!(status("Library/Caches/app").contains("in a folder neet cleans"));
+        assert!(status("Library/Caches").contains("only what's inside can go"));
+        assert!(status("Documents").contains("protected"));
+        assert!(status("notes").contains("not a folder neet cleans"));
     }
 
     #[test]
