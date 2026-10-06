@@ -237,32 +237,32 @@
 + Deep Clean ------------------------------------------+  + Homebrew downloads --------------------+
 |        Rule                Risk     Items    Size    |  | Installers and bottles Homebrew        |
 |                                                      |  | downloaded. Installed programs stay.   |
-|   [✓]  npm cache           caution        3  4.7 GB  |  | Risk    caution  You may need to ...   |
-| > [✓]  Homebrew downloads  caution       14  1.2 GB  |  | Folder  ~/Library/Caches/Homebrew      |
+|   [✓]  npm cache           caution        3  4.7 GB  |  | Risk      caution  May need a ...      |
+| > [✓]  Homebrew downloads  caution       14  1.2 GB  |  | Folder    ~/Library/Caches/Homebrew    |
 |   [ ]  User logs           caution       27 83.0 MB  |  +----------------------------------------+
-|        Yarn cache          caution     none       .  |  + Found . 14 items . 1.2 GB -----------+
-+ 10 of 14 rules found 8.8 GB -------------------------+  |    1.1 GB  ##########  downloads       |
+|        Yarn cache          caution        .    none  |  + Found . 14 items . 1.2 GB -----------+
++ Found 8.8 GB in 10 of 14 rules ----------------------+  |    1.1 GB  ##########  downloads       |
 + Selected --------------------------------------------+  |   50.8 MB  ..........  bootsnap        |
-|    4.7 GB  npm cache                                 |  +------------- Items go to the Trash ----+
-|    1.2 GB  Homebrew downloads                        |  + Skipped . 179 left in place ---------+
-|                                                      |  | 179 paths  a link, left in place       |
-|    6.0 GB  total, in 17 items                        |  +----------------------------------------+
+|    4.7 GB  npm cache                                 |  +--------------- Goes to the Trash ------+
+|    1.2 GB  Homebrew downloads                        |  + Skipped . 179 -------------------------+
+|                                                      |  | 179 items  a shortcut, kept            |
+|    6.0 GB  total . 17 items                          |  +----------------------------------------+
 |                                                      |  + Location -----------------------------+
-| Press Enter to see every path first.                 |  |    4.7 GB  ##########  npm cache       |
+|                                                      |  |    4.7 GB  ##########  npm cache       |
 |                                                      |  |    1.2 GB  ###.......  Homebrew ...    |
-|                                                      |  |    8.8 GB  in all . 6.0 GB selected    |
+|                                                      |  |    8.8 GB  total . 6.0 GB selected     |
 +------------------------------------------------------+  +----------------------------------------+
 ```
 
 * neet looks for everything the rules cover once, in the background, as soon as it opens. Deep Clean opens on that result, so going back and opening it again does not look again. If Deep Clean opens before the look is done, the loading box shows a timer. Nothing changes while it looks.
 * neet looks again after a cleanup, and when you press `r`, such as after removing files yourself.
-* **Left, top, 55% of the width:** a table of rules, largest first, with a checkbox, the rule's name, its risk level, how many items it found, and their size. Rules that found nothing are listed last with no checkbox. The bottom edge shows what every rule found together.
-* **Left, bottom:** the Selected box. Each selected rule with its size, then the total. Before anything is selected, it says how selecting works. Below that, **Risk levels**, for the risks the rules use, and **Total**: everything found, what is selected, that `Enter` shows every path first, and that it goes to the Trash. Each is its own box, as in Quick Clean.
+* **Left, top, 55% of the width:** a table of rules, largest first, with a checkbox, the rule's name, its risk level, how many items it found, and their size. Rules that found nothing are listed last with no checkbox, a `·` for items and `none` for size. The bottom edge shows what every rule found together.
+* **Left, bottom:** the Selected box. Each selected rule with its size, then the total. Before anything is selected, it says how selecting works. Below that, **Risk levels**, for the risks the rules use, and **Total**: everything found, what is selected, the next key to press, and that it goes to the Trash. Each is its own box, as in Quick Clean.
 * **Right:** the rule the arrow is on, in boxes that fit what they hold:
-  1. **Top,** titled with the rule's name: what it removes, its risk level and what that means on one line, apps to close first, how recent files it keeps, and the folder it looks in, in blue.
+  1. **Top,** titled with the rule's name: what it removes, its risk level and what that means, apps to close first by name, how recent files it keeps, and the folder it looks in, in blue. Labels share one width, and a value that wraps starts its next line under the value, not under the label.
   2. **Found:** every path it found, largest first, with its size and a bar against the largest. When they share a folder, only their names are shown.
-  3. **Skipped:** only when something was skipped. Every path with the reason. A reason shared by more than two paths is shown once, with how many. It takes at most a third of the height.
-  4. **Location:** every rule that found something, largest first, with a bar, green when selected. The rule the arrow is on is bold. The last line adds up everything found and what is selected. Below it, when there is room, **Risk**: each risk the rules use, with the space its rules found, a bar of it against everything found in the risk's color, and how many of its rules found something; and **No findings**: the rules that looked and found nothing, by name. On a screen of 34 rows or more, every box on the right keeps its size whichever rule is selected: the rule's box is as tall as the longest rule's text, Location keeps the bottom 45% of the column, and the found box fills the rest, with what was skipped as its own section below what was found. Otherwise it takes whatever room is left, and is left out when there is none.
+  3. **Skipped:** only when something was skipped. Every path with the reason, the reasons lined up in one column. A reason shared by more than two paths is shown once, with how many. It takes at most a third of the height.
+  4. **Location:** every rule that found something, largest first, with a bar, green when selected. The rule the arrow is on is bold. The last line adds up everything found and what is selected. Below it, when there is room, **Risk**: each risk the rules use, with the space its rules found, a bar of it against everything found in the risk's color, and how many of its rules found something; and **Nothing found**: the rules that looked and found nothing, by name. On a narrow column Risk leaves out its bars so each risk stays on one line. On a screen of 34 rows or more, every box on the right keeps its size whichever rule is selected: the rule's box is as tall as the longest rule's text, Location keeps the bottom 45% of the column, and the found box fills the rest, with what was skipped as its own section below what was found. Otherwise it takes whatever room is left, and is left out when there is none.
   5. If a list is too long, its last line says how many more there are.
 * When the terminal is narrower than 100 columns, the details go under the list, and the list's bottom edge shows the selected total instead.
 * A selected checkbox is a green `[✓]`. The arrow's row shows its name in bold, so the checkbox and risk keep their colors.
