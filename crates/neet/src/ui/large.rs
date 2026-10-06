@@ -50,8 +50,12 @@ const SIZE_WIDTH: u16 = 9;
 /// Width of the bar beside each size
 const BAR_WIDTH: u16 = 8;
 
-/// Width of the bar beside each folder on the right
-const FOLDER_BAR: u16 = 6;
+/// Width of the bars on the right, as on the other screens
+const SIDE_BAR: u16 = 10;
+
+/// Width of the labels, such as `Changed`, as on the other screens
+const LABEL: u16 = 10;
+const LABEL_USIZE: usize = LABEL as usize;
 
 /// Width of the last changed column, such as `11 months ago`
 const AGE_WIDTH: u16 = 13;
@@ -68,7 +72,7 @@ const GAP: u16 = 2;
 const MIN_SIDE_WIDTH: u16 = 120;
 
 /// Width of the right side
-const SIDE_WIDTH: u16 = 50;
+const SIDE_WIDTH: u16 = 56;
 
 /// Lists files above a size, and optionally unchanged for a while, from the
 /// home folder scan. Finding a file does not make it a cleanup target.
@@ -115,36 +119,17 @@ impl LargeFiles {
     }
 
     /// The two filters, every choice shown and the current one marked, so
-    /// `s` and `a` say what they do
+    /// `s` and `a` say what they do. A narrow screen shows only the current
+    /// choice.
     fn draw_filters(&self, frame: &mut Frame, area: Rect) {
-        if area.width < 100 {
-            let lines = vec![
-                Line::from(vec![
-                    Span::raw("Size ≥ "),
-                    Span::raw(SIZES[self.size].1)
-                        .fg(super::visual::ACCENT)
-                        .bold(),
-                    Span::raw("    s change"),
-                ]),
-                Line::from(vec![
-                    Span::raw("Unchanged: "),
-                    Span::raw(AGES[self.age].1).fg(super::visual::ACCENT).bold(),
-                    Span::raw("    a change"),
-                ]),
-            ];
-            frame.render_widget(
-                Paragraph::new(lines).block(
-                    super::visual::block()
-                        .title(" Large Files ")
-                        .padding(Padding::horizontal(1)),
-                ),
-                area,
-            );
-            return;
-        }
-        let choices = |labels: Vec<String>, current: usize, key: &'static str, label: &str| {
-            let mut spans = vec![Span::raw(format!("{label:<11}")).bold()];
-            for (index, text) in labels.into_iter().enumerate() {
+        // The label, every choice, and the key, with the border & padding
+        let every = area.width >= LABEL + 60 + 14 + 4;
+        let choices = |labels: &[&str], current: usize| -> Line<'static> {
+            if !every {
+                return Line::from(Span::raw(labels[current].to_string()).green().bold());
+            }
+            let mut spans = Vec::new();
+            for (index, text) in labels.iter().enumerate() {
                 spans.push(if index == current {
                     Span::raw(format!("[{text}]")).green().bold()
                 } else {
@@ -152,32 +137,42 @@ impl LargeFiles {
                 });
                 spans.push(Span::raw(" "));
             }
-            spans.push(Span::raw("  "));
-            spans.push(Span::raw(key).bold());
-            spans.push(Span::raw(" to change"));
             Line::from(spans)
         };
-        let lines = vec![
-            choices(
-                SIZES
-                    .iter()
-                    .map(|(_, label)| (*label).to_string())
-                    .collect(),
-                self.size,
-                "s",
-                "At least",
-            ),
-            choices(
-                AGES.iter().map(|(_, label)| (*label).to_string()).collect(),
-                self.age,
-                "a",
-                "Unchanged",
-            ),
+        let key = |key: &'static str, what: &'static str| {
+            Line::from(vec![
+                Span::raw(key).fg(super::visual::ACCENT).bold(),
+                Span::raw(format!(" {what}")),
+            ])
+            .right_aligned()
+        };
+        let sizes: Vec<&str> = SIZES.iter().map(|(_, label)| *label).collect();
+        let ages: Vec<&str> = AGES.iter().map(|(_, label)| *label).collect();
+        let rows = vec![
+            Row::new([
+                Cell::from(Span::raw("Size").bold()),
+                Cell::from(choices(&sizes, self.size)),
+                Cell::from(key("s", "changes size")),
+            ]),
+            Row::new([
+                Cell::from(Span::raw("Unchanged").bold()),
+                Cell::from(choices(&ages, self.age)),
+                Cell::from(key("a", "changes age")),
+            ]),
         ];
         frame.render_widget(
-            Paragraph::new(lines).block(
+            Table::new(
+                rows,
+                [
+                    Constraint::Length(LABEL),
+                    Constraint::Fill(1),
+                    Constraint::Length(14),
+                ],
+            )
+            .column_spacing(0)
+            .block(
                 super::visual::block()
-                    .title(" Large Files ")
+                    .title(" Filters ")
                     .padding(Padding::horizontal(1)),
             ),
             area,
@@ -187,7 +182,7 @@ impl LargeFiles {
     fn draw_table(&mut self, frame: &mut Frame, area: Rect, tree: &Tree, found: &[NodeId]) {
         let total: u64 = found.iter().map(|&id| tree.get(id).own_size).sum();
         let mut summary = vec![
-            Span::raw(" "),
+            Span::raw(" Found "),
             Span::raw(format!(
                 "{} {}",
                 format::count(u64::try_from(found.len()).unwrap_or(u64::MAX)),
@@ -196,17 +191,17 @@ impl LargeFiles {
             .bold(),
             Span::raw(" · "),
             format::size_span(total, format::size(total)).bold(),
-            Span::raw(" in all "),
+            Span::raw(" "),
         ];
         if found.len() > MAX_ROWS {
             summary.push(Span::raw(format!(
-                "· the largest {} shown ",
+                "· largest {} shown ",
                 format::count(u64::try_from(MAX_ROWS).unwrap_or(u64::MAX))
             )));
         }
         let block = super::visual::block()
-            .title(" Files ")
-            .title_bottom(Line::from(summary).right_aligned())
+            .title(" Large Files ")
+            .title_bottom(Line::from(summary))
             .padding(Padding::horizontal(1));
         if found.is_empty() {
             let inner = block.inner(area);
@@ -269,8 +264,7 @@ impl LargeFiles {
                 Cell::from("Name"),
                 Cell::from("Folder"),
             ])
-            .style(super::visual::HEADING)
-            .bottom_margin(1);
+            .style(super::visual::HEADING);
         let table = Table::new(rows, columns.widths())
             .header(header)
             .column_spacing(GAP)
@@ -302,7 +296,11 @@ impl LargeFiles {
         let mut lines = vec![
             field(
                 "Folder",
-                Span::raw(format::shorten_path(folder, width.saturating_sub(9))),
+                Span::raw(format::shorten_path(
+                    folder,
+                    width.saturating_sub(LABEL_USIZE),
+                ))
+                .fg(super::visual::ACCENT),
             ),
             field(
                 "Size",
@@ -320,63 +318,91 @@ impl LargeFiles {
         ];
         if let Some(about) = about {
             lines.push(Line::default());
-            lines.push(Line::from(about));
+            lines.extend(super::visual::hanging(
+                Vec::new(),
+                0,
+                about,
+                ratatui::style::Style::default(),
+                width,
+            ));
         }
         Some((name, lines))
     }
 
-    /// The right side: the selected file, sized to fit, and where the files
-    /// are below it
+    /// The right side: the selected file, sized to fit, then the totals,
+    /// where the files are, and what kinds they are
     fn draw_side(&self, frame: &mut Frame, area: Rect, tree: &Tree, found: &[NodeId]) {
         let width = usize::from(area.width.saturating_sub(4));
-        let Some((name, lines)) = self.selected_details(tree, found, width) else {
-            Self::draw_where(frame, area, tree, found);
-            return;
+        let area = match self.selected_details(tree, found, width) {
+            Some((name, lines)) => {
+                let height = u16::try_from(rows_used(&lines, width) + 2).unwrap_or(u16::MAX);
+                let [selected, rest] =
+                    Layout::vertical([Constraint::Length(height), Constraint::Fill(1)]).areas(area);
+                frame.render_widget(
+                    Paragraph::new(lines).wrap(Wrap { trim: true }).block(
+                        super::visual::block()
+                            .title(format!(
+                                " {} ",
+                                format::shorten_middle(&name, width.saturating_sub(2))
+                            ))
+                            .title_bottom(Line::from(" Enter shows it in Disk ").right_aligned())
+                            .padding(Padding::horizontal(1)),
+                    ),
+                    selected,
+                );
+                rest
+            }
+            None => area,
         };
-        let height = u16::try_from(rows_used(&lines, width) + 2).unwrap_or(u16::MAX);
-        let [selected, places] =
-            Layout::vertical([Constraint::Length(height), Constraint::Fill(1)]).areas(area);
-        frame.render_widget(
-            Paragraph::new(lines).wrap(Wrap { trim: true }).block(
-                super::visual::block()
-                    .title(Line::from(format!(" {name} ")).bold())
-                    .title_bottom(Line::from(" Enter shows it in Disk ").right_aligned())
-                    .padding(Padding::horizontal(1)),
-            ),
-            selected,
-        );
-        Self::draw_where(frame, places, tree, found);
+        Self::draw_where(frame, area, tree, found, self.filter_text());
     }
 
-    /// Where the files found are, by folder, and what kinds of file they
-    /// are, each largest first. The folders take the room the kinds leave.
-    fn draw_where(frame: &mut Frame, area: Rect, tree: &Tree, found: &[NodeId]) {
+    /// The filters in words, such as `100 MB or more, any age`
+    fn filter_text(&self) -> String {
+        let age = if self.age == 0 {
+            "any age".to_string()
+        } else {
+            format!("unchanged for {}", AGES[self.age].1)
+        };
+        format!("{} or more, {age}", SIZES[self.size].1)
+    }
+
+    /// What was found in all, where the files are by folder, and what kinds
+    /// of file they are, each largest first. The folders take the room the
+    /// others leave.
+    fn draw_where(frame: &mut Frame, area: Rect, tree: &Tree, found: &[NodeId], filters: String) {
         let groups = by_folder(tree, found);
+        let width = usize::from(area.width.saturating_sub(4));
+        let total: u64 = found.iter().map(|&id| tree.get(id).own_size).sum();
+        let totals = vec![
+            Line::from("Total").style(super::visual::HEADING),
+            field(
+                "Found",
+                Span::raw(format!("{} · {}", format::size(total), files(found.len()))),
+            ),
+            field("Showing", Span::raw(filters)),
+        ];
         if groups.is_empty() {
-            let block = super::visual::block()
-                .title(" Location ")
-                .padding(Padding::horizontal(1));
-            let inner = block.inner(area);
-            frame.render_widget(block, area);
-            centered(frame, inner, "Nothing to list.");
+            super::visual::sections(frame, area, "", vec![totals]);
             return;
         }
-        let width = usize::from(area.width.saturating_sub(4));
         let kinds = kind_lines(tree, found, width);
-        let inner = usize::from(area.height.saturating_sub(2));
-        // A folder a row. The types go in a box below, its heading as the
-        // title, when there is room for them and at least a few folders.
+        // Each box has a border above & below, and the folders get what is
+        // left, when that is at least a few
+        let inner = usize::from(area.height)
+            .saturating_sub(totals.len() + 1)
+            .saturating_sub(2);
         let with_kinds = inner.saturating_sub(kinds.len() + 1) >= 5;
         let rows = if with_kinds {
-            inner - kinds.len() - 1
+            inner - kinds.len() - 1 - 1
         } else {
-            inner
+            inner.saturating_sub(1)
         };
-        let mut sections = vec![folder_lines(&groups, width, rows)];
+        let mut sections = vec![totals, folder_lines(&groups, width, rows)];
         if with_kinds {
             sections.push(kinds);
         }
-        super::visual::sections(frame, area, " Location ", sections);
+        super::visual::sections(frame, area, "", sections);
     }
 }
 
@@ -389,12 +415,12 @@ fn folder_lines(groups: &[(String, u64)], width: usize, rows: usize) -> Vec<Line
         .take(rows)
         .map(|(folder, size)| {
             Line::from(vec![
-                format::size_span(*size, format!("{:>9} ", format::size(*size))),
-                format::size_bar(*size, largest, usize::from(FOLDER_BAR)),
-                Span::raw(" "),
+                format::size_span(*size, format!("{:>9}  ", format::size(*size))),
+                format::size_bar(*size, largest, usize::from(SIDE_BAR)),
+                Span::raw("  "),
                 Span::raw(format::shorten_path(
                     folder,
-                    width.saturating_sub(11 + usize::from(FOLDER_BAR)),
+                    width.saturating_sub(13 + usize::from(SIDE_BAR)),
                 )),
             ])
         })
@@ -402,11 +428,12 @@ fn folder_lines(groups: &[(String, u64)], width: usize, rows: usize) -> Vec<Line
     if groups.len() > lines.len() && !lines.is_empty() {
         lines.pop();
         lines.push(Line::from(format!(
-            "{:>9} & {} more",
+            "{:>9}  & {} more",
             "",
             format::count(u64::try_from(groups.len() - lines.len()).unwrap_or(u64::MAX))
         )));
     }
+    lines.insert(0, Line::from("Location").style(super::visual::HEADING));
     lines
 }
 
@@ -431,11 +458,11 @@ fn kind_lines(tree: &Tree, found: &[NodeId], width: usize) -> Vec<Line<'static>>
     lines.extend(kinds.into_iter().map(|(kind, size, count)| {
         let files = if count == 1 { "file" } else { "files" };
         let count = format!("{:>5} {files:<5}", format::count(count));
-        let name = width.saturating_sub(11 + usize::from(FOLDER_BAR) + count.len() + 1);
+        let name = width.saturating_sub(13 + usize::from(SIDE_BAR) + count.len() + 1);
         Line::from(vec![
-            format::size_span(size, format!("{:>9} ", format::size(size))),
-            format::size_bar(size, largest, usize::from(FOLDER_BAR)),
-            Span::raw(" "),
+            format::size_span(size, format!("{:>9}  ", format::size(size))),
+            format::size_bar(size, largest, usize::from(SIDE_BAR)),
+            Span::raw("  "),
             Span::raw(format!("{:<name$}", format::shorten_middle(kind, name))),
             Span::raw(" "),
             Span::raw(count).fg(super::visual::ACCENT),
@@ -444,9 +471,9 @@ fn kind_lines(tree: &Tree, found: &[NodeId], width: usize) -> Vec<Line<'static>>
     lines
 }
 
-/// The selected file in three lines, for a screen too narrow for the right
-/// side: its name, its folder, and its age and type
-fn compact_lines(tree: &Tree, id: NodeId, width: usize) -> Vec<Line<'static>> {
+/// The selected file's name, for the title, and three lines for a screen
+/// too narrow for the right side: its folder, its size, and its age and type
+fn compact_lines(tree: &Tree, id: NodeId, width: usize) -> (String, Vec<Line<'static>>) {
     let node = tree.get(id);
     let path = display_path(tree, id);
     let folder = path.rsplit_once('/').map_or("~", |(parent, _)| parent);
@@ -455,24 +482,45 @@ fn compact_lines(tree: &Tree, id: NodeId, width: usize) -> Vec<Line<'static>> {
         .modified
         .and_then(|time| SystemTime::now().duration_since(time).ok())
         .map_or_else(|| "unknown".to_string(), format::age);
-    vec![
-        Line::from(format::shorten_middle(&name, width))
-            .fg(super::visual::ACCENT)
-            .bold(),
+    let lines = vec![
         field(
             "Folder",
-            Span::raw(format::shorten_path(folder, width.saturating_sub(9))),
+            Span::raw(format::shorten_path(
+                folder,
+                width.saturating_sub(LABEL_USIZE),
+            ))
+            .fg(super::visual::ACCENT),
+        ),
+        field(
+            "Size",
+            format::size_span(node.own_size, format::size(node.own_size)),
         ),
         field(
             "Changed",
             Span::raw(format!("{changed} · {}", kind_of(&name).0)),
         ),
-    ]
+    ];
+    (
+        format::shorten_middle(&name, width.saturating_sub(2)),
+        lines,
+    )
 }
 
 /// A label and its value, lined up with the other labels
 fn field(label: &str, value: Span<'static>) -> Line<'static> {
-    Line::from(vec![Span::raw(format!("{label:<9}")).bold(), value])
+    Line::from(vec![
+        Span::raw(format!("{label:<LABEL_USIZE$}")).bold(),
+        value,
+    ])
+}
+
+/// `1 file` or `27 files`
+fn files(value: usize) -> String {
+    format!(
+        "{} {}",
+        format::count(u64::try_from(value).unwrap_or(u64::MAX)),
+        if value == 1 { "file" } else { "files" }
+    )
 }
 
 /// `text` in the middle of `area`
@@ -528,15 +576,18 @@ fn kind_of(name: &str) -> (&'static str, Option<&'static str>) {
             "Archive",
             Some("Often safe to delete once it has been unpacked."),
         ),
-        "mov" | "mp4" | "m4v" | "mkv" | "avi" | "webm" => {
-            ("Video", Some("Personal media. Back up before removal."))
-        }
-        "jpg" | "jpeg" | "png" | "heic" | "tiff" | "psd" => {
-            ("Image", Some("Personal media. Back up before removal."))
-        }
-        "mp3" | "m4a" | "wav" | "aiff" | "flac" => {
-            ("Audio", Some("Personal media. Back up before removal."))
-        }
+        "mov" | "mp4" | "m4v" | "mkv" | "avi" | "webm" => (
+            "Video",
+            Some("Your own media. Back it up before you delete it."),
+        ),
+        "jpg" | "jpeg" | "png" | "heic" | "tiff" | "psd" => (
+            "Image",
+            Some("Your own media. Back it up before you delete it."),
+        ),
+        "mp3" | "m4a" | "wav" | "aiff" | "flac" => (
+            "Audio",
+            Some("Your own media. Back it up before you delete it."),
+        ),
         "raw" | "img" | "vmdk" | "vdi" | "qcow2" | "sparseimage" | "sparsebundle" => (
             "Virtual disk",
             Some("Used by a virtual machine or Docker. Free it from the app that made it."),
@@ -565,9 +616,10 @@ fn kind_of(name: &str) -> (&'static str, Option<&'static str>) {
             "Log",
             Some("A record an app wrote. Usually safe to remove."),
         ),
-        "pdf" | "key" | "pages" | "numbers" | "docx" | "pptx" | "xlsx" => {
-            ("Document", Some("Your own work. Back up before removal."))
-        }
+        "pdf" | "key" | "pages" | "numbers" | "docx" | "pptx" | "xlsx" => (
+            "Document",
+            Some("Your own work. Back it up before you delete it."),
+        ),
         _ => ("Other", None),
     }
 }
@@ -623,7 +675,7 @@ impl Screen for LargeFiles {
                     .title(" Large Files ")
                     .padding(Padding::horizontal(1));
                 frame.render_widget(
-                    Paragraph::new(format!("Scan failed: {reason}"))
+                    Paragraph::new(format!("The scan failed: {reason}"))
                         .red()
                         .wrap(Wrap { trim: true })
                         .block(block),
@@ -654,7 +706,7 @@ impl Screen for LargeFiles {
         self.draw_filters(frame, filters);
         self.draw_table(frame, table, tree, &found);
         if let Some(compact) = compact {
-            let details = self
+            let (name, details) = self
                 .table
                 .selected()
                 .and_then(|index| found.get(index))
@@ -663,7 +715,7 @@ impl Screen for LargeFiles {
             frame.render_widget(
                 Paragraph::new(details).wrap(Wrap { trim: false }).block(
                     super::visual::block()
-                        .title(" Selected ")
+                        .title(format!(" {name} "))
                         .padding(Padding::horizontal(1)),
                 ),
                 compact,
@@ -711,12 +763,12 @@ impl Screen for LargeFiles {
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
         &[
-            ("↑ ↓  j k", "Move selection"),
+            ("↑ ↓  j k", "Move between files"),
             ("g  G", "Jump to the first or last file"),
-            ("s", "Change the smallest size: 10 MB to 5 GB"),
+            ("s", "Change the size: 10 MB to 5 GB"),
             ("a", "Change how long files must be unchanged"),
             ("Enter  →  l", "Show the file in Disk"),
-            ("Esc", "Go back"),
+            ("Esc", "Back to Home"),
             ("q", "Quit"),
         ]
     }
@@ -790,7 +842,7 @@ mod tests {
         let screen = render(&mut LargeFiles::new(), &scan);
 
         assert!(screen.contains("[100 MB]"));
-        assert!(screen.contains("2 files · 2.3 GB in all"));
+        assert!(screen.contains("Found 2 files · 2.3 GB"));
         assert!(screen.contains("Last changed"));
         assert!(screen.contains("film.mov"));
         assert!(screen.contains("~/Movies"));
@@ -808,7 +860,7 @@ mod tests {
         press(&mut large, &scan, KeyCode::Char('s'));
         let screen = render(&mut large, &scan);
         assert!(screen.contains("[500 MB]"));
-        assert!(screen.contains("1 file · 2.0 GB in all"));
+        assert!(screen.contains("Found 1 file · 2.0 GB"));
 
         for _ in 0..4 {
             press(&mut large, &scan, KeyCode::Char('s'));
@@ -904,7 +956,7 @@ mod tests {
             .collect();
 
         assert!(screen.contains("film.mov"));
-        assert!(screen.contains("Type     Video"));
+        assert!(screen.contains("Type      Video"));
         assert!(screen.contains("86% of the files found"));
         assert!(screen.contains("Location"));
         assert!(screen.contains("~/Movies"));
