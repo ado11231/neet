@@ -24,6 +24,39 @@ pub fn wrapped_rows(lines: &[Line<'_>], width: u16) -> u16 {
     .unwrap_or(u16::MAX)
 }
 
+/// A box holding `sections`: the first at the top, the last at the bottom,
+/// and the space between shared evenly, so a tall box reads as full instead
+/// of empty below its text. Sections that do not fit are left out, the last
+/// first. Leading spaces are kept, so right aligned values stay lined up.
+pub fn sections(
+    frame: &mut ratatui::Frame,
+    area: ratatui::layout::Rect,
+    title: &str,
+    mut sections: Vec<Vec<Line<'static>>>,
+) {
+    use ratatui::layout::{Flex, Layout};
+    use ratatui::widgets::Padding;
+    let block = block()
+        .title(title.to_string())
+        .padding(Padding::horizontal(1));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let rows = |lines: &[Line<'static>]| wrapped_rows(lines, inner.width);
+    let needed = |sections: &[Vec<Line<'static>>]| -> u16 {
+        let gaps = u16::try_from(sections.len().saturating_sub(1)).unwrap_or(u16::MAX);
+        sections.iter().map(|lines| rows(lines)).sum::<u16>() + gaps
+    };
+    while sections.len() > 1 && needed(&sections) > inner.height {
+        sections.pop();
+    }
+    let areas = Layout::vertical(sections.iter().map(|lines| Constraint::Length(rows(lines))))
+        .flex(Flex::SpaceBetween)
+        .split(inner);
+    for (lines, area) in sections.into_iter().zip(areas.iter()) {
+        frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), *area);
+    }
+}
+
 /// Keys remain distinct from their actions, including when the footer wraps.
 pub fn hints(text: &str) -> Line<'static> {
     let mut spans = Vec::new();

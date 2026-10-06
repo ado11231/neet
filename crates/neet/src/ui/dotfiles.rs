@@ -34,8 +34,9 @@ use neet_core::rewrite::Backup;
 /// From this width the selected file and its preview show on the right.
 const MIN_SIDE_WIDTH: u16 = 96;
 
-/// Width of the right side
-const SIDE_WIDTH: u16 = 48;
+/// The file list's width beside the details: wide enough for every name and
+/// status, never so wide that rows are mostly empty
+const LIST_WIDTH: (u16, u16) = (48, 64);
 
 /// Width of the status column, such as `+ not saved · secret`
 const STATUS_WIDTH: u16 = 20;
@@ -263,21 +264,86 @@ impl Dotfiles {
             self.draw_table(frame, area);
             return;
         }
-        let [table, below, _] = Layout::vertical([
-            Constraint::Length(table_height),
-            Constraint::Length(summary_height),
-            Constraint::Fill(1),
-        ])
-        .areas(area);
+        // The box under the list runs to the bottom: where your dotfiles
+        // are at its top, what the marks mean, and backups at its bottom.
+        let [table, below] =
+            Layout::vertical([Constraint::Length(table_height), Constraint::Fill(1)]).areas(area);
         self.draw_table(frame, table);
-        frame.render_widget(
-            Paragraph::new(summary).wrap(Wrap { trim: false }).block(
-                visual::block()
-                    .title(" Your dotfiles ")
-                    .padding(Padding::horizontal(1)),
-            ),
+        visual::sections(
+            frame,
             below,
+            " Your dotfiles ",
+            // The legend matters more than backups, so backups go first when
+            // room is short: they sit at the bottom.
+            vec![summary, self.legend(), self.backup_lines()],
         );
+    }
+
+    /// How many backups neet keeps of the listed files, the newest, and where
+    fn backup_lines(&self) -> Vec<Line<'static>> {
+        let all: Vec<Backup> = self
+            .listing
+            .files
+            .iter()
+            .filter_map(|file| self.backups.list(file.known.path).ok())
+            .flatten()
+            .collect();
+        let newest = all.iter().max_by(|a, b| a.saved.cmp(&b.saved));
+        let mut lines = vec![Line::from("Backups").style(visual::HEADING)];
+        lines.push(field(
+            "Saved",
+            match newest {
+                None => Span::raw("none yet, one before every change"),
+                Some(newest) => {
+                    Span::raw(format!("{} · newest {}", all.len(), change::saved(newest)))
+                }
+            },
+        ));
+        lines.push(field(
+            "Kept in",
+            Span::raw("~/.local/state/neet/backups/dotfiles"),
+        ));
+        lines
+    }
+
+    /// What each mark in the list means, for the marks it shows
+    fn legend(&self) -> Vec<Line<'static>> {
+        let shown: Vec<State> = self
+            .items()
+            .iter()
+            .filter_map(|item| match item {
+                Item::File(index) => Some(State::of(&self.listing.files[*index])),
+                Item::Group(_) => None,
+            })
+            .collect();
+        let mut lines = vec![Line::from("What the marks mean").style(visual::HEADING)];
+        for (state, meaning) in [
+            (State::Saved, "matches its saved copy"),
+            (State::Changed, "differs from its saved copy"),
+            (State::NotSaved, "not in your dotfiles yet"),
+            (State::ViewOnly, "neet will not change it"),
+            (State::LeftOut, ".chezmoiignore leaves it out"),
+            (State::Missing, "not on this Mac"),
+        ] {
+            if shown.contains(&state) {
+                lines.push(Line::from(vec![
+                    state.styled(format!(
+                        "{:<14}",
+                        format!("{} {}", state.symbol(), state.word())
+                    )),
+                    Span::raw(meaning),
+                ]));
+            }
+        }
+        if self.items().iter().any(
+            |item| matches!(item, Item::File(index) if self.listing.files[*index].may_hold_secrets),
+        ) {
+            lines.push(Line::from(vec![
+                Span::raw(format!("{:<14}", "secret")).red(),
+                Span::raw("may hold a token: kept private"),
+            ]));
+        }
+        lines
     }
 
     /// Where your dotfiles are kept, and what waits to be exported
@@ -1479,9 +1545,9 @@ impl Screen for Dotfiles {
             Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(area);
         self.draw_top(frame, top);
         if body.width >= MIN_SIDE_WIDTH && self.selected().is_some() {
+            let width = (body.width * 45 / 100).clamp(LIST_WIDTH.0, LIST_WIDTH.1);
             let [list, side] =
-                Layout::horizontal([Constraint::Fill(1), Constraint::Length(SIDE_WIDTH)])
-                    .areas(body);
+                Layout::horizontal([Constraint::Length(width), Constraint::Fill(1)]).areas(body);
             self.draw_list(frame, list);
             self.draw_side(frame, side);
             self.draw_mode(frame, area);
@@ -1823,6 +1889,29 @@ mod tests {
 
         assert!(text.contains("chezmoi not found"));
         assert!(text.contains("No settings files found. Press . to see the files neet looks for."));
+    }
+
+    #[test]
+    fn a_tall_wide_screen_fills_the_box_under_the_list() {
+        let (_dir, mut screen) = screen();
+        let text = render(&mut screen, 200, 50);
+        let rows: Vec<&str> = text.lines().collect();
+        let row_of = |needle: &str| {
+            rows.iter()
+                .position(|row| row.contains(needle))
+                .unwrap_or_else(|| panic!("{needle:?} missing:\n{text}"))
+        };
+        // The list is only as wide as it needs; the preview gets the rest.
+        let files = rows[1].find('┐').unwrap();
+        assert!(files <= usize::from(LIST_WIDTH.1) * 3, "{}", rows[1]);
+        assert!(row_of("Repo") < row_of("What the marks mean"));
+        assert!(row_of("What the marks mean") < row_of("Saved    none yet"));
+        assert!(
+            text.contains("+ not saved   not in your dotfiles yet"),
+            "{text}"
+        );
+        assert!(text.contains("secret        may hold a token: kept private"));
+        assert!(row_of("Kept in") >= rows.len() - 4, "{text}");
     }
 
     #[test]

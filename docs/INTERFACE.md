@@ -394,8 +394,9 @@
   3. **\+ not saved** in blue: chezmoi has no copy of it yet.
   4. **· view only** in yellow, with the reason in the details, **· left out** when `.chezmoiignore` names it, and **· not on this Mac**.
   5. **secret** in red after the status: it may hold a token, so its preview is hidden and it starts left out of exports.
-* **Your dotfiles**, below the list when there is room: the repository and branch, whether files wait to be exported or pushed, and chezmoi's folder. It says so when neet will not run chezmoi.
-* **Right, from 96 columns:** the selected file: its path, where a link leads, its saved copy, when it changed, and how many backups it has. Below, what its status means and what to do. Under that, the start of the file. A file that may hold a token never shows its preview.
+* **Your dotfiles**, below the list down to the bottom, when there is room. At its top: the repository and branch, whether files wait to be exported or pushed, and chezmoi's folder, and why neet will not run chezmoi when it will not. In the middle: **What the marks mean**, for the marks the list shows. At its bottom: **Backups**, how many neet keeps of the listed files, the newest, and where they are. When room is short, Backups goes first, then the legend.
+* **The list** is 45% of the width, between 48 and 64 columns, so its rows are never mostly empty.
+* **Right, from 96 columns,** taking the rest of the width: the selected file: its path, where a link leads, its saved copy, when it changed, and how many backups it has. Below, what its status means and what to do. Under that, the start of the file. A file that may hold a token never shows its preview.
 * Below 96 columns, the details sit under the list, and the preview is hidden.
 * **`Enter`** opens a small menu of only what can be done with the selected file, each with its key. A file that changed offers **Save my version**, **Use the saved version**, and **Show the changes**. One that is saved offers **Edit**, and **Configure** for Git files. One that is not saved also offers **Add to your dotfiles**. The keys also work straight from the list.
 
