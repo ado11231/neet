@@ -121,25 +121,38 @@ impl Configure {
         }));
     }
 
-    /// `Enter`: on and off settings go on, off, then not set. Text settings
-    /// open for typing, or keep what was typed.
+    /// `Enter`: settings with choices step through each, then not set.
+    /// Text and numbers open for typing, or keep what was typed when it is
+    /// a value the setting takes.
     fn enter(&mut self) {
         let index = self.selected();
+        let setting = &self.program.settings[index];
         if let Some(text) = self.typing.take() {
             let text = text.trim().to_string();
-            self.change(index, (!text.is_empty()).then_some(text));
+            if text.is_empty() {
+                self.change(index, None);
+            } else if let Err(error) = configure::check(setting, &text) {
+                self.typing = Some(text);
+                self.error = Some(error);
+            } else {
+                self.change(index, Some(text));
+            }
             return;
         }
-        match self.program.settings[index].kind {
-            Kind::OnOff => {
-                let next = match self.value(index) {
-                    Some("true") => Some("false".to_string()),
-                    Some("false") => None,
-                    _ => Some("true".to_string()),
+        match setting.kind {
+            Kind::Choice(choices) => {
+                let next = match self
+                    .value(index)
+                    .and_then(|now| choices.iter().position(|choice| *choice == now))
+                {
+                    Some(at) => choices.get(at + 1).map(|next| (*next).to_string()),
+                    None => choices.first().map(|first| (*first).to_string()),
                 };
                 self.change(index, next);
             }
-            Kind::Text => self.typing = Some(self.value(index).unwrap_or_default().to_string()),
+            Kind::Text | Kind::Number => {
+                self.typing = Some(self.value(index).unwrap_or_default().to_string());
+            }
         }
     }
 
@@ -151,7 +164,7 @@ impl Configure {
     pub fn apply(&self) -> Result<(), String> {
         for (setting, change) in self.program.settings.iter().zip(&self.changes) {
             if let Some(value) = change {
-                configure::set(&self.copy, setting, value.as_deref())?;
+                configure::set(self.program, &self.copy, setting, value.as_deref())?;
             }
         }
         Ok(())

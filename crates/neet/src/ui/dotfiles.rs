@@ -1079,7 +1079,7 @@ impl Dotfiles {
             self.mode = Mode::Note {
                 title: "No settings".to_string(),
                 lines: vec![Line::from(
-                    "Configure knows Git's settings for now. Press e to edit this file.",
+                    "Configure knows the settings of Git, tmux, and Starship. Press e to edit this file.",
                 )],
                 color: visual::ACCENT,
             };
@@ -2287,10 +2287,55 @@ mod tests {
     }
 
     #[test]
+    fn configure_steps_through_choices_and_refuses_a_bad_number() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = fs::canonicalize(dir.path()).unwrap();
+        write(&home.join(".tmux.conf"), "set -g mouse on # mine\n");
+        let listing = dotfiles::list(&home);
+        let mut screen = Dotfiles::from_listing(home, listing);
+        press(&mut screen, KeyCode::Char('c'));
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains("tmux settings · ~/.tmux.conf"), "{text}");
+
+        // on, off, not set, then on again, which is no change at all
+        press(&mut screen, KeyCode::Enter);
+        assert!(render(&mut screen, 120, 30).contains("mouse  off"));
+        press(&mut screen, KeyCode::Enter);
+        assert!(render(&mut screen, 120, 30).contains("mouse  not set"));
+        press(&mut screen, KeyCode::Enter);
+        assert!(render(&mut screen, 120, 30).contains("Nothing changed yet."));
+        press(&mut screen, KeyCode::Enter);
+
+        press(&mut screen, KeyCode::Down);
+        press(&mut screen, KeyCode::Enter);
+        typed(&mut screen, "lots");
+        press(&mut screen, KeyCode::Enter);
+        assert!(screen.takes_text());
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains("history-limit is a whole number"), "{text}");
+        for _ in 0..4 {
+            press(&mut screen, KeyCode::Backspace);
+        }
+        typed(&mut screen, "5000");
+        press(&mut screen, KeyCode::Enter);
+        assert!(!screen.takes_text());
+
+        press(&mut screen, KeyCode::Char('y'));
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains("+ set -g mouse off # mine"), "{text}");
+        assert!(text.contains("+ set -g history-limit 5000"));
+        press(&mut screen, KeyCode::Char('y'));
+        assert_eq!(
+            fs::read_to_string(screen.home.join(".tmux.conf")).unwrap(),
+            "set -g mouse off # mine\nset -g history-limit 5000\n"
+        );
+    }
+
+    #[test]
     fn configure_says_which_programs_it_knows() {
         let (_dir, mut screen) = screen();
         press(&mut screen, KeyCode::Char('c'));
-        assert!(render(&mut screen, 120, 30).contains("Configure knows Git's settings"));
+        assert!(render(&mut screen, 120, 30).contains("Configure knows the settings of Git, tmux"));
     }
 
     fn git(dir: &Path, args: &[&str]) -> String {
