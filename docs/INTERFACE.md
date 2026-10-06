@@ -13,10 +13,11 @@
 5. [Quick Clean](#quick-clean)
 6. [Deep Clean](#deep-clean)
 7. [Review, Confirm, And Move](#review-confirm-and-move)
-8. [Large Files](#large-files)
-9. [Remove App](#remove-app)
-10. [Dotfiles](#dotfiles)
-11. [Planned Screens](#planned-screens)
+8. [Trash](#trash)
+9. [Large Files](#large-files)
+10. [Remove App](#remove-app)
+11. [Dotfiles](#dotfiles)
+12. [Planned Screens](#planned-screens)
 
 ## Every Screen
 
@@ -182,7 +183,7 @@
 | --- | --- |
 | `Up` / `Down` | Move the selection. |
 | `g` / `G` | Jump to the first or last row. |
-| `Enter`, `Right`, or `l` | On Caches and logs, open [Deep Clean](#deep-clean). On build folders or installers, open [Pick](#pick). On Docker or simulator runtimes, open [Docker And Simulators](#docker-and-simulators). On the Trash, show it in [Disk](#disk). |
+| `Enter`, `Right`, or `l` | On Caches and logs, open [Deep Clean](#deep-clean). On build folders or installers, open [Pick](#pick). On Docker or simulator runtimes, open [Docker And Simulators](#docker-and-simulators). On the Trash, open the [Trash](#trash) screen. |
 | `d` | Show the largest item of the row in [Disk](#disk). |
 
 ### Pick
@@ -288,6 +289,22 @@
 | Confirm | A box, 60 columns wide, in the middle of the review. It shows the item count and total size, and that Finder moves them to the Trash. | `y` moves them. `n` or `Esc` goes back. |
 | Move | The loading box in the middle of the screen, with a progress bar and how many items have moved. The first time, macOS asks whether your terminal may control Finder. | No key works until every item is done. |
 | Result | A box in the middle of the screen, up to 72 columns wide. A green `✓` line says how many items moved, then the space they take in the Trash, and how to use Put Back. Every skipped item follows, with its reason below it. If nothing moved, the first line is yellow. | Scroll a long result with `Up` / `Down`. `Enter` or `Esc` goes back to Home. |
+
+## Trash
+
+* Opened with `Enter` on the Trash row in Quick Clean.
+* **Left:** what is in the Trash, largest first: size, a bar against the largest, how many files it holds, and its name. Folders are moonlight blue with a `/`. The title shows the total size and item count.
+* **Right,** as small boxes: **Total** (size, items, and files in all), **Warning** in red, that emptying deletes everything for good and Put Back stops working, **Steps**, and **After cleanup**, the disk now and after. Below 100 columns they sit under the list.
+* `e` asks in a red box with the size and item count. `y` asks Finder to empty the Trash, with the loading box until it is done, then a green box with the space freed. See [Emptying The Trash](SAFETY.md#emptying-the-trash).
+* When macOS will not let neet read the Trash, a yellow box says how to turn on Full Disk Access, and `e` does nothing.
+* Other screens show the old numbers until neet scans again.
+
+| Key | Action |
+| --- | --- |
+| `Up` / `Down` | Move between items. |
+| `e` | Empty the Trash, after a question. |
+| `y` / `n` | In the question: empty it for good, or go back. |
+| `o` | Open the Trash in Finder, where Put Back works. |
 
 ## Large Files
 

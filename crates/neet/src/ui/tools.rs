@@ -13,9 +13,12 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Cell, Clear, Padding, Paragraph, Row, Table, TableState, Wrap};
 
 use super::app::{Action, Context, Screen};
+
+mod trash;
 use super::clean::checkbox;
 use super::format;
 use super::loading::Loading;
+pub use trash::Trash;
 
 /// Runs `work` on its own thread, for the answer to arrive later
 fn spawn<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> Receiver<T> {

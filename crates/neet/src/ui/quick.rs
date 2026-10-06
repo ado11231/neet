@@ -20,7 +20,7 @@ use super::format;
 use super::loading::scanning;
 use super::pick::Pick;
 use super::scan::ScanStatus;
-use super::tools::{DockerSpace, Simulators};
+use super::tools::{DockerSpace, Simulators, Trash};
 
 /// Below this width the largest items are left out.
 const MIN_SIDE_WIDTH: u16 = 130;
@@ -211,8 +211,9 @@ fn steps_of(item: Item) -> &'static [&'static str] {
             "Check the list, then confirm.",
         ],
         Item::Clutter(Kind::Trash) => &[
-            "Empty the Trash in Finder.",
-            "neet never empties it for you.",
+            "Press Enter to see what is in the Trash.",
+            "Press e to empty it, then y to confirm.",
+            "Emptied files are gone for good.",
         ],
         Item::Clutter(Kind::DockerImage) => &[
             "Press Enter to see what Docker uses.",
@@ -875,6 +876,19 @@ impl Screen for QuickClean {
                     }
                     if kind == Kind::DockerImage {
                         return Action::Open(Box::new(DockerSpace::new()));
+                    }
+                    if kind == Kind::Trash {
+                        let tree = &scan.tree;
+                        let root = tree.root();
+                        let trash = tree
+                            .get(root)
+                            .children
+                            .iter()
+                            .copied()
+                            .find(|&child| tree.get(child).name == ".Trash");
+                        let path = tree.path(root).join(".Trash");
+                        let blocked = trash_blocked(context);
+                        return Action::Open(Box::new(Trash::new(tree, trash, path, blocked)));
                     }
                     if clutter::neet_removes(kind) {
                         let paths: Vec<PathBuf> = self
