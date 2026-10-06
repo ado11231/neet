@@ -212,13 +212,7 @@ fn row(
             .right_aligned(),
         ),
         Cell::from(format::size_bar(node.total_size, parent_total, BAR_WIDTH)),
-        Cell::from(
-            Line::from(format!(
-                "{}%",
-                format::percent(node.total_size, parent_total)
-            ))
-            .right_aligned(),
-        ),
+        Cell::from(Line::from(share(node.total_size, parent_total)).right_aligned()),
         Cell::from(name),
     ])
 }
@@ -231,11 +225,11 @@ fn draw_folder(frame: &mut Frame, area: Rect, tree: &Tree, browser: &mut Browser
         browser.sort.next().label()
     );
     let title = format!(
-        " {} ",
+        " Disk · {} ",
         format::shorten_path(
             &display_path(tree, browser.current),
             usize::from(area.width)
-                .saturating_sub(format::display_width(&sort) + 6)
+                .saturating_sub(format::display_width(&sort) + 13)
                 .max(10),
         )
     );
@@ -270,7 +264,14 @@ fn draw_folder(frame: &mut Frame, area: Rect, tree: &Tree, browser: &mut Browser
 
 /// The selected item on the right, what is inside it when it is a folder,
 /// and the steps, `with_steps` when they are not on the left already
-fn draw_preview(frame: &mut Frame, area: Rect, tree: &Tree, browser: &Browser, with_steps: bool) {
+fn draw_preview(
+    frame: &mut Frame,
+    area: Rect,
+    tree: &Tree,
+    browser: &Browser,
+    disk: Option<&neet_core::disk::DiskSpace>,
+    with_steps: bool,
+) {
     let Some(id) = browser.selected() else {
         frame.render_widget(super::visual::block(), area);
         return;
@@ -280,6 +281,7 @@ fn draw_preview(frame: &mut Frame, area: Rect, tree: &Tree, browser: &Browser, w
     if tree.get(id).kind == NodeKind::Directory {
         sections.push(inside(tree, id, browser.sort, width));
     }
+    sections.push(this_mac(disk, tree.get(tree.root()).total_size, width));
     if with_steps {
         sections.push(steps(width));
     }
@@ -353,8 +355,8 @@ fn this_folder(tree: &Tree, browser: &Browser, width: usize) -> Vec<Line<'static
         .max_by_key(|&child| tree.get(child).total_size);
     if let Some(largest) = largest {
         let share = format!(
-            " · {}%",
-            format::percent(tree.get(largest).total_size, folder.total_size)
+            " · {}",
+            share(tree.get(largest).total_size, folder.total_size)
         );
         let name = format::shorten_middle(
             &display_name(tree, largest),
@@ -395,6 +397,60 @@ fn steps(width: usize) -> Vec<Line<'static>> {
     lines
 }
 
+/// `part` as a percent of `total`, with `<1%` for a part too small to round
+/// up to one
+fn share(part: u64, total: u64) -> String {
+    match format::percent(part, total) {
+        0 if part > 0 => "<1%".to_string(),
+        percent => format!("{percent}%"),
+    }
+}
+
+/// The whole disk: a gauge of what is used, how much is used & free, and
+/// how much of it the home folder takes
+fn this_mac(
+    disk: Option<&neet_core::disk::DiskSpace>,
+    home: u64,
+    width: usize,
+) -> Vec<Line<'static>> {
+    let mut lines = vec![Line::from("This Mac").style(super::visual::HEADING)];
+    let Some(disk) = disk else {
+        lines.push(Line::from("Disk space unavailable.").yellow());
+        return lines;
+    };
+    let used = format::percent(disk.used(), disk.total);
+    let bar = width.saturating_sub(12).clamp(10, 40);
+    let filled =
+        usize::try_from(u128::from(disk.used()) * bar as u128 / u128::from(disk.total.max(1)))
+            .unwrap_or(bar)
+            .min(bar);
+    lines.extend([
+        Line::from(vec![
+            Span::raw("█".repeat(filled)).fg(super::visual::ACCENT),
+            Span::raw("░".repeat(bar - filled)).fg(super::visual::ACCENT),
+            Span::raw(format!(" {used}% used")).bold(),
+        ]),
+        field(
+            "Used",
+            Span::raw(format!(
+                "{} of {}",
+                format::size(disk.used()),
+                format::size(disk.total)
+            )),
+        ),
+        field("Free", Span::raw(format::size(disk.available)).green()),
+        field(
+            "Home",
+            Span::raw(format!(
+                "{} · {} of the disk",
+                format::size(home),
+                share(home, disk.total)
+            )),
+        ),
+    ]);
+    lines
+}
+
 /// `1 item` or `27 items`
 fn items(value: u64) -> String {
     format!(
@@ -429,8 +485,13 @@ fn about(tree: &Tree, id: NodeId, browser: &Browser, width: usize) -> Vec<Line<'
         field(
             "Share",
             Span::raw(format!(
-                "{}% of this folder",
-                format::percent(node.total_size, parent_total)
+                "{} of {}",
+                share(node.total_size, parent_total),
+                if browser.current == tree.root() {
+                    "your home folder"
+                } else {
+                    "this folder"
+                }
             )),
         ),
     ];
@@ -634,7 +695,7 @@ impl Screen for Disk {
                     } else {
                         draw_folder(frame, folder, tree, browser);
                     }
-                    draw_preview(frame, preview, tree, browser, !below);
+                    draw_preview(frame, preview, tree, browser, context.disk.as_ref(), !below);
                 } else {
                     draw_folder(frame, area, tree, browser);
                 }
