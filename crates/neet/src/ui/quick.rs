@@ -14,7 +14,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Cell, Padding, Paragraph, Row, Table, TableState, Wrap};
 
 use super::app::{Action, Context, Screen};
-use super::clean::{Clean, display_path, rows_used};
+use super::clean::{Clean, display_path};
 use super::disk::Disk;
 use super::format;
 use super::loading::scanning;
@@ -27,6 +27,9 @@ const MIN_SIDE_WIDTH: u16 = 130;
 
 /// Width of the table and the box under it, when the largest items are beside them
 const TABLE_WIDTH: u16 = 86;
+
+/// From this height the table's rows stand a row apart.
+const TALL: u16 = 45;
 
 /// What the background work found, once it is done
 enum Asked {
@@ -148,7 +151,7 @@ fn about(item: Item) -> &'static str {
 }
 
 /// The steps that free an item
-fn steps(item: Item) -> &'static [&'static str] {
+fn steps_of(item: Item) -> &'static [&'static str] {
     match item {
         Item::Rules => &[
             "Enter: open Deep Clean.",
@@ -307,11 +310,29 @@ impl QuickClean {
         }
     }
 
+    /// What neet can clear, and what you clear yourself, from what was found
+    fn totals(&self, context: &Context) -> (u64, u64) {
+        let mut neet_total = 0;
+        let mut your_total = 0;
+        for item in ITEMS {
+            if let Status::Found { size, .. } = self.status(item, context) {
+                match who(item) {
+                    Who::Neet | Who::Tool => neet_total += size,
+                    Who::You => your_total += size,
+                    Who::Mac => {}
+                }
+            }
+        }
+        (neet_total, your_total)
+    }
+
     fn selected(&self) -> Item {
         ITEMS[self.table.selected().unwrap_or(0).min(ITEMS.len() - 1)]
     }
 
-    fn draw_table(&mut self, frame: &mut Frame, area: Rect, context: &Context) {
+    /// The table. With `spaced`, a blank row sits under each row, for a tall
+    /// screen.
+    fn draw_table(&mut self, frame: &mut Frame, area: Rect, context: &Context, spaced: bool) {
         let statuses: Vec<Status> = ITEMS
             .iter()
             .map(|&item| self.status(item, context))
@@ -322,19 +343,13 @@ impl QuickClean {
         };
         let largest = statuses.iter().map(size_of).max().unwrap_or(0);
         let columns = quick_columns(&statuses, area.width);
-        let mut neet_total = 0;
-        let mut your_total = 0;
+        let (neet_total, your_total) = self.totals(context);
         let rows: Vec<Row> = ITEMS
             .iter()
             .zip(&statuses)
             .map(|(&item, status)| {
                 let (size, bar, found) = match *status {
                     Status::Found { size, count } => {
-                        match who(item) {
-                            Who::Neet | Who::Tool => neet_total += size,
-                            Who::You => your_total += size,
-                            Who::Mac => {}
-                        }
                         let text = if item == Item::Rules {
                             format!("~{}", format::size(size))
                         } else {
@@ -356,13 +371,15 @@ impl QuickClean {
                     ),
                     Status::Nothing => (Span::raw("none"), Span::raw(""), String::new()),
                 };
-                columns.row([
-                    Cell::from(format::shorten_middle(name(item), columns.width(0))),
-                    Cell::from(Line::from(size).right_aligned()),
-                    Cell::from(bar),
-                    Cell::from(Line::from(found).right_aligned()),
-                    Cell::from(who_span(who(item))),
-                ])
+                columns
+                    .row([
+                        Cell::from(format::shorten_middle(name(item), columns.width(0))),
+                        Cell::from(Line::from(size).right_aligned()),
+                        Cell::from(bar),
+                        Cell::from(Line::from(found).right_aligned()),
+                        Cell::from(who_span(who(item))),
+                    ])
+                    .bottom_margin(u16::from(spaced))
             })
             .collect();
         let header = columns
@@ -398,45 +415,198 @@ impl QuickClean {
         frame.render_stateful_widget(table, area, &mut self.table);
     }
 
-    /// What the selected row is and how to clear it, numbered
-    fn draw_about(&self, frame: &mut Frame, area: Rect) {
+    /// The selected row's name, the numbered steps that clear it, and what
+    /// it is
+    fn about_lines(&self) -> (String, Vec<Line<'static>>, Vec<Line<'static>>) {
         let item = self.selected();
-        let mut lines = Vec::new();
         let color = match who(item) {
             Who::Neet => Color::Green,
             Who::Tool => Color::Red,
             Who::You => Color::Yellow,
             Who::Mac => super::visual::ACCENT,
         };
-        for (number, step) in steps(item).iter().enumerate() {
-            lines.push(Line::from(vec![
+        let mut steps = vec![Line::from("How").style(super::visual::HEADING)];
+        steps.extend(steps_of(item).iter().enumerate().map(|(number, step)| {
+            Line::from(vec![
                 Span::raw(format!("{}. ", number + 1)).fg(color),
                 Span::raw(*step),
-            ]));
-        }
-        let mut expanded = lines.clone();
-        expanded.push(Line::default());
-        expanded.push(Line::from(about(item)));
-        if super::visual::wrapped_rows(&expanded, area.width.saturating_sub(4))
-            <= area.height.saturating_sub(2)
-        {
-            lines = expanded;
-        }
-        frame.render_widget(
-            Paragraph::new(lines).wrap(Wrap { trim: true }).block(
-                super::visual::block()
-                    .title(format!(" {} ", name(item)))
-                    .padding(Padding::horizontal(1)),
-            ),
-            area,
-        );
+            ])
+        }));
+        let about = vec![
+            Line::from("What it is").style(super::visual::HEADING),
+            Line::from(about(item)),
+        ];
+        (format!(" {} ", name(item)), steps, about)
     }
 
-    /// The largest items of the selected row, when there is a list to show
-    fn draw_largest(&self, frame: &mut Frame, area: Rect, context: &Context) {
+    /// Every row that found something, largest first, with a bar in the
+    /// color of who clears it
+    fn found_lines(&self, context: &Context, width: u16) -> Vec<Line<'static>> {
+        let mut found: Vec<(Item, u64)> = ITEMS
+            .iter()
+            .filter_map(|&item| match self.status(item, context) {
+                Status::Found { size, .. } => Some((item, size)),
+                _ => None,
+            })
+            .collect();
+        found.sort_by_key(|&(_, size)| Reverse(size));
+        let largest = found.first().map_or(0, |&(_, size)| size);
+        let bar = usize::from(width).saturating_sub(36).clamp(8, 40);
+        let mut lines = vec![Line::from("Everything found").style(super::visual::HEADING)];
+        if found.is_empty() {
+            lines.push(Line::from("Nothing yet."));
+        }
+        for (item, size) in found {
+            let style = who_span(who(item)).style;
+            lines.push(Line::from(vec![
+                Span::raw(format!("{:<24}", name(item))),
+                format::size_span(size, format!("{:>9}  ", format::size(size))),
+                Span::styled(format::bar(size, largest, bar), style),
+            ]));
+        }
+        lines
+    }
+
+    /// The selected row in numbers: its size, its share of everything found,
+    /// and who clears it
+    fn row_lines(&self, context: &Context) -> Vec<Line<'static>> {
         let item = self.selected();
-        let width = usize::from(area.width.saturating_sub(4));
-        let rows = usize::from(area.height.saturating_sub(2));
+        let found: u64 = ITEMS
+            .iter()
+            .filter_map(|&item| match self.status(item, context) {
+                Status::Found { size, .. } => Some(size),
+                _ => None,
+            })
+            .sum();
+        let field = |label: &str, value: Vec<Span<'static>>| {
+            let mut spans = vec![Span::raw(format!("{label:<11}")).bold()];
+            spans.extend(value);
+            Line::from(spans)
+        };
+        let mut lines = vec![Line::from("In numbers").style(super::visual::HEADING)];
+        match self.status(item, context) {
+            Status::Found { size, count } => {
+                let mut value = vec![format::size_span(size, format::size(size)).bold()];
+                if let Some(count) = count {
+                    let noun = if count == 1 { "item" } else { "items" };
+                    value.push(Span::raw(format!(
+                        " · {} {noun}",
+                        format::count(u64::try_from(count).unwrap_or(u64::MAX))
+                    )));
+                }
+                lines.push(field("Size", value));
+                lines.push(field(
+                    "Share",
+                    vec![
+                        format::size_bar(size, found, SHARE_BAR),
+                        Span::raw(format!(
+                            " {}% of everything found",
+                            format::percent(size, found)
+                        )),
+                    ],
+                ));
+            }
+            Status::Looking => lines.push(field(
+                "Size",
+                vec![Span::raw("scanning").fg(super::visual::ACCENT)],
+            )),
+            Status::Nothing => lines.push(field("Size", vec![Span::raw("none found")])),
+        }
+        let how = match who(item) {
+            Who::Neet => "neet, to the Trash, after you review it",
+            Who::Tool => "neet asks its own tool, permanently",
+            Who::You => "you",
+            Who::Mac => "macOS, on its own",
+        };
+        // In the color the table uses for who clears it
+        let style = who_span(who(item)).style;
+        lines.push(field("Cleared by", vec![Span::styled(how, style)]));
+        lines
+    }
+
+    /// Free space now, what the cleanup frees, and free space after it
+    fn after_lines(&self, context: &Context, width: u16) -> Vec<Line<'static>> {
+        let Some(disk) = context.disk else {
+            return vec![Line::from("Disk space unavailable.").yellow()];
+        };
+        let (cleanup, manual) = self.totals(context);
+        let freed = cleanup.min(disk.used());
+        let after = disk.available.saturating_add(freed);
+        // The bar: what stays used, then what the cleanup frees in green,
+        // then what is free already.
+        let bar = usize::from(width).saturating_sub(18).clamp(10, 40);
+        let cells = |part: u64| {
+            usize::try_from(u128::from(part) * bar as u128 / u128::from(disk.total.max(1)))
+                .unwrap_or(bar)
+        };
+        let stays = cells(disk.used() - freed);
+        let green = cells(disk.used())
+            .saturating_sub(stays)
+            .max(usize::from(freed > 0));
+        let rest = bar.saturating_sub(stays + green);
+        let now = format::percent(disk.used(), disk.total);
+        let then = format::percent(disk.used() - freed, disk.total);
+        let field = |label: &str, value: Vec<Span<'static>>| {
+            let mut spans = vec![Span::raw(format!("{label:<11}")).bold()];
+            spans.extend(value);
+            Line::from(spans)
+        };
+        let mut lines = vec![
+            Line::from("After cleanup").style(super::visual::HEADING),
+            Line::from(vec![
+                Span::raw("█".repeat(stays)).fg(super::visual::ACCENT),
+                Span::raw("█".repeat(green)).green(),
+                Span::raw("░".repeat(rest)).fg(super::visual::ACCENT),
+                Span::raw(format!(" {now}% → {then}% used")).bold(),
+            ]),
+            field(
+                "Free now",
+                vec![Span::raw(format!(
+                    "{} of {}",
+                    format::size(disk.available),
+                    format::size(disk.total)
+                ))],
+            ),
+            field(
+                "Cleanup",
+                vec![
+                    Span::raw(format!("~{}", format::size(cleanup)))
+                        .green()
+                        .bold(),
+                    Span::raw(" by neet"),
+                ],
+            ),
+        ];
+        if manual > 0 {
+            lines.push(field(
+                "By hand",
+                vec![
+                    Span::raw(format::size(manual)).yellow().bold(),
+                    Span::raw(" by you"),
+                ],
+            ));
+        }
+        lines.push(field(
+            "Free after",
+            vec![
+                Span::raw(format!("~{}", format::size(after)))
+                    .green()
+                    .bold(),
+            ],
+        ));
+        lines
+    }
+
+    /// The largest items of the selected row, at most `rows` lines, or why
+    /// there is no list
+    fn largest_lines(
+        &self,
+        context: &Context,
+        width: u16,
+        rows: usize,
+    ) -> Result<Vec<Line<'static>>, Line<'static>> {
+        let item = self.selected();
+        let width = usize::from(width.saturating_sub(4));
         let entries: Vec<(u64, String)> = match item {
             Item::Rules => context
                 .plan
@@ -476,9 +646,17 @@ impl QuickClean {
                 _ => Vec::new(),
             },
         };
+        if entries.is_empty() {
+            return Err(Line::from(match item {
+                Item::Clutter(Kind::SimulatorRuntimes | Kind::TempFiles) => {
+                    "Outside home. No scan details."
+                }
+                _ => "Nothing to list.",
+            }));
+        }
         let mut lines: Vec<Line> = entries
             .iter()
-            .take(rows)
+            .take(rows.max(1))
             .map(|(size, path)| {
                 Line::from(vec![
                     format::size_span(*size, format!("{:>9}  ", format::size(*size))),
@@ -486,7 +664,7 @@ impl QuickClean {
                 ])
             })
             .collect();
-        if entries.len() > lines.len() && !lines.is_empty() {
+        if entries.len() > lines.len() {
             lines.pop();
             lines.push(Line::from(format!(
                 "{:>9}  and {} more",
@@ -494,30 +672,38 @@ impl QuickClean {
                 format::count(u64::try_from(entries.len() - lines.len()).unwrap_or(u64::MAX))
             )));
         }
-        let block = super::visual::block()
-            .title(" Largest ")
-            .padding(Padding::horizontal(1));
-        if lines.is_empty() {
-            // With no list, the reason sits in the middle of the box
-            let inner = block.inner(area);
-            frame.render_widget(block, area);
-            let why = Line::from(match item {
-                Item::Clutter(Kind::SimulatorRuntimes | Kind::TempFiles) => {
-                    "Outside home. No scan details."
-                }
-                _ => "Nothing to list.",
-            });
-            let height = rows_used(std::slice::from_ref(&why), usize::from(inner.width));
-            let [middle] = Layout::vertical([Constraint::Length(
-                u16::try_from(height).unwrap_or(u16::MAX),
-            )])
-            .flex(Flex::Center)
-            .areas(inner);
-            let why = Paragraph::new(why).centered().wrap(Wrap { trim: true });
-            frame.render_widget(why, middle);
-            return;
-        }
-        frame.render_widget(Paragraph::new(lines).block(block), area);
+        Ok(lines)
+    }
+}
+
+/// A box holding `sections`: the first at the top, the last at the bottom,
+/// and the space between shared evenly, so a tall box reads as full instead
+/// of empty below its text. Sections that do not fit are left out, the last
+/// first. Leading spaces are kept, so right aligned sizes stay lined up.
+fn draw_sections(
+    frame: &mut Frame,
+    area: Rect,
+    title: &str,
+    mut sections: Vec<Vec<Line<'static>>>,
+) {
+    let block = super::visual::block()
+        .title(title.to_string())
+        .padding(Padding::horizontal(1));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let rows = |lines: &[Line<'static>]| super::visual::wrapped_rows(lines, inner.width);
+    let needed = |sections: &[Vec<Line<'static>>]| -> u16 {
+        let gaps = u16::try_from(sections.len().saturating_sub(1)).unwrap_or(u16::MAX);
+        sections.iter().map(|lines| rows(lines)).sum::<u16>() + gaps
+    };
+    while sections.len() > 1 && needed(&sections) > inner.height {
+        sections.pop();
+    }
+    let areas = Layout::vertical(sections.iter().map(|lines| Constraint::Length(rows(lines))))
+        .flex(Flex::SpaceBetween)
+        .split(inner);
+    for (lines, area) in sections.into_iter().zip(areas.iter()) {
+        frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), *area);
     }
 }
 
@@ -575,25 +761,44 @@ impl Screen for QuickClean {
         };
         self.poll(tree);
         // Border, header, gap, then one row per item
-        let table_height = u16::try_from(ITEMS.len()).unwrap_or(u16::MAX) + 4;
+        let items = u16::try_from(ITEMS.len()).unwrap_or(u16::MAX);
+        // On a tall screen the table's rows stand a row apart.
+        let spaced = area.height >= TALL;
+        let table_height = if spaced { items * 2 + 3 } else { items + 4 };
+        // The table, with how to clear the selected row under it, and the
+        // row's largest items down the right. Each box spreads its sections
+        // from top to bottom, so a tall screen has no empty box.
+        let (title, steps, about) = self.about_lines();
+        let row = self.row_lines(context);
         if area.width >= MIN_SIDE_WIDTH {
-            // The table and how to clear the row on the left, the largest
-            // items down the whole right side
-            let [left, largest] =
+            let [left, side] =
                 Layout::horizontal([Constraint::Length(TABLE_WIDTH), Constraint::Fill(1)])
                     .areas(area);
-            let [table, about] =
+            let [table, below] =
                 Layout::vertical([Constraint::Length(table_height), Constraint::Fill(1)])
                     .areas(left);
-            self.draw_table(frame, table, context);
-            self.draw_about(frame, about);
-            self.draw_largest(frame, largest, context);
+            self.draw_table(frame, table, context, spaced);
+            draw_sections(frame, below, &title, vec![steps, about, row]);
+            let inner_width = side.width.saturating_sub(4);
+            let after = self.after_lines(context, inner_width);
+            let found = self.found_lines(context, inner_width);
+            let used = after.len() + found.len() + 2;
+            let rows = usize::from(side.height.saturating_sub(2))
+                .saturating_sub(used)
+                .clamp(1, 12);
+            let mut list = vec![Line::from("Largest in this row").style(super::visual::HEADING)];
+            list.extend(
+                self.largest_lines(context, side.width, rows)
+                    .unwrap_or_else(|note| vec![note]),
+            );
+            draw_sections(frame, side, " Space ", vec![list, found, after]);
         } else {
-            let [table, about] =
+            let [table, below] =
                 Layout::vertical([Constraint::Length(table_height), Constraint::Fill(1)])
                     .areas(area);
-            self.draw_table(frame, table, context);
-            self.draw_about(frame, about);
+            self.draw_table(frame, table, context, spaced);
+            let after = self.after_lines(context, below.width.saturating_sub(4));
+            draw_sections(frame, below, &title, vec![steps, about, row, after]);
         }
     }
 
@@ -813,6 +1018,41 @@ mod tests {
             Action::Open(_)
         ));
     }
+    #[test]
+    fn tall_boxes_spread_their_sections_from_top_to_bottom() {
+        use crate::ui::visual::tests as view;
+        let (_dir, scan) = done();
+        let mut screen = quick();
+        let mut context = context(&scan);
+        context.disk = Some(neet_core::disk::DiskSpace {
+            total: 500_000_000_000,
+            available: 100_000_000_000,
+            purgeable: None,
+        });
+        let buffer = view::render("quick", &mut screen, &context, 160, 50);
+        let text = view::text(&buffer);
+        let rows: Vec<&str> = text.lines().collect();
+        let row_of = |needle: &str| {
+            rows.iter()
+                .position(|row| row.contains(needle))
+                .unwrap_or_else(|| panic!("{needle:?} missing:\n{text}"))
+        };
+        // The boxes still run the full height, as before.
+        assert!(rows[0].contains("┌ Quick Clean") && rows[0].contains("┌ Space"));
+        let bottom = rows.iter().rposition(|row| row.contains('└')).unwrap();
+        assert!(bottom >= 46, "the boxes end at row {bottom}");
+        // Text at the top of each box, numbers held to its bottom.
+        assert!(row_of("Largest in this row") < row_of("Everything found"));
+        assert!(row_of("Everything found") < row_of("After cleanup"));
+        assert!(row_of("Free after ~125.6 GB") >= bottom - 2);
+        assert!(row_of("Cleared by neet, to the Trash") >= bottom - 2);
+        // The table's rows stand apart on a tall screen.
+        assert_eq!(
+            rows[row_of("Caches and logs") + 1].trim_matches(['│', ' ']),
+            ""
+        );
+    }
+
     #[test]
     fn layout_stays_readable_across_terminal_sizes() {
         use crate::ui::visual::tests as view;

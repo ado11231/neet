@@ -3,8 +3,8 @@
 //! The cat and wordmark are drawn from `ART`, which can be edited here
 //! directly. Braille characters and `Z` / `z` are the cat, and block and box
 //! drawing characters are the wordmark. The stars are not part of `ART`. They
-//! are scattered across the whole art column, thinning out towards uneven
-//! edges, so the sky has no hard border.
+//! are scattered evenly across the whole screen, corners included, and the
+//! menu's boxes are drawn on top.
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -37,7 +37,7 @@ pub const ART: &str = "
 /// the blue of the dashboard logo in `LazyVim`.
 const MOONLIGHT: Color = Color::Rgb(0x82, 0xaa, 0xff);
 
-/// The share of cells holding a star in the middle of the sky.
+/// The share of cells holding a star, before close neighbours are thinned.
 const STAR_DENSITY: f64 = 0.26;
 
 /// The rows of `ART`, without the newline it starts with.
@@ -52,10 +52,17 @@ fn art_style(c: char) -> Style {
     }
 }
 
+/// Small dots, in Tokyo Night's comment blue, light enough to see on a
+/// dark background.
+const FAINT: Color = Color::Rgb(0x56, 0x5f, 0x89);
+
+/// Bright stars, in Tokyo Night's text color.
+const BRIGHT: Color = Color::Rgb(0xa9, 0xb1, 0xd6);
+
 fn star_style(c: char) -> Style {
     match c {
-        '·' => Style::new().fg(Color::DarkGray),
-        _ => Style::new().fg(Color::Gray),
+        '·' => Style::new().fg(FAINT),
+        _ => Style::new().fg(BRIGHT),
     }
 }
 
@@ -84,49 +91,40 @@ fn unit(bits: u64) -> f64 {
     f64::from(u16::try_from(bits & 0xFFFF).unwrap_or(0)) / f64::from(u16::MAX)
 }
 
-/// The sky, as an oval around the art whose edge is roughened with noise.
-struct Sky {
-    radius_x: f64,
-    radius_y: f64,
+/// The star at `(x, y)`, before spacing is applied
+fn raw(x: i32, y: i32) -> Option<char> {
+    let h = hash(x, y);
+    if unit(h) >= STAR_DENSITY {
+        return None;
+    }
+    Some(match (h >> 16) & 0xFF {
+        0..170 => '·',
+        170..215 => '*',
+        215..240 => '✦',
+        _ => '+',
+    })
 }
 
-impl Sky {
-    /// The star at `(dx, dy)` from the centre, before spacing is applied.
-    fn raw(&self, dx: i32, dy: i32) -> Option<char> {
-        let h = hash(dx, dy);
-        let (nx, ny) = (f64::from(dx) / self.radius_x, f64::from(dy) / self.radius_y);
-        let distance = (nx * nx + ny * ny).sqrt() + unit(h >> 32) * 0.5 - 0.25;
-        // Full density inside 0.6 of the radius, fading to none at 1.1.
-        let fade = ((1.1 - distance) / 0.5).clamp(0.0, 1.0);
-        if unit(h) >= STAR_DENSITY * fade {
-            return None;
-        }
-        Some(match (h >> 16) & 0xFF {
-            0..170 => '·',
-            170..215 => '*',
-            215..240 => '✦',
-            _ => '+',
-        })
-    }
-
-    /// The star at `(dx, dy)`, skipped when a close neighbour already has one.
-    fn star(&self, dx: i32, dy: i32) -> Option<char> {
-        let neighbours = [(-1, 0), (-2, 0), (0, -1)];
-        let crowded = neighbours
-            .iter()
-            .any(|&(ox, oy)| self.raw(dx + ox, dy + oy).is_some());
-        if crowded { None } else { self.raw(dx, dy) }
-    }
+/// The star at `(x, y)`, skipped when a close neighbour already has one.
+fn star(x: i32, y: i32) -> Option<char> {
+    let neighbours = [(-1, 0), (-2, 0), (0, -1)];
+    let crowded = neighbours
+        .iter()
+        .any(|&(ox, oy)| raw(x + ox, y + oy).is_some());
+    if crowded { None } else { raw(x, y) }
 }
 
-/// The Home art: stars across `area`, with the cat and wordmark centred on top.
-pub struct Night;
+/// The Home art: stars across the whole area it is drawn in, with the cat
+/// and wordmark centred in `art`.
+pub struct Night {
+    pub art: Rect,
+}
 
 impl Widget for Night {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let (width, height) = size();
-        let left = area.x + area.width.saturating_sub(width) / 2;
-        let top = area.y + area.height.saturating_sub(height) / 2;
+        let left = self.art.x + self.art.width.saturating_sub(width) / 2;
+        let top = self.art.y + self.art.height.saturating_sub(height) / 2;
 
         let mut art = Vec::new();
         for (row, line) in (0_u16..).zip(rows()) {
@@ -143,19 +141,12 @@ impl Widget for Night {
                 .any(|&(ax, ay, _)| x.abs_diff(ax) <= 2 && y.abs_diff(ay) <= 1)
         };
 
-        let sky = Sky {
-            radius_x: (f64::from(width) / 2.0 + 16.0).min(f64::from(area.width) / 2.0 + 3.0),
-            radius_y: (f64::from(height) / 2.0 + 5.0).min(f64::from(area.height) / 2.0 + 2.0),
-        };
-        let centre_x = i32::from(left) + i32::from(width / 2);
-        let centre_y = i32::from(top) + i32::from(height / 2);
         for y in area.top()..area.bottom() {
-            // The last column stays clear, so no star touches the menu border.
-            for x in area.left()..area.right().saturating_sub(1) {
+            for x in area.left()..area.right() {
                 if near_art(x, y) {
                     continue;
                 }
-                if let Some(c) = sky.star(i32::from(x) - centre_x, i32::from(y) - centre_y)
+                if let Some(c) = star(i32::from(x), i32::from(y))
                     && let Some(cell) = buf.cell_mut((x, y))
                 {
                     cell.set_char(c).set_style(star_style(c));
@@ -173,10 +164,9 @@ impl Widget for Night {
 
 #[cfg(test)]
 mod tests {
-    use super::{MOONLIGHT, Night, size};
+    use super::{BRIGHT, FAINT, MOONLIGHT, Night, size};
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
-    use ratatui::style::Color;
     use ratatui::widgets::Widget;
 
     const STARS: [&str; 4] = ["·", "*", "✦", "+"];
@@ -184,7 +174,7 @@ mod tests {
     fn render(width: u16, height: u16) -> Buffer {
         let area = Rect::new(0, 0, width, height);
         let mut buf = Buffer::empty(area);
-        Night.render(area, &mut buf);
+        Night { art: area }.render(area, &mut buf);
         buf
     }
 
@@ -198,7 +188,7 @@ mod tests {
     }
 
     #[test]
-    fn colours_the_art_blue_and_the_stars_grey() {
+    fn colours_the_art_and_stars_in_the_night_palette() {
         let buf = render(60, 23);
         let fg_of = |symbol: &str| {
             buf.content()
@@ -209,23 +199,39 @@ mod tests {
 
         assert_eq!(fg_of("█"), Some(MOONLIGHT));
         assert_eq!(fg_of("⣿"), Some(MOONLIGHT));
-        assert_eq!(fg_of("·"), Some(Color::DarkGray));
-        assert_eq!(fg_of("*"), Some(Color::Gray));
+        assert_eq!(fg_of("·"), Some(FAINT));
+        assert_eq!(fg_of("*"), Some(BRIGHT));
     }
 
     #[test]
-    fn scatters_stars_but_leaves_the_corners_dark() {
-        let buf = render(60, 23);
-        let is_star = |x: u16, y: u16| STARS.contains(&buf[(x, y)].symbol());
-        let stars = (0..23)
-            .flat_map(|y| (0..60).map(move |x| (x, y)))
-            .filter(|&(x, y)| is_star(x, y))
-            .count();
-
-        assert!(stars >= 30, "only {stars} stars");
-        for (x, y) in [(0, 0), (1, 0), (0, 1), (59, 0), (58, 0), (0, 22), (59, 22)] {
-            assert!(!is_star(x, y), "star in the corner at {x}, {y}");
+    fn fills_every_corner_with_stars() {
+        let buf = render(90, 60);
+        let has_star = |xs: std::ops::Range<u16>, ys: std::ops::Range<u16>| {
+            ys.flat_map(|y| xs.clone().map(move |x| (x, y)))
+                .any(|(x, y)| STARS.contains(&buf[(x, y)].symbol()))
+        };
+        for (xs, ys) in [
+            (0..10, 0..6),
+            (80..90, 0..6),
+            (0..10, 54..60),
+            (80..90, 54..60),
+        ] {
+            assert!(
+                has_star(xs.clone(), ys.clone()),
+                "no stars at {xs:?}, {ys:?}"
+            );
         }
+    }
+
+    #[test]
+    fn stars_reach_the_far_rows_of_a_tall_screen() {
+        let buf = render(90, 60);
+        let has_star = |rows: std::ops::Range<u16>| {
+            rows.flat_map(|y| (0..90).map(move |x| (x, y)))
+                .any(|(x, y)| STARS.contains(&buf[(x, y)].symbol()))
+        };
+        assert!(has_star(2..8), "no stars near the top");
+        assert!(has_star(52..58), "no stars near the bottom");
     }
 
     #[test]
