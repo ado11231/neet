@@ -284,7 +284,7 @@
 
 | Step | Layout | Keys |
 | --- | --- | --- |
-| Review | A scrolling list of every selected path, with sizes. Paths are grouped by rule, or by folder for Remove App, and rules that found nothing are left out. The title shows the item count and total size. From 100 columns, a Summary box beside it shows the total, a bar for each group, and what happens next. | Scroll with `Up` / `Down`, `PgUp` / `PgDn`, `g` / `G`. `Enter` goes on. `Esc` goes back. |
+| Review | A scrolling list of every selected path, with its size and a bar against the largest. Paths are grouped by rule, or by folder for Remove App, and rules that found nothing are left out. The title shows the item count and total size. From 100 columns, small boxes beside it show the **Total** (size, items, groups, and that it goes to the Trash), an **Overview** bar for each group, the **Steps**, and **After cleanup**, the disk now and after. | Scroll with `Up` / `Down`, `PgUp` / `PgDn`, `g` / `G`. `Enter` goes on. `Esc` goes back. |
 | Confirm | A box, 60 columns wide, in the middle of the review. It shows the item count and total size, and that Finder moves them to the Trash. | `y` moves them. `n` or `Esc` goes back. |
 | Move | The loading box in the middle of the screen, with a progress bar and how many items have moved. The first time, macOS asks whether your terminal may control Finder. | No key works until every item is done. |
 | Result | A box in the middle of the screen, up to 72 columns wide. A green `✓` line says how many items moved, then the space they take in the Trash, and how to use Put Back. Every skipped item follows, with its reason below it. If nothing moved, the first line is yellow. | Scroll a long result with `Up` / `Down`. `Enter` or `Esc` goes back to Home. |
@@ -303,8 +303,8 @@
 |      4.3 GB  ###.....   2 months ago  weights.bin   ~/Library/...    |  | it from the app that made it.             |
 |      3.1 GB  ##......   6 months ago  Xcode_16.dmg  ~/Downloads      |  +------------------ Enter shows it in Disk +
 |                                                                      |  + Location ---------------------------------+
-|                                                                      |  | By folder                                 |
 |                                                                      |  |   11.0 GB ###### ~/Library/Containers     |
+|                                                                      |  |                                           |
 |                                                                      |  |    3.1 GB ##.... ~/Downloads              |
 |                                                                      |  |                                           |
 |                                                                      |  | By type                                   |
