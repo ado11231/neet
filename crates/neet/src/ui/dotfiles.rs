@@ -324,7 +324,7 @@ impl Dotfiles {
                 Item::Group(_) => None,
             })
             .collect();
-        let mut lines = vec![Line::from("What the marks mean").style(visual::HEADING)];
+        let mut lines = vec![Line::from("Legend").style(visual::HEADING)];
         for (state, meaning) in [
             (State::Saved, "matches its saved copy"),
             (State::Changed, "differs from its saved copy"),
@@ -1918,14 +1918,16 @@ mod tests {
         // The list is only as wide as it needs; the preview gets the rest.
         let files = rows[1].find('┐').unwrap();
         assert!(files <= usize::from(LIST_WIDTH.1) * 3, "{}", rows[1]);
-        assert!(row_of("Repo") < row_of("What the marks mean"));
-        assert!(row_of("What the marks mean") < row_of("Saved    none yet"));
+        assert!(row_of("Repo") < row_of("Legend"));
+        assert!(row_of("Legend") < row_of("Saved    none yet"));
         assert!(
             text.contains("+ not saved   not in your dotfiles yet"),
             "{text}"
         );
         assert!(text.contains("secret        may hold a token: kept private"));
-        assert!(row_of("Kept in") >= rows.len() - 4, "{text}");
+        // Each section is a box of its own, titled with its heading.
+        assert!(row_of("┌ Legend") < row_of("┌ Backups"));
+        assert_eq!(row_of("┌ Backups") + 1, row_of("Saved    none yet"));
     }
 
     #[test]

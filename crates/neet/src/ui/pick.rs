@@ -9,7 +9,7 @@ use neet_core::clutter::{self, Kind};
 use neet_core::safety::CleanupRoots;
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
-use ratatui::layout::Rect;
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Stylize;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Cell, Padding, Paragraph, Row, Table, TableState, Wrap};
@@ -183,8 +183,281 @@ fn item_row(
     ])
 }
 
+/// What an item is, from its name, and how it comes back
+fn what_it_is(name: &str) -> &'static str {
+    let lower = name.to_ascii_lowercase();
+    if lower == "node_modules" {
+        "JavaScript packages. Running npm install brings them back."
+    } else if lower == "target" {
+        "Rust build files. Your next cargo build makes them again."
+    } else if [".dmg", ".pkg", ".iso"]
+        .iter()
+        .any(|end| lower.ends_with(end))
+    {
+        "An app installer. You rarely need it after installing."
+    } else if [".zip", ".xip"].iter().any(|end| lower.ends_with(end)) {
+        "A zip file an app came in. Download it again if you need it."
+    } else {
+        "An item this cleanup found."
+    }
+}
+
+impl Pick {
+    /// Every item with its checkbox, size, path, and age, and what is
+    /// selected on the bottom edge
+    fn draw_table(
+        &mut self,
+        frame: &mut Frame,
+        area: Rect,
+        planned: &Planned,
+        block: ratatui::widgets::Block<'static>,
+    ) {
+        let plan = &planned.plan;
+        let selected = Span::raw(format!(
+            " Selected: {} · {} ",
+            super::clean::items(plan.selected_count()),
+            format::size(plan.selected_size())
+        ));
+        let block = block
+            .title_bottom(if plan.selected_count() == 0 {
+                selected
+            } else {
+                selected.green().bold()
+            })
+            .title(Line::from(" Goes to the Trash ").right_aligned());
+
+        let sizes = format::column_width(
+            "Size",
+            plan.rules
+                .iter()
+                .flat_map(|rule| &rule.items)
+                .map(|item| format::size(item.size)),
+        );
+        // Paths are only as wide as the longest, so Changed sits beside them.
+        let paths = format::column_width(
+            "Path",
+            plan.rules
+                .iter()
+                .flat_map(|rule| &rule.items)
+                .map(|item| display_path(&planned.home, item.path.path())),
+        );
+        let mut columns = super::visual::Columns::new(
+            area.width,
+            [(3, 0), (sizes, 0), (16, 1), (14, 0)],
+            &[],
+            true,
+        );
+        if columns.width(2) > usize::from(paths) + 2 {
+            columns = super::visual::Columns::new(
+                area.width,
+                [(3, 0), (sizes, 0), (paths + 2, 0), (14, 0)],
+                &[],
+                true,
+            );
+        }
+        let now = SystemTime::now();
+        let rows: Vec<Row> = plan
+            .rules
+            .iter()
+            .map(|rule| item_row(rule, &planned.home, now, &columns))
+            .collect();
+        let header = columns
+            .row([
+                Cell::from(""),
+                Cell::from(Line::from("Size").right_aligned()),
+                Cell::from("Path"),
+                Cell::from("Changed"),
+            ])
+            .style(super::visual::HEADING)
+            .bottom_margin(1);
+        let table = Table::new(rows, columns.widths())
+            .header(header)
+            .column_spacing(2)
+            .block(block)
+            .highlight_symbol("▸ ")
+            .row_highlight_style(super::visual::SELECTED);
+        frame.render_stateful_widget(table, area, &mut self.list);
+    }
+
+    /// The selected item: where it is, its size and age, and what it is
+    fn item_lines(planned: &Planned, index: usize, width: usize) -> (String, Vec<Line<'static>>) {
+        let field = |label: &str, value: Span<'static>| {
+            Line::from(vec![Span::raw(format!("{label:<10}")).bold(), value])
+        };
+        let Some(rule) = planned.plan.rules.get(index) else {
+            return (String::new(), Vec::new());
+        };
+        let Some(item) = rule.items.first() else {
+            let Some(skipped) = rule.skipped.first() else {
+                return (String::new(), Vec::new());
+            };
+            let path = display_path(&planned.home, &skipped.path);
+            return (
+                " Left in place ".to_string(),
+                vec![
+                    field(
+                        "Path",
+                        Span::raw(format::shorten_path(&path, width.saturating_sub(10)))
+                            .fg(super::visual::ACCENT),
+                    ),
+                    field(
+                        "Why",
+                        Span::raw(skip_reason(&skipped.reason, None)).yellow(),
+                    ),
+                ],
+            );
+        };
+        let name = item
+            .path
+            .path()
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let folder = place(&planned.home, item.path.path());
+        let elapsed = SystemTime::now()
+            .duration_since(item.changed)
+            .unwrap_or_default();
+        let mut changed = vec![field("Changed", Span::raw(format::age(elapsed)))];
+        if elapsed < RECENT {
+            changed = vec![field(
+                "Changed",
+                Span::raw(format!(
+                    "{}, you may still be using it",
+                    format::age(elapsed)
+                ))
+                .yellow(),
+            )];
+        }
+        let mut lines = vec![
+            field(
+                "In",
+                Span::raw(format::shorten_path(&folder, width.saturating_sub(10)))
+                    .fg(super::visual::ACCENT),
+            ),
+            field(
+                "Size",
+                format::size_span(item.size, format::size(item.size)),
+            ),
+        ];
+        lines.extend(changed);
+        lines.push(field(
+            "Selected",
+            if rule.selected {
+                Span::raw("yes").green()
+            } else {
+                Span::raw("no")
+            },
+        ));
+        lines.push(Line::default());
+        lines.push(Line::from(what_it_is(&name)));
+        (format!(" {name} "), lines)
+    }
+
+    /// Everything found and selected, and how many changed this week
+    fn totals_lines(planned: &Planned) -> Vec<Line<'static>> {
+        let field = |label: &str, value: Span<'static>| {
+            Line::from(vec![Span::raw(format!("{label:<10}")).bold(), value])
+        };
+        let plan = &planned.plan;
+        let found: Vec<_> = plan.rules.iter().flat_map(|rule| &rule.items).collect();
+        let size: u64 = found.iter().map(|item| item.size).sum();
+        let now = SystemTime::now();
+        let recent = found
+            .iter()
+            .filter(|item| now.duration_since(item.changed).unwrap_or_default() < RECENT)
+            .count();
+        let selected = Span::raw(format!(
+            "{} · {}",
+            format::size(plan.selected_size()),
+            super::clean::items(plan.selected_count())
+        ));
+        let mut lines = vec![
+            Line::from("Total").style(super::visual::HEADING),
+            field(
+                "Found",
+                Span::raw(format!(
+                    "{} · {}",
+                    format::size(size),
+                    super::clean::items(found.len())
+                )),
+            ),
+            field(
+                "Selected",
+                if plan.selected_count() == 0 {
+                    selected
+                } else {
+                    selected.green().bold()
+                },
+            ),
+        ];
+        if recent > 0 {
+            lines.push(field(
+                "Recent",
+                Span::raw(format!(
+                    "{} changed this week. Unpick ones you still use.",
+                    super::clean::items(recent)
+                ))
+                .yellow(),
+            ));
+        }
+        lines
+    }
+
+    /// Every item, largest first, with a bar against the largest, green
+    /// when selected
+    fn overview_lines(planned: &Planned, width: u16) -> Vec<Line<'static>> {
+        let mut found: Vec<(&RulePlan, u64)> = planned
+            .plan
+            .rules
+            .iter()
+            .filter_map(|rule| rule.items.first().map(|item| (rule, item.size)))
+            .collect();
+        found.sort_by_key(|&(_, size)| std::cmp::Reverse(size));
+        let largest = found.first().map_or(0, |&(_, size)| size);
+        let bar = 10;
+        let room = usize::from(width).saturating_sub(4 + 11 + bar + 2);
+        let mut lines = vec![Line::from("Overview").style(super::visual::HEADING)];
+        for (rule, size) in found {
+            let path = rule
+                .items
+                .first()
+                .map(|item| display_path(&planned.home, item.path.path()))
+                .unwrap_or_default();
+            let bar_span = Span::raw(format::bar(size, largest, bar));
+            lines.push(Line::from(vec![
+                format::size_span(size, format!("{:>9}  ", format::size(size))),
+                if rule.selected {
+                    bar_span.green()
+                } else {
+                    bar_span.fg(super::visual::ACCENT)
+                },
+                Span::raw("  "),
+                Span::raw(format::shorten_path(&path, room)),
+            ]));
+        }
+        lines
+    }
+
+    fn how_lines() -> Vec<Line<'static>> {
+        let step = |number: usize, text: &'static str| {
+            Line::from(vec![
+                Span::raw(format!("{number}. "))
+                    .fg(super::visual::ACCENT)
+                    .bold(),
+                Span::raw(text),
+            ])
+        };
+        vec![
+            Line::from("Steps").style(super::visual::HEADING),
+            step(1, "Press Space to pick or unpick one, or a for all."),
+            step(2, "Press Enter to check the list."),
+            step(3, "Confirm to move them to the Trash."),
+        ]
+    }
+}
+
 impl Screen for Pick {
-    fn draw(&mut self, frame: &mut Frame, area: Rect, _context: &Context) {
+    fn draw(&mut self, frame: &mut Frame, area: Rect, context: &Context) {
         self.poll();
         let block = super::visual::block()
             .title(format!(" {} ", self.title))
@@ -212,55 +485,42 @@ impl Screen for Pick {
             }
             State::Ready(planned) => Arc::clone(planned),
         };
-        let plan = &planned.plan;
-        let selected = Span::raw(format!(
-            " Selected: {} · {} ",
-            super::clean::items(plan.selected_count()),
-            format::size(plan.selected_size())
-        ));
-        let block = block
-            .title_bottom(if plan.selected_count() == 0 {
-                selected
-            } else {
-                selected.green().bold()
-            })
-            .title(Line::from(" Trash · Put Back restores ").right_aligned());
-
-        let sizes = format::column_width(
-            "Size",
-            plan.rules
-                .iter()
-                .flat_map(|rule| &rule.items)
-                .map(|item| format::size(item.size)),
-        );
-        let columns = super::visual::Columns::new(
-            area.width,
-            [(3, 0), (sizes, 0), (16, 1), (14, 0)],
-            &[],
-            true,
-        );
-        let now = SystemTime::now();
-        let rows: Vec<Row> = plan
-            .rules
-            .iter()
-            .map(|rule| item_row(rule, &planned.home, now, &columns))
-            .collect();
-        let header = columns
-            .row([
-                Cell::from(""),
-                Cell::from(Line::from("Size").right_aligned()),
-                Cell::from("Path"),
-                Cell::from("Changed"),
+        // The table, only as tall as its rows, then a box about the selected
+        // item below, when there is room for both
+        let rows = u16::try_from(planned.plan.rules.len()).unwrap_or(u16::MAX);
+        let (area, below) = if area.height >= rows + 4 + 8 {
+            let [table, below] = Layout::vertical([
+                Constraint::Length((rows + 4).min(area.height - 8)),
+                Constraint::Fill(1),
             ])
-            .style(super::visual::HEADING)
-            .bottom_margin(1);
-        let table = Table::new(rows, columns.widths())
-            .header(header)
-            .column_spacing(2)
-            .block(block)
-            .highlight_symbol("▸ ")
-            .row_highlight_style(super::visual::SELECTED);
-        frame.render_stateful_widget(table, area, &mut self.list);
+            .areas(area);
+            (table, Some(below))
+        } else {
+            (area, None)
+        };
+        self.draw_table(frame, area, &planned, block);
+        if let Some(below) = below {
+            let width = usize::from(below.width.saturating_sub(4));
+            let (title, item) =
+                Self::item_lines(&planned, self.list.selected().unwrap_or(0), width);
+            let half = below.width / 2;
+            super::visual::side_by_side(
+                frame,
+                below,
+                &title,
+                vec![item, Self::overview_lines(&planned, half)],
+                vec![
+                    Self::totals_lines(&planned),
+                    Self::how_lines(),
+                    super::visual::after_cleanup(
+                        context.disk.as_ref(),
+                        planned.plan.selected_size(),
+                        "Selected",
+                        half,
+                    ),
+                ],
+            );
+        }
     }
 
     fn handle_key(&mut self, key: KeyEvent, _context: &Context) -> Action {
@@ -387,6 +647,18 @@ mod tests {
                 crate::ui::visual::tests::render("pick", &mut pick, &context, width, height);
             assert!(crate::ui::visual::tests::text(&buffer).contains("node_modules"));
             assert!(crate::ui::visual::tests::text(&buffer).contains("Selected: 2 items"));
+        }
+        // A tall screen: the table fits its rows, and the box below says
+        // what the selected folder is, the totals, and the steps.
+        let buffer = crate::ui::visual::tests::render("pick", &mut pick, &context, 120, 40);
+        let tall = crate::ui::visual::tests::text(&buffer);
+        for text in [
+            "┌ node_modules",
+            "JavaScript packages",
+            "┌ Total",
+            "┌ Steps",
+        ] {
+            assert!(tall.contains(text), "{text}:\n{tall}");
         }
         let text = render(&mut pick);
         assert!(text.contains("~/Documents/web/node_modules"));

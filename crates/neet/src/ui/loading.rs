@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use neet_core::scan::Progress;
@@ -15,6 +16,22 @@ const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 /// The widest the box gets
 const WIDTH: u16 = 60;
 
+thread_local! {
+    /// Whether a loading box was drawn in this frame
+    static SHOWN: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Forgets the last frame's loading box, before a frame is drawn.
+pub fn start_frame() {
+    SHOWN.with(|shown| shown.set(false));
+}
+
+/// Whether this frame shows a loading box, so the footer's keys, which do
+/// nothing until it is done, are left out
+pub fn shown() -> bool {
+    SHOWN.with(Cell::get)
+}
+
 /// What a screen shows while its slow work runs
 pub struct Loading<'a> {
     /// The screen's name, shown on the box's border
@@ -30,6 +47,7 @@ pub struct Loading<'a> {
 impl Loading<'_> {
     /// Draws a small box in the middle of `area`.
     pub fn draw(&self, frame: &mut Frame, area: Rect) {
+        SHOWN.with(|shown| shown.set(true));
         let width = WIDTH.min(area.width);
         let lines = vec![
             Line::from(vec![
@@ -105,5 +123,21 @@ mod tests {
             let text = crate::ui::visual::tests::text(terminal.backend().buffer());
             assert!(text.contains("Read-only scan."), "{text}");
         }
+    }
+
+    #[test]
+    fn a_frame_remembers_whether_it_showed_a_loading_box() {
+        let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
+        start_frame();
+        assert!(!shown());
+        terminal
+            .draw(|frame| {
+                scanning("Quick Clean", "Read-only scan.", Progress::default())
+                    .draw(frame, frame.area());
+            })
+            .unwrap();
+        assert!(shown());
+        start_frame();
+        assert!(!shown());
     }
 }

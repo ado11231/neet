@@ -13,9 +13,12 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Cell, Clear, Padding, Paragraph, Row, Table, TableState, Wrap};
 
 use super::app::{Action, Context, Screen};
+
+mod trash;
 use super::clean::checkbox;
 use super::format;
 use super::loading::Loading;
+pub use trash::Trash;
 
 /// Runs `work` on its own thread, for the answer to arrive later
 fn spawn<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> Receiver<T> {
@@ -195,20 +198,6 @@ fn back_home() -> Line<'static> {
     ])
 }
 
-/// A box of text sized to fit, at the top of `area`. Returns the rest.
-fn about_box(frame: &mut Frame, area: Rect, lines: Vec<Line<'static>>) -> Rect {
-    let height = (rows(&lines, area.width.saturating_sub(4)) + 2).min(area.height);
-    let [about, rest] =
-        Layout::vertical([Constraint::Length(height), Constraint::Fill(1)]).areas(area);
-    frame.render_widget(
-        Paragraph::new(lines)
-            .wrap(Wrap { trim: false })
-            .block(super::visual::block().padding(Padding::horizontal(1))),
-        about,
-    );
-    rest
-}
-
 /// The date part of a time `simctl` gives, such as `2026-09-17`
 fn day(time: &str) -> &str {
     time.split('T').next().unwrap_or(time)
@@ -281,14 +270,16 @@ fn runtime_row(
                 .map_or("never", day)
                 .to_string(),
         ),
-        Cell::from(if runtime.deletable {
+        Cell::from(if !runtime.deletable {
+            Span::raw("Removal blocked").yellow()
+        } else if on.is_empty() {
+            Span::raw("none")
+        } else {
             Span::raw(format!(
                 "{}, {}",
                 counted(on.len(), "simulator"),
                 format::size(size_of(on))
             ))
-        } else {
-            Span::raw("Removal blocked").yellow()
         }),
     ])
 }
@@ -383,9 +374,27 @@ impl Simulators {
                 .map(|runtime| format::size(runtime.size)),
         )
         .max(9);
+        // Each column is as wide as what it holds, so the build and size sit
+        // beside the name. The last column takes what is left.
+        let names = format::column_width(
+            "No runtime",
+            found.runtimes.iter().map(|runtime| runtime.name.clone()),
+        )
+        .max(u16::try_from("Runtime".len()).unwrap_or(0));
+        let builds = format::column_width(
+            "Build",
+            found.runtimes.iter().map(|runtime| runtime.build.clone()),
+        );
         let columns = super::visual::Columns::new(
             area.width,
-            [(3, 0), (16, 1), (8, 0), (sizes, 0), (11, 0), (18, 1)],
+            [
+                (3, 0),
+                (names, 0),
+                (builds, 0),
+                (sizes, 0),
+                (11, 0),
+                (18, 1),
+            ],
             &[2, 4],
             true,
         );
@@ -420,7 +429,7 @@ impl Simulators {
                 Cell::from("Build"),
                 Cell::from(Line::from("Size").right_aligned()),
                 Cell::from("Last used"),
-                Cell::from("Simulators on it"),
+                Cell::from("Simulators"),
             ])
             .style(super::visual::HEADING)
             .bottom_margin(1);
@@ -450,64 +459,167 @@ impl Simulators {
         frame.render_stateful_widget(table, area, &mut self.list);
     }
 
-    fn about(&self) -> Vec<Line<'static>> {
-        let mut lines = vec![
+    /// The selected row: a runtime's details, or the simulators with no
+    /// runtime, then that nothing goes to the Trash. Returns the box title.
+    fn selected_lines(&self, found: &SimulatorsFound) -> (String, Vec<Line<'static>>) {
+        let index = self.list.selected().unwrap_or(0);
+        let field =
+            |label: &'static str, value: Span<'static>| labeled(label, Color::Reset, vec![value]);
+        let (title, mut lines) = if let Some(runtime) = found.runtimes.get(index) {
+            let on = found.on(runtime);
+            let mut lines = vec![
+                field("Build", Span::raw(runtime.build.clone())),
+                field(
+                    "Size",
+                    format::size_span(runtime.size, format::size(runtime.size)),
+                ),
+                field(
+                    "Last used",
+                    Span::raw(
+                        runtime
+                            .last_used
+                            .as_deref()
+                            .map_or("never", day)
+                            .to_string(),
+                    ),
+                ),
+            ];
+            let names: Vec<&str> = on.iter().map(|device| device.name.as_str()).collect();
+            lines.push(field(
+                "Simulators",
+                Span::raw(if names.is_empty() {
+                    "none".to_string()
+                } else {
+                    format!(
+                        "{}, {}: {}",
+                        counted(on.len(), "simulator"),
+                        format::size(size_of(&on)),
+                        names.join(", ")
+                    )
+                }),
+            ));
+            if !runtime.deletable {
+                lines.push(field(
+                    "Blocked",
+                    Span::raw("Xcode won't let this one be deleted.").yellow(),
+                ));
+            }
+            (format!(" {} ", runtime.name), lines)
+        } else {
+            let stranded = found.stranded();
+            (
+                " No runtime ".to_string(),
+                vec![
+                    field(
+                        "Simulators",
+                        Span::raw(format!(
+                            "{}, {}",
+                            counted(stranded.len(), "simulator"),
+                            format::size(size_of(&stranded))
+                        )),
+                    ),
+                    field(
+                        "Why",
+                        Span::raw("their iOS version is gone, so they can't start.").yellow(),
+                    ),
+                ],
+            )
+        };
+        // Kept with the details, so it shows on the smallest screen too
+        lines.push(labeled(
+            "Warning",
+            Color::Red,
+            vec![Span::raw("deleted for good, not moved to the Trash.")],
+        ));
+        (title, lines)
+    }
+
+    /// The box under the table: the selected row, what removing does,
+    /// everything found, and the steps, with the box's title
+    fn about(&self) -> (String, Vec<Vec<Line<'static>>>) {
+        let Some(found) = self.stage.found() else {
+            return (String::new(), Vec::new());
+        };
+        let field =
+            |label: &'static str, value: Span<'static>| labeled(label, Color::Reset, vec![value]);
+        let (title, selected) = self.selected_lines(found);
+        let removing = vec![
+            Line::from("Removal").style(super::visual::HEADING),
             labeled(
-                "Runtime",
+                "What",
                 super::visual::ACCENT,
                 vec![Span::raw(
-                    "lets Xcode run simulators of one iOS, watchOS, tvOS, or visionOS version.",
+                    "a runtime is one iOS version Xcode uses for simulators.",
                 )],
             ),
             labeled(
-                "Removes",
+                "Deletes",
                 Color::Red,
+                vec![Span::raw("the runtimes you pick & their simulators.")],
+            ),
+            labeled(
+                "Get back",
+                Color::Green,
                 vec![Span::raw(
-                    "the runtimes you select and every simulator on them, apps and data included.",
+                    "download it again in Xcode, Settings, Components.",
                 )],
             ),
         ];
-        if let Some(runtime) = self
-            .stage
-            .found()
-            .and_then(|found| found.runtimes.get(self.list.selected().unwrap_or(0)))
-        {
-            lines.push(
-                Line::from(format!(
-                    "{} · Build {} · Last used {}",
-                    runtime.name,
-                    runtime.build,
-                    runtime.last_used.as_deref().map_or("never", day)
-                ))
-                .fg(super::visual::ACCENT),
-            );
-        }
-        if self
-            .stage
-            .found()
-            .is_some_and(|found| !found.stranded().is_empty())
-        {
-            lines.push(labeled(
-                "No runtime",
-                Color::Yellow,
-                vec![Span::raw(
-                    "simulators whose runtime is gone. They can never start again.",
-                )],
-            ));
-        }
-        lines.push(labeled(
-            "Undo",
-            Color::Green,
-            vec![Span::raw(
-                "Xcode downloads a runtime again in Settings, Components.",
-            )],
-        ));
-        lines.push(Line::default());
-        lines.push(Line::from(vec![
-            Span::raw("Permanently: ").red().bold(),
-            Span::raw("none of it goes to the Trash."),
-        ]));
-        lines
+        let runtimes: u64 = found.runtimes.iter().map(|runtime| runtime.size).sum();
+        let devices = size_of(&found.devices.iter().collect::<Vec<_>>());
+        let picked = self.picked_size();
+        let picked = Span::raw(format::size(picked));
+        let in_all = vec![
+            Line::from("Total").style(super::visual::HEADING),
+            field(
+                "Runtimes",
+                Span::raw(format!(
+                    "{}, {}",
+                    counted(found.runtimes.len(), "runtime"),
+                    format::size(runtimes)
+                )),
+            ),
+            field(
+                "Simulators",
+                Span::raw(format!(
+                    "{}, {}",
+                    counted(found.devices.len(), "simulator"),
+                    format::size(devices)
+                )),
+            ),
+            field(
+                "Selected",
+                if self.nothing_picked() {
+                    picked
+                } else {
+                    picked.red().bold()
+                },
+            ),
+        ];
+        let how = vec![
+            Line::from("Steps").style(super::visual::HEADING),
+            step(
+                1,
+                vec![
+                    Span::raw("Press "),
+                    key("Space"),
+                    Span::raw(" to pick a runtime."),
+                ],
+            ),
+            step(
+                2,
+                vec![
+                    Span::raw("Press "),
+                    key("Enter"),
+                    Span::raw(" to see what gets deleted."),
+                ],
+            ),
+            step(
+                3,
+                vec![Span::raw("Press "), key("y"), Span::raw(" to delete it.")],
+            ),
+        ];
+        (title, vec![selected, removing, in_all, how])
     }
 
     fn question(&self) -> Vec<Line<'static>> {
@@ -524,7 +636,7 @@ impl Simulators {
             ]));
             if !on.is_empty() {
                 lines.push(Line::from(format!(
-                    "   and {} on it, {}",
+                    "   & {} on it, {}",
                     counted(on.len(), "simulator"),
                     format::size(size_of(&on))
                 )));
@@ -652,14 +764,14 @@ fn remove_simulators(runtimes: Vec<(Runtime, Vec<Device>)>, stranded: Vec<Device
 }
 
 impl Screen for Simulators {
-    fn draw(&mut self, frame: &mut Frame, area: Rect, _context: &Context) {
+    fn draw(&mut self, frame: &mut Frame, area: Rect, context: &Context) {
         self.stage.poll();
         let title = "Simulators";
         match &self.stage {
             Stage::Looking(started, _) => {
                 return Loading {
                     title,
-                    doing: "Loading runtimes and simulators",
+                    doing: "Loading runtimes & simulators",
                     progress: format!("{}s", started.elapsed().as_secs()),
                     note: "Read-only scan.",
                 }
@@ -673,7 +785,7 @@ impl Screen for Simulators {
                     title,
                     doing: "Removing with xcrun simctl",
                     progress: format!("{}s", started.elapsed().as_secs()),
-                    note: "Each runtime is unmounted and deleted, then its simulators. This can take a minute.",
+                    note: "Each runtime is unmounted & deleted, then its simulators. This can take a minute.",
                 }
                 .draw(frame, area);
             }
@@ -703,7 +815,17 @@ impl Screen for Simulators {
         let [list, rest] =
             Layout::vertical([Constraint::Length(list_height), Constraint::Fill(1)]).areas(area);
         self.draw_list(frame, list);
-        about_box(frame, rest, self.about());
+        let (title, sections) = self.about();
+        let mut sections = sections.into_iter();
+        let left: Vec<_> = sections.by_ref().take(2).collect();
+        let mut right: Vec<_> = sections.collect();
+        right.push(super::visual::after_cleanup(
+            context.disk.as_ref(),
+            self.picked_size(),
+            "Selected",
+            rest.width / 2,
+        ));
+        super::visual::side_by_side(frame, rest, &title, left, right);
         if matches!(self.stage, Stage::Asking(_)) {
             ask(
                 frame,
@@ -894,23 +1016,10 @@ impl DockerSpace {
         })
     }
 
-    fn reset_line(image: u64) -> Line<'static> {
-        labeled(
-            "Reset",
-            Color::Yellow,
-            vec![
-                key("x"),
-                Span::raw(": stop Docker; move disk image, "),
-                Span::raw(format::size(image)).bold(),
-                Span::raw(", to the Trash."),
-            ],
-        )
-    }
-
     fn not_running_lines(&self) -> Vec<Line<'static>> {
         let mut lines = vec![
             Line::from("Docker Desktop is not running").yellow().bold(),
-            Line::from("Docker can only say what it holds, and prune, while it runs."),
+            Line::from("Docker can only say what it holds & prune, while it runs."),
             Line::default(),
             step(1, vec![key("o"), Span::raw(": open Docker Desktop")]),
             step(
@@ -941,7 +1050,7 @@ impl DockerSpace {
         lines
     }
 
-    fn draw_usage(&mut self, frame: &mut Frame, area: Rect) {
+    fn draw_usage(&mut self, frame: &mut Frame, area: Rect, context: &Context) {
         let Some(found) = self.stage.found() else {
             return;
         };
@@ -973,29 +1082,121 @@ impl DockerSpace {
             rest
         };
 
-        let mut lines = vec![Line::from("Permanently: prune skips Trash.").red().bold()];
-        if let Some(image) = image {
-            lines.push(Self::reset_line(image));
-        }
-        lines.extend([
+        let freed: u64 = usage
+            .iter()
+            .filter_map(|line| docker_size(&line.reclaimable))
+            .sum();
+        let (left, right) = self.usage_boxes(image, freed, context, rest.width / 2);
+        super::visual::side_by_side(frame, rest, "Prune", left, right);
+    }
+
+    /// The boxes under the tables: what prune deletes and keeps, the reset,
+    /// the totals, the steps, and the disk after a prune
+    fn usage_boxes(
+        &self,
+        image: Option<u64>,
+        freed: u64,
+        context: &Context,
+        width: u16,
+    ) -> (Vec<Vec<Line<'static>>>, Vec<Vec<Line<'static>>>) {
+        let mut prune = vec![
             labeled(
-                "Removes",
+                "Deletes",
                 Color::Red,
                 vec![Span::raw(
-                    "stopped containers, unused networks/images, build cache",
+                    "stopped containers, unused images & networks, build cache",
                 )],
             ),
             labeled(
                 "Keeps",
                 Color::Green,
-                vec![Span::raw("running containers/images; unselected volumes")],
+                vec![Span::raw(
+                    "running containers & their images, volumes you don't pick",
+                )],
             ),
-        ]);
+            labeled(
+                "Warning",
+                Color::Red,
+                vec![Span::raw("deleted for good, not moved to the Trash.")],
+            ),
+        ];
         if let Some(note) = &self.note {
-            lines.push(Line::default());
-            lines.push(Line::from(note.clone()).fg(super::visual::ACCENT));
+            prune.push(Line::default());
+            prune.push(Line::from(note.clone()).fg(super::visual::ACCENT));
         }
-        about_box(frame, rest, lines);
+        let mut left = vec![prune];
+        if let Some(image) = image {
+            left.push(vec![
+                Line::from("Reset").style(super::visual::HEADING),
+                labeled(
+                    "What",
+                    Color::Yellow,
+                    vec![Span::raw(
+                        "stops Docker & moves its disk image to the Trash",
+                    )],
+                ),
+                labeled(
+                    "Size",
+                    Color::Reset,
+                    vec![Span::raw(format::size(image)).bold()],
+                ),
+                labeled(
+                    "Get back",
+                    Color::Green,
+                    vec![Span::raw("move it back before you open Docker again")],
+                ),
+            ]);
+        }
+        let picked = self.picked_volumes().len();
+        let field =
+            |label: &'static str, value: Span<'static>| labeled(label, Color::Reset, vec![value]);
+        let mut total = vec![
+            Line::from("Total").style(super::visual::HEADING),
+            field("Can free", Span::raw(format::size(freed)).yellow().bold()),
+        ];
+        if let Some(image) = image {
+            total.push(field("Disk image", Span::raw(format::size(image))));
+        }
+        total.push(field("Volumes", Span::raw(format!("{picked} picked"))));
+        let mut steps = vec![
+            Line::from("Steps").style(super::visual::HEADING),
+            step(
+                1,
+                vec![
+                    Span::raw("Press "),
+                    key("Enter"),
+                    Span::raw(" to prune. It asks first."),
+                ],
+            ),
+        ];
+        let mut number = 2;
+        if self
+            .stage
+            .found()
+            .is_some_and(|found| !found.volumes.is_empty())
+        {
+            steps.push(step(
+                number,
+                vec![
+                    Span::raw("Press "),
+                    key("Space"),
+                    Span::raw(" to pick unused volumes too."),
+                ],
+            ));
+            number += 1;
+        }
+        if image.is_some() {
+            steps.push(step(
+                number,
+                vec![
+                    Span::raw("Press "),
+                    key("x"),
+                    Span::raw(" to reset Docker fully."),
+                ],
+            ));
+        }
+        let after = super::visual::after_cleanup(context.disk.as_ref(), freed, "Prune", width);
+        (left, vec![total, steps, after])
     }
 
     fn prune_question(&self) -> Vec<Line<'static>> {
@@ -1003,7 +1204,7 @@ impl DockerSpace {
             Line::from("Run docker system prune --all?").bold(),
             Line::default(),
             Line::from(
-                "Stopped containers, unused networks, every unused image, and the build cache are removed permanently.",
+                "Stopped containers, unused networks, every unused image & the build cache are removed permanently.",
             ),
         ];
         let volumes = self.picked_volumes();
@@ -1027,14 +1228,12 @@ impl DockerSpace {
         let size = self.image().map_or_else(String::new, format::size);
         vec![
             Line::from(format!(
-                "Stop Docker Desktop and move its disk image, {size}, to the Trash?"
+                "Stop Docker Desktop & move its disk image, {size}, to the Trash?"
             ))
             .bold(),
             Line::default(),
-            Line::from("Every image, container, and volume goes with it, databases included."),
-            Line::from(
-                "Docker Desktop starts empty next time and downloads images again as needed.",
-            ),
+            Line::from("Every image, container & volume goes with it, databases included."),
+            Line::from("Docker Desktop starts empty next time & downloads images again as needed."),
             Line::default(),
             Line::from(vec![
                 Span::raw("Undo: ").green().bold(),
@@ -1211,6 +1410,24 @@ fn volume_table(
 }
 
 /// `docker system df`, as a table
+/// Bytes from a size as Docker writes it, such as `1.2GB` or `512kB (40%)`
+fn docker_size(text: &str) -> Option<u64> {
+    let first = text.split_whitespace().next()?;
+    let split = first.find(|c: char| c.is_ascii_alphabetic())?;
+    let (number, unit) = first.split_at(split);
+    let number: f64 = number.parse().ok()?;
+    let scale: f64 = match unit {
+        "B" => 1.0,
+        "kB" | "KB" => 1e3,
+        "MB" => 1e6,
+        "GB" => 1e9,
+        "TB" => 1e12,
+        _ => return None,
+    };
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    Some((number * scale) as u64)
+}
+
 fn usage_table(usage: &[DockerUsage], width: u16) -> Table<'static> {
     let counts = format::column_width("Count", usage.iter().map(|line| line.total_count.clone()));
     let active = format::column_width("In use", usage.iter().map(|line| line.active.clone()));
@@ -1219,9 +1436,18 @@ fn usage_table(usage: &[DockerUsage], width: u16) -> Table<'static> {
         "Reclaimable",
         usage.iter().map(|line| line.reclaimable.clone()),
     );
+    // Each column as wide as what it holds, so the numbers sit beside the
+    // kind instead of across the screen
+    let kinds = format::column_width("Kind", usage.iter().map(|line| line.kind.clone()));
     let columns = super::visual::Columns::new(
         width,
-        [(11, 1), (counts, 0), (active, 0), (sizes, 0), (reclaim, 0)],
+        [
+            (kinds, 0),
+            (counts, 0),
+            (active, 0),
+            (sizes, 0),
+            (reclaim, 0),
+        ],
         &[],
         false,
     );
@@ -1263,7 +1489,7 @@ fn usage_table(usage: &[DockerUsage], width: u16) -> Table<'static> {
 }
 
 impl Screen for DockerSpace {
-    fn draw(&mut self, frame: &mut Frame, area: Rect, _context: &Context) {
+    fn draw(&mut self, frame: &mut Frame, area: Rect, context: &Context) {
         self.stage.poll();
         let title = "Docker";
         match &self.stage {
@@ -1317,7 +1543,7 @@ impl Screen for DockerSpace {
                     Docker::NotRunning => {
                         message(frame, area, title, self.not_running_lines(), Color::Yellow);
                     }
-                    Docker::Usage(_) => self.draw_usage(frame, area),
+                    Docker::Usage(_) => self.draw_usage(frame, area, context),
                 }
                 if matches!(self.stage, Stage::Asking(_)) {
                     match self.question {
@@ -1569,7 +1795,7 @@ mod tests {
         press(&mut screen, KeyCode::Enter);
         let text = render(&mut screen);
         assert!(text.contains("iOS 18.6 runtime, 8.8 GB"));
-        assert!(text.contains("and 1 simulator on it, 2.1 GB"));
+        assert!(text.contains("& 1 simulator on it, 2.1 GB"));
         assert!(text.contains("10.9 GB"));
         assert!(screen.is_dialog());
 
@@ -1659,7 +1885,7 @@ mod tests {
         let text = render(&mut screen);
         assert!(text.contains("1.105GB (61%)"));
         assert!(text.contains("influxdb-storage"));
-        assert!(text.contains("unselected volumes"));
+        assert!(text.contains("Keeps") && text.contains("Deletes"), "{text}");
 
         // Volumes are kept unless picked.
         press(&mut screen, KeyCode::Enter);
@@ -1761,7 +1987,7 @@ mod tests {
         for (width, height) in view::SIZES {
             let buffer = view::render("simulators", &mut sims, &context, width, height);
             view::aligned(&buffer, "Size", "8.8 GB");
-            assert!(view::text(&buffer).contains("Permanently"));
+            assert!(view::text(&buffer).contains("deleted for good"));
             let buffer = view::render("docker", &mut docker, &context, width, height);
             view::aligned(&buffer, "Count", "1234567");
             view::aligned(&buffer, "Reclaimable", "1.105GB (61%)");

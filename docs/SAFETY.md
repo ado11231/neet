@@ -16,13 +16,14 @@
 8. [App Removal](#app-removal)
 9. [Build Folders And Installers](#build-folders-and-installers)
 10. [Tools neet Runs](#tools-neet-runs)
-11. [Dotfiles](#dotfiles)
-12. [Planned Features](#planned-features)
-13. [Tests](#tests)
+11. [Emptying The Trash](#emptying-the-trash)
+12. [Dotfiles](#dotfiles)
+13. [Planned Features](#planned-features)
+14. [Tests](#tests)
 
 ## The Promises
 
-1. Nothing is deleted permanently, and neet never empties the Trash. The one exception is [simulators and Docker data](#tools-neet-runs), which only their own tool can remove, after a separate question that says so.
+1. Nothing is deleted permanently. The exceptions are [simulators and Docker data](#tools-neet-runs), which only their own tool can remove, and [emptying the Trash](#emptying-the-trash) when you ask, each after a separate red question that says so.
 2. You see every path, and confirm, before anything moves.
 3. Cleanup only removes items inside a short, fixed list of folders. App removal, and build folders and installers, each have their own narrow check.
 4. Your own files, cloud files, passwords, and keys are never touched. The one exception: project build folders and installers, which can be in Documents, Desktop, or Downloads.
@@ -226,6 +227,15 @@ min_age_days = 0
   2. Checks the disk image with the [build folder check](#build-folders-and-installers), which takes only that one file.
   3. Moves it into `~/.Trash` itself, keeping its name, or adding a number if the Trash already has a `Docker.raw`. Finder cannot reach into another app's container folder, and hangs when asked, so Finder's Put Back does not know where it came from.
 * Docker Desktop makes a new, empty disk image the next time it opens. To undo, move `Docker.raw` from the Trash back to `~/Library/Containers/com.docker.docker/Data/vms/0/data/` before opening Docker Desktop again.
+
+## Emptying The Trash
+
+* The Trash screen, from the Trash row in Quick Clean, lists what is in `~/.Trash` from the scan, largest first. Finder's own `.DS_Store` file is left out.
+* `e` asks first, in a red box that names the size and item count, and says it cannot be undone and that Put Back stops working. Only `y` goes ahead. `n` or `Esc` goes back.
+* neet then asks Finder to empty the Trash with `osascript -e 'tell application "Finder" to empty trash'`, the same as Finder's Empty Trash. Finder deletes every item in the Trash for good, including Trash on other disks. neet deletes nothing itself. It waits up to ten minutes.
+* `o` opens the Trash in Finder, where Put Back works, and changes nothing.
+* When macOS will not let the scan read `~/.Trash`, because the terminal lacks Full Disk Access, the screen says so and how to turn it on. It cannot be emptied from neet until then, since neet would not know what it deletes.
+* The first time, macOS asks whether neet may control Finder, as it does for moving to the Trash.
 
 ## Dotfiles
 

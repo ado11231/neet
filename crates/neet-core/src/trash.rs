@@ -1,5 +1,6 @@
 //! Moves items to the Trash through Finder, so Finder's Put Back can restore
-//! them. See how a cleanup runs in `docs/SAFETY.md`.
+//! them, and empties the Trash through Finder when you ask. See how a
+//! cleanup runs, and Emptying the Trash, in `docs/SAFETY.md`.
 
 use std::fs;
 use std::io;
@@ -41,6 +42,40 @@ pub fn move_to_trash(path: &Path) -> io::Result<()> {
             io::ErrorKind::TimedOut,
             "Finder did not answer within a minute. It may still move the item \
              later, so look in the Trash before trying again.",
+        ));
+    };
+    if success {
+        return Ok(());
+    }
+    let message = stderr.trim().to_string();
+    if message.contains(NOT_ALLOWED) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "macOS did not let neet control Finder. Allow it in System Settings, \
+             Privacy & Security, Automation.",
+        ));
+    }
+    Err(io::Error::other(message))
+}
+
+/// How long Finder has to empty the Trash. A large Trash takes a while.
+const EMPTY_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
+/// Asks Finder to empty the Trash, as its Empty Trash does: every item in
+/// it, on every disk, is deleted for good. Nothing else runs it.
+///
+/// # Errors
+///
+/// Returns an error if Finder could not be asked, refused, or did not
+/// finish within ten minutes.
+pub fn empty() -> io::Result<()> {
+    let mut command = Command::new("/usr/bin/osascript");
+    command.args(["-e", "tell application \"Finder\" to empty trash"]);
+    let Some((success, stderr)) = crate::run::with_timeout(&mut command, EMPTY_TIMEOUT)? else {
+        return Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "Finder did not finish within ten minutes. It may still be emptying \
+             the Trash.",
         ));
     };
     if success {

@@ -364,9 +364,9 @@ fn tier_span(tier: Tier) -> Span<'static> {
 
 fn tier_meaning(tier: Tier) -> &'static str {
     match tier {
-        Tier::Safe => "Recreated as needed. Selected by default.",
-        Tier::Caution => "May require downloads, indexing, or sign-in. Select manually.",
-        Tier::Expert => "May contain unique files. Type the rule ID to select.",
+        Tier::Safe => "Apps make these again. Picked for you.",
+        Tier::Caution => "May need a re-download or sign-in. You pick these.",
+        Tier::Expert => "May hold files you can't get back. Type its ID to pick it.",
     }
 }
 
@@ -388,10 +388,10 @@ pub(super) fn skip_reason(reason: &SkipReason, min_age_days: Option<u32>) -> Str
             None => "changed too recently".to_string(),
         },
         SkipReason::Unreadable(error) => format!("could not be read: {error}"),
-        SkipReason::Overlaps => "already found by another rule".to_string(),
-        SkipReason::Link => "a link, left in place".to_string(),
+        SkipReason::Overlaps => "found by another rule".to_string(),
+        SkipReason::Link => "a link, kept".to_string(),
         SkipReason::AppOpen(app) => format!("{app} is open"),
-        SkipReason::Replaced => "changed into a different file after the review".to_string(),
+        SkipReason::Replaced => "changed after you checked it".to_string(),
         SkipReason::MoveFailed(error) => format!("could not be moved: {error}"),
     }
 }
@@ -530,16 +530,13 @@ fn about(rule: &RulePlan, home: &Path) -> Vec<Line<'static>> {
         ]),
     ];
     if !rule.rule.requires_quit.is_empty() {
-        lines.push(field(
-            "Close",
-            Span::raw(rule.rule.requires_quit.join(", ")),
-        ));
+        lines.push(field("Quit", Span::raw(rule.rule.requires_quit.join(", "))));
     }
     if rule.rule.min_age_days > 0 {
         lines.push(field(
             "Keeps",
             Span::raw(format!(
-                "anything changed in the last {} days",
+                "files changed in the last {} days",
                 rule.rule.min_age_days
             )),
         ));
@@ -585,12 +582,101 @@ fn found_lines(rule: &RulePlan, home: &Path, room: usize, width: usize) -> Vec<L
     if lines.len() > room {
         let more = lines.len() - (room - 1);
         lines.truncate(room - 1);
-        lines.push(Line::from(format!("{:>9}  and {} more", "", count(more))));
+        lines.push(Line::from(format!("{:>9}  & {} more", "", count(more))));
     }
     lines
 }
 
 impl Clean {
+    /// The selected rule on a tall screen, in boxes that keep their size
+    /// whichever rule is selected: what it is, as tall as the longest rule's
+    /// text; what it found, with what it left in place below, down to the
+    /// chart; and the chart, at the bottom.
+    fn draw_details_tall(
+        frame: &mut Frame,
+        area: Rect,
+        planned: &Planned,
+        rule: &RulePlan,
+        notes: Vec<Line<'static>>,
+    ) {
+        let home = planned.home.as_path();
+        let width = usize::from(area.width.saturating_sub(4));
+        let tallest = planned
+            .plan
+            .rules
+            .iter()
+            .map(|other| {
+                let mut lines = notes.clone();
+                lines.extend(about(other, home));
+                rows_used(&lines, width)
+            })
+            .max()
+            .unwrap_or(0);
+        let top_height = u16::try_from(tallest + 2)
+            .unwrap_or(u16::MAX)
+            .min(area.height / 3);
+        let [about_area, found_area, chart_area] = Layout::vertical([
+            Constraint::Length(top_height),
+            Constraint::Fill(1),
+            Constraint::Length(area.height * 9 / 20),
+        ])
+        .areas(area);
+        let mut top = notes;
+        top.extend(about(rule, home));
+        frame.render_widget(
+            Paragraph::new(top).wrap(Wrap { trim: false }).block(
+                super::visual::block()
+                    .title(format!(" {} ", rule.rule.name))
+                    .padding(Padding::horizontal(1)),
+            ),
+            about_area,
+        );
+
+        // What was found, and below it what was left in place, each cut
+        // short with a count when there is not room for all of it
+        let inner = usize::from(found_area.height.saturating_sub(2));
+        let mut skipped = skipped_lines(rule, home, width);
+        let mut sections = Vec::new();
+        if skipped.is_empty() {
+            sections.push(found_lines(rule, home, inner, width));
+        } else {
+            let most = (inner / 2).saturating_sub(1).max(1);
+            if skipped.len() > most {
+                let more = skipped.len() - (most - 1).max(1);
+                skipped.truncate((most - 1).max(1));
+                skipped.push(Line::from(format!("{:>9}  & {} more", "", count(more))));
+            }
+            let room = inner.saturating_sub(skipped.len() + 2);
+            sections.push(found_lines(rule, home, room, width));
+            let mut left = vec![
+                Line::from(format!("Skipped · {}", count(rule.skipped.len())))
+                    .style(super::visual::HEADING),
+            ];
+            left.extend(skipped);
+            sections.push(left);
+        }
+        super::visual::sections_in(frame, found_area, Self::found_block(rule), sections);
+        let chart = chart_lines(planned, rule, width);
+        draw_location(frame, chart_area, planned, chart);
+    }
+
+    /// The found box, titled with how much the rule found
+    fn found_block(rule: &RulePlan) -> ratatui::widgets::Block<'static> {
+        let title = if rule.items.is_empty() {
+            " Found ".to_string()
+        } else {
+            format!(
+                " Found · {} · {} ",
+                items(rule.items.len()),
+                format::size(rule.size())
+            )
+        };
+        super::visual::block()
+            .title(Line::from(title).bold())
+            .title_bottom(Line::from(" Goes to the Trash ").right_aligned())
+            .padding(Padding::horizontal(1))
+    }
+
     /// The selected rule in up to three boxes: what it is, what it found,
     /// and what it left in place. `notes` go at the top.
     fn draw_details(
@@ -600,6 +686,10 @@ impl Clean {
         rule: &RulePlan,
         notes: Vec<Line<'static>>,
     ) {
+        if area.height >= TALL_DETAILS {
+            Self::draw_details_tall(frame, area, planned, rule, notes);
+            return;
+        }
         let home = planned.home.as_path();
         let width = usize::from(area.width.saturating_sub(4));
         let mut top = notes;
@@ -615,33 +705,20 @@ impl Clean {
                 let keep = most.saturating_sub(3).max(1);
                 let more = skipped.len() - keep;
                 skipped.truncate(keep);
-                skipped.push(Line::from(format!("{:>9}  and {} more", "", count(more))));
+                skipped.push(Line::from(format!("{:>9}  & {} more", "", count(more))));
             }
             u16::try_from(skipped.len() + 2).unwrap_or(u16::MAX)
         };
 
-        // The found box fits its items, and the chart of every rule takes
-        // what is left, when there is room for it.
         let found_all = found_lines(rule, home, usize::MAX, width);
-        let free = area
-            .height
-            .saturating_sub(top_height)
-            .saturating_sub(skipped_height);
-        let found_height = u16::try_from(found_all.len() + 2).unwrap_or(u16::MAX);
         let chart = chart_lines(planned, rule, width);
-        let chart_height = u16::try_from(chart.len() + 2).unwrap_or(u16::MAX);
-        let found_height = if free >= found_height + chart_height {
-            found_height
-        } else {
-            free
-        };
-        let [about_area, found_area, skipped_area, chart_area] = Layout::vertical([
-            Constraint::Length(top_height),
-            Constraint::Length(found_height),
-            Constraint::Length(skipped_height),
-            Constraint::Fill(1),
-        ])
-        .areas(area);
+        let [about_area, found_area, skipped_area, chart_area] = detail_areas(
+            area,
+            top_height,
+            u16::try_from(found_all.len() + 2).unwrap_or(u16::MAX),
+            skipped_height,
+            u16::try_from(chart.len() + 3).unwrap_or(u16::MAX),
+        );
 
         frame.render_widget(
             Paragraph::new(top).wrap(Wrap { trim: false }).block(
@@ -653,22 +730,8 @@ impl Clean {
         );
 
         let room = usize::from(found_area.height.saturating_sub(2));
-        let title = if rule.items.is_empty() {
-            " Found ".to_string()
-        } else {
-            format!(
-                " Found · {} · {} ",
-                items(rule.items.len()),
-                format::size(rule.size())
-            )
-        };
         frame.render_widget(
-            Paragraph::new(found_lines(rule, home, room, width)).block(
-                super::visual::block()
-                    .title(Line::from(title).bold())
-                    .title_bottom(Line::from(" Trash · restore with Put Back ").right_aligned())
-                    .padding(Padding::horizontal(1)),
-            ),
+            Paragraph::new(found_lines(rule, home, room, width)).block(Self::found_block(rule)),
             found_area,
         );
 
@@ -690,17 +753,37 @@ impl Clean {
         }
 
         if chart_area.height >= 3 {
-            frame.render_widget(
-                Paragraph::new(chart).block(
-                    super::visual::block()
-                        .title(Line::from(" Where the space is ").bold())
-                        .padding(Padding::horizontal(1)),
-                ),
-                chart_area,
-            );
+            draw_location(frame, chart_area, planned, chart);
         }
     }
 }
+
+/// Where the space is: every rule's bar, each risk, and the rules that
+/// found nothing
+fn draw_location(frame: &mut Frame, area: Rect, planned: &Planned, chart: Vec<Line<'static>>) {
+    let mut sections = vec![chart];
+    sections.extend(by_risk(planned));
+    sections.extend(found_nothing(planned));
+    super::visual::sections(frame, area, " Location ", sections);
+}
+
+/// The details' boxes: about, found, skipped, and the chart. The found box
+/// fits its items, and the chart takes what is left when there is room.
+fn detail_areas(area: Rect, top: u16, found: u16, skipped: u16, chart: u16) -> [Rect; 4] {
+    let free = area.height.saturating_sub(top).saturating_sub(skipped);
+    let found = if free >= found + chart { found } else { free };
+    Layout::vertical([
+        Constraint::Length(top),
+        Constraint::Length(found),
+        Constraint::Length(skipped),
+        Constraint::Fill(1),
+    ])
+    .areas(area)
+}
+
+/// From this many rows, the details' boxes keep their size whichever rule
+/// is selected
+const TALL_DETAILS: u16 = 34;
 
 /// Every rule that found something, largest first, with a bar against the
 /// largest. The selected rule's name is bold.
@@ -742,7 +825,7 @@ fn chart_lines(planned: &Planned, current: &RulePlan, width: usize) -> Vec<Line<
         lines.push(Line::default());
         lines.push(Line::from(vec![
             Span::raw(format!("{:>9}  ", format::size(total))).bold(),
-            Span::raw("in all · "),
+            Span::raw("total · "),
             Span::raw(format::size(planned.plan.selected_size()))
                 .green()
                 .bold(),
@@ -823,24 +906,18 @@ fn found_overall(planned: &Planned) -> Line<'static> {
 }
 
 /// What is selected so far, rule by rule, with the total
-fn selection(planned: &Planned) -> Paragraph<'static> {
+fn selection(planned: &Planned) -> Vec<Line<'static>> {
     let chosen: Vec<&RulePlan> = planned
         .plan
         .rules
         .iter()
         .filter(|rule| rule.selected && !rule.items.is_empty())
         .collect();
-    let block = super::visual::block()
-        .title(" Selected ")
-        .padding(Padding::horizontal(1));
     if chosen.is_empty() {
-        return Paragraph::new(vec![
-            Line::from("Nothing selected yet."),
-            Line::default(),
-            Line::from("Press Space to select a rule. Safe rules start selected, and caution rules are yours to choose."),
-        ])
-        .wrap(Wrap { trim: false })
-        .block(block);
+        return vec![
+            Line::from("Nothing selected yet.").bold(),
+            Line::from("Press Space to pick a rule."),
+        ];
     }
     let mut lines: Vec<Line<'static>> = chosen
         .iter()
@@ -851,7 +928,6 @@ fn selection(planned: &Planned) -> Paragraph<'static> {
             ])
         })
         .collect();
-    lines.push(Line::default());
     lines.push(Line::from(vec![
         Span::raw(format!(
             "{:>9}  ",
@@ -859,19 +935,140 @@ fn selection(planned: &Planned) -> Paragraph<'static> {
         ))
         .green()
         .bold(),
-        Span::raw(format!(
-            "total, in {}",
-            items(planned.plan.selected_count())
-        ))
-        .bold(),
+        Span::raw(format!("in all, {}", items(planned.plan.selected_count()))).bold(),
     ]));
-    lines.push(Line::default());
-    lines.push(Line::from(
-        "Press Enter to see every path before anything moves.",
-    ));
-    Paragraph::new(lines)
-        .wrap(Wrap { trim: false })
-        .block(block)
+    lines
+}
+
+/// What each risk the rules use means, with how many rules have it
+fn risks(planned: &Planned) -> Vec<Line<'static>> {
+    let mut lines = vec![Line::from("Risk levels").style(super::visual::HEADING)];
+    for tier in [Tier::Safe, Tier::Caution, Tier::Expert] {
+        let rules = planned
+            .plan
+            .rules
+            .iter()
+            .filter(|rule| rule.rule.tier == tier)
+            .count();
+        if rules == 0 {
+            continue;
+        }
+        let padding = " ".repeat(9 - tier_name(tier).len());
+        lines.push(Line::from(vec![
+            tier_span(tier).bold(),
+            Span::raw(padding),
+            Span::raw(tier_meaning(tier)),
+        ]));
+    }
+    lines
+}
+
+/// Every rule's finds added up, and what happens next
+fn in_all(planned: &Planned) -> Vec<Line<'static>> {
+    let rules = &planned.plan.rules;
+    let found = rules.iter().filter(|rule| !rule.items.is_empty()).count();
+    let found_items: usize = rules.iter().map(|rule| rule.items.len()).sum();
+    let size: u64 = rules.iter().map(RulePlan::size).sum();
+    let selected = planned.plan.selected_size();
+    let selected = Span::raw(format::size(selected));
+    let selected = if planned.plan.selected_count() == 0 {
+        selected
+    } else {
+        selected.green().bold()
+    };
+    vec![
+        Line::from("Total").style(super::visual::HEADING),
+        wide(
+            "Found",
+            Span::raw(format!(
+                "{} · {} of {} rules · {}",
+                format::size(size),
+                count(found),
+                count(rules.len()),
+                items(found_items)
+            )),
+        ),
+        wide("Selected", selected),
+        wide("Next", Span::raw("Press Enter to check the list first.")),
+        wide(
+            "Goes to",
+            Span::raw("the Trash, so you can put it back").green(),
+        ),
+    ]
+}
+
+/// A label and its value, with room for longer labels than [`field`]
+fn wide(label: &str, value: Span<'static>) -> Line<'static> {
+    Line::from(vec![Span::raw(format!("{label:<10}")).bold(), value])
+}
+
+/// Every risk the rules use, with the space its rules found, a bar of it
+/// against everything found, and how many of its rules found something
+fn by_risk(planned: &Planned) -> Option<Vec<Line<'static>>> {
+    let rules = &planned.plan.rules;
+    let total: u64 = rules.iter().map(RulePlan::size).sum();
+    let mut lines = vec![Line::from("Risk").style(super::visual::HEADING)];
+    for tier in [Tier::Safe, Tier::Caution, Tier::Expert] {
+        let of_tier: Vec<&RulePlan> = rules.iter().filter(|rule| rule.rule.tier == tier).collect();
+        if of_tier.is_empty() {
+            continue;
+        }
+        let size: u64 = of_tier.iter().map(|rule| rule.size()).sum();
+        let found = of_tier.iter().filter(|rule| !rule.items.is_empty()).count();
+        let bar = Span::raw(format::bar(size, total, ITEM_BAR));
+        let bar = match tier {
+            Tier::Safe => bar.green(),
+            Tier::Caution => bar.yellow(),
+            Tier::Expert => bar.red(),
+        };
+        let padding = " ".repeat(9 - tier_name(tier).len());
+        let rules_text = if found == 0 {
+            format!("{}, nothing found", count_rules(of_tier.len()))
+        } else {
+            format!("{} of {} found", count(found), count_rules(of_tier.len()))
+        };
+        lines.push(Line::from(vec![
+            format::size_span(size, format!("{:>9}  ", format::size(size))),
+            bar,
+            Span::raw("  "),
+            tier_span(tier),
+            Span::raw(padding),
+            Span::raw(rules_text),
+        ]));
+    }
+    (lines.len() > 1).then_some(lines)
+}
+
+/// `rules` rules, or 1 rule
+fn count_rules(rules: usize) -> String {
+    format!(
+        "{} {}",
+        count(rules),
+        if rules == 1 { "rule" } else { "rules" }
+    )
+}
+
+/// The rules that found nothing, by name, so you know they looked
+fn found_nothing(planned: &Planned) -> Option<Vec<Line<'static>>> {
+    let names: Vec<&str> = planned
+        .plan
+        .rules
+        .iter()
+        .filter(|rule| rule.items.is_empty())
+        .map(|rule| rule.rule.name.as_str())
+        .collect();
+    if names.is_empty() {
+        return None;
+    }
+    Some(vec![
+        Line::from(format!(
+            "No findings · {} {}",
+            count(names.len()),
+            if names.len() == 1 { "rule" } else { "rules" }
+        ))
+        .style(super::visual::HEADING),
+        Line::from(names.join(", ")),
+    ])
 }
 
 /// Every rule as a table, largest first, with `summary` on the bottom edge
@@ -986,7 +1183,12 @@ impl Screen for Clean {
                 Constraint::Fill(1),
             ])
             .areas(left);
-            frame.render_widget(selection(planned), cart);
+            super::visual::sections(
+                frame,
+                cart,
+                " Selected ",
+                vec![selection(planned), risks(planned), in_all(planned)],
+            );
             (list, detail, found_overall(planned))
         } else {
             let [list, detail] = Layout::vertical([
@@ -1229,12 +1431,12 @@ mod tests {
         assert!(screen.contains("[ ]  npm cache"));
         assert!(screen.contains("caution"));
         assert!(screen.contains("none"));
-        assert!(screen.contains("total, in 1 item"));
+        assert!(screen.contains("in all, 1 item"));
         assert!(screen.contains("Folder  ~/Library/Developer/Xcode/DerivedData"));
         assert!(screen.contains("App-abc"));
         assert!(screen.contains("Found · 1 item · 4.1 KB"));
-        assert!(screen.contains("Where the space is"));
-        assert!(screen.contains("16.4 KB  in all · 4.1 KB selected"));
+        assert!(screen.contains("Location"));
+        assert!(screen.contains("16.4 KB  total · 4.1 KB selected"));
     }
 
     #[test]
@@ -1285,7 +1487,7 @@ mod tests {
         select_rule(&mut clean, "npm-cache");
         press(&mut clean, KeyCode::Char(' '));
         assert!(is_selected(&clean, "npm-cache"));
-        assert!(render(&mut clean).contains("total, in 2 items"));
+        assert!(render(&mut clean).contains("in all, 2 items"));
 
         press(&mut clean, KeyCode::Char(' '));
         assert!(!is_selected(&clean, "npm-cache"));
@@ -1467,6 +1669,33 @@ mod tests {
         assert!(screen.contains("1 rule problems"));
         assert!(screen.contains("Not loaded:"));
     }
+    #[test]
+    fn a_tall_screen_keeps_the_detail_boxes_in_place() {
+        use crate::ui::visual::tests as view;
+        let scan = crate::ui::scan::ScanStatus::Failed(String::new());
+        let context = Context {
+            scan: &scan,
+            disk: None,
+            cleanable: None,
+            plan: None,
+        };
+        let dir = fake_home();
+        let mut screen = Clean::ready(planned(&dir));
+        // The rows where the found box and the chart start
+        let edges = |screen: &mut Clean| {
+            let text = view::text(&view::render("clean", screen, &context, 160, 46));
+            let rows: Vec<&str> = text.lines().collect();
+            let at = |needle: &str| rows.iter().position(|row| row.contains(needle));
+            (at("┌ Found"), at("┌ Location"))
+        };
+        let first = edges(&mut screen);
+        assert!(first.0.is_some() && first.1.is_some(), "{first:?}");
+        for _ in 0..3 {
+            press(&mut screen, KeyCode::Down);
+            assert_eq!(edges(&mut screen), first);
+        }
+    }
+
     #[test]
     fn layout_stays_readable_across_terminal_sizes() {
         use crate::ui::visual::tests as view;

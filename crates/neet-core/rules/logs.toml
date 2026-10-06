@@ -6,6 +6,6 @@ name = "User logs"
 category = "logs"
 tier = "caution"
 paths = ["~/Library/Logs/*"]
-description = "Logs and crash reports apps wrote for you. They will no longer be there for troubleshooting."
+description = "Logs & crash reports apps wrote for you. They will no longer be there for troubleshooting."
 regenerates = false
 min_age_days = 7

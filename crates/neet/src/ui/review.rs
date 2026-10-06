@@ -111,6 +111,12 @@ impl Review {
 
     fn lines(&self) -> Vec<Line<'static>> {
         let home = &self.planned.home;
+        let largest = self
+            .groups()
+            .iter()
+            .flat_map(|(_, found)| found.iter().map(|item| item.size))
+            .max()
+            .unwrap_or(0);
         let mut lines = Vec::new();
         for (name, found) in self.groups() {
             let size = found.iter().map(|item| item.size).sum();
@@ -122,6 +128,8 @@ impl Review {
                 lines.push(Line::from(vec![
                     format::size_span(item.size, format!("{:>10}", format::size(item.size))),
                     Span::raw("  "),
+                    Span::raw(format::bar(item.size, largest, ITEM_BAR)).fg(super::visual::ACCENT),
+                    Span::raw("  "),
                     Span::raw(display_path(home, item.path.path())),
                 ]));
             }
@@ -130,52 +138,62 @@ impl Review {
         lines
     }
 
-    /// The totals, each group's share, and what happens next.
-    fn summary(&self) -> Vec<Line<'static>> {
+    /// The boxes beside the paths: the total, each group's share, the
+    /// steps, and the disk after
+    fn summary(&self, context: &Context, width: u16) -> Vec<Vec<Line<'static>>> {
         let plan = &self.planned.plan;
         let total = plan.selected_size();
-        let mut lines = vec![
-            Line::from(format::size(total)).bold().green(),
-            Line::from(format!("in {}", items(plan.selected_count()))),
-            Line::default(),
-        ];
         let mut groups: Vec<(&str, u64)> = self
             .groups()
             .into_iter()
             .map(|(name, found)| (name, found.iter().map(|item| item.size).sum()))
             .collect();
         groups.sort_by_key(|&(_, size)| std::cmp::Reverse(size));
+        let field = |label: &str, value: Span<'static>| {
+            Line::from(vec![Span::raw(format!("{label:<9}")).bold(), value])
+        };
+        let totals = vec![
+            field("Size", Span::raw(format::size(total)).green().bold()),
+            field("Items", Span::raw(count(plan.selected_count()))),
+            field("Groups", Span::raw(count(groups.len()))),
+            field(
+                "Goes to",
+                Span::raw("the Trash, so you can put it back").green(),
+            ),
+        ];
+        let mut overview = vec![Line::from("Overview").style(super::visual::HEADING)];
         for (name, size) in groups {
-            lines.push(Line::from(vec![
+            overview.push(Line::from(vec![
+                format::size_span(size, format!("{:>9}  ", format::size(size))),
                 Span::raw(format::bar(size, total, SUMMARY_BAR)).fg(super::visual::ACCENT),
-                Span::raw(" "),
-                format::size_span(size, format!("{:>9}", format::size(size))),
                 Span::raw(format!("  {name}")),
             ]));
         }
-        lines.extend([
-            Line::default(),
-            Line::from("What happens next").bold(),
+        let step = |number: usize, text: &'static str| {
             Line::from(vec![
-                Span::raw("1. "),
-                Span::raw("Enter: confirm selection."),
-            ]),
-            Line::from(vec![
-                Span::raw("2. "),
-                Span::raw("Each item is checked again, then moved to the Trash."),
-            ]),
-            Line::from(vec![
-                Span::raw("3. "),
-                Span::raw("Put Back restores any item."),
-            ]),
-            Line::from(vec![
-                Span::raw("4. "),
-                Span::raw("Empty the Trash to free the space."),
-            ]),
-        ]);
-        lines
+                Span::raw(format!("{number}. "))
+                    .fg(super::visual::ACCENT)
+                    .bold(),
+                Span::raw(text),
+            ])
+        };
+        let steps = vec![
+            Line::from("Steps").style(super::visual::HEADING),
+            step(1, "Press Enter to confirm."),
+            step(
+                2,
+                "neet checks each item again, then moves it to the Trash.",
+            ),
+            step(3, "Changed your mind? Use Put Back in the Trash."),
+            step(4, "Empty the Trash to free the space."),
+        ];
+        let after = super::visual::after_cleanup(context.disk.as_ref(), total, "Cleanup", width);
+        vec![totals, overview, steps, after]
     }
 }
+
+/// How wide the bar beside each path is
+const ITEM_BAR: usize = 8;
 
 /// How wide the bars in the review summary are.
 const SUMMARY_BAR: usize = 10;
@@ -184,7 +202,7 @@ const SUMMARY_BAR: usize = 10;
 const MIN_SUMMARY_WIDTH: u16 = 100;
 
 impl Screen for Review {
-    fn draw(&mut self, frame: &mut Frame, area: Rect, _context: &Context) {
+    fn draw(&mut self, frame: &mut Frame, area: Rect, context: &Context) {
         let plan = &self.planned.plan;
         let title = format!(
             " Review: {}, {} ",
@@ -199,17 +217,8 @@ impl Screen for Review {
         let [paths, side] =
             Layout::horizontal([Constraint::Percentage(62), Constraint::Fill(1)]).areas(area);
         scrolling(frame, paths, title, lines, &mut self.scroll);
-        frame.render_widget(
-            Paragraph::new(self.summary())
-                .wrap(Wrap { trim: false })
-                .block(
-                    super::visual::block()
-                        .title(" Summary ")
-                        .title_bottom(Line::from(" Review before confirming ").right_aligned())
-                        .padding(Padding::horizontal(1)),
-                ),
-            side,
-        );
+        let width = side.width.saturating_sub(4);
+        super::visual::sections(frame, side, "Total", self.summary(context, width));
     }
 
     fn handle_key(&mut self, key: KeyEvent, _context: &Context) -> Action {
@@ -423,7 +432,7 @@ impl Cleanup {
                 ]),
                 Line::from("Empty the Trash to free that space."),
                 Line::default(),
-                Line::from("To restore an item, select it in the Trash and choose Put Back."),
+                Line::from("To restore an item, select it in the Trash & choose Put Back."),
             ]
         };
         if !outcome.skipped.is_empty() {
@@ -772,9 +781,9 @@ mod tests {
         let (_dir, planned) = planned();
         let screen = render(&mut Review::new(planned));
 
-        assert!(screen.contains("Summary"));
-        assert!(screen.contains("What happens next"));
-        assert!(screen.contains("Review before confirming"));
+        for text in ["┌ Total", "┌ Overview", "┌ Steps", "Press Enter to confirm"] {
+            assert!(screen.contains(text), "{text}");
+        }
     }
 
     #[test]

@@ -17,7 +17,7 @@ name = "Homebrew downloads"
 category = "package"
 tier = "caution"
 paths = ["~/Library/Caches/Homebrew/*"]
-description = "Installers and bottles Homebrew downloaded. Installed programs are kept. Later installs and upgrades download them again."
+description = "Installers & bottles Homebrew downloaded. Installed programs are kept. Later installs & upgrades download them again."
 regenerates = true
 min_age_days = 0
 
@@ -37,7 +37,7 @@ name = "Cargo downloads"
 category = "package"
 tier = "caution"
 paths = ["~/.cargo/registry/cache/*"]
-description = "Crate files Cargo downloaded. Builds that need them download them again, and offline builds fail until then."
+description = "Crate files Cargo downloaded. Builds that need them download them again & offline builds fail until then."
 regenerates = true
 min_age_days = 0
 
@@ -57,7 +57,7 @@ name = "pip cache"
 category = "package"
 tier = "caution"
 paths = ["~/Library/Caches/pip/*", "~/.cache/pip/*"]
-description = "Packages and wheels pip downloaded or built. Installed packages are kept. Later installs download or build them again."
+description = "Packages & wheels pip downloaded or built. Installed packages are kept. Later installs download or build them again."
 regenerates = true
 min_age_days = 0
 

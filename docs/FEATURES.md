@@ -53,6 +53,7 @@
 | Preview | Finds everything the cleanup rules cover, with sizes, and changes nothing. | Done |
 | Review and confirm | Lists every path, then asks with the item count and total size. It cannot be skipped. | Done |
 | Move to the Trash | Moves items through Finder, so Put Back restores them. Space is freed when you empty the Trash. | Done |
+| Empty the Trash | Lists what is in the Trash, largest first, and empties it through Finder after a red question. The one thing neet deletes for good on its own screen. | Done |
 | Check before moving | Checks each item again right before it moves. Anything that changed, or whose app opened, is skipped. | Done |
 | Risk levels | Marks each rule `safe`, `caution`, or `expert`, which decides whether it starts selected. | Done |
 | Open app check | A rule cannot be selected while its app is open. | Done |
@@ -168,7 +169,7 @@
 
 | Feature | Why |
 | --- | --- |
-| Deleting files permanently, or emptying the Trash | Everything goes to the Trash, so it can be put back. |
+| Deleting files permanently | Everything goes to the Trash, so it can be put back. Emptying the Trash is the one exception, only when you ask, after a red question. |
 | Cleaning without a review | You always see every path first. |
 | Removing Apple's apps | macOS needs them. |
 | Deleting duplicate files automatically | Only you know which copy matters. |

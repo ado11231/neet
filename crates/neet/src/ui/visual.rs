@@ -24,36 +24,180 @@ pub fn wrapped_rows(lines: &[Line<'_>], width: u16) -> u16 {
     .unwrap_or(u16::MAX)
 }
 
-/// A box holding `sections`: the first at the top, the last at the bottom,
-/// and the space between shared evenly, so a tall box reads as full instead
-/// of empty below its text. Sections that do not fit are left out, the last
-/// first. Leading spaces are kept, so right aligned values stay lined up.
+/// `sections` as a stack of boxes filling `area`, one a section. The first
+/// is titled `title`. A section that starts with a heading line, styled
+/// [`HEADING`], takes that heading as its box's title instead, and so does
+/// the first when `title` is blank. The room left over is shared evenly, so
+/// a tall area has no empty space below the boxes. Sections that do not fit
+/// are left out, the last first. Leading spaces are kept, so right aligned
+/// values stay lined up.
 pub fn sections(
     frame: &mut ratatui::Frame,
     area: ratatui::layout::Rect,
     title: &str,
     mut sections: Vec<Vec<Line<'static>>>,
 ) {
-    use ratatui::layout::{Flex, Layout};
-    use ratatui::widgets::Padding;
-    let block = block()
-        .title(title.to_string())
-        .padding(Padding::horizontal(1));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-    let rows = |lines: &[Line<'static>]| wrapped_rows(lines, inner.width);
-    let needed = |sections: &[Vec<Line<'static>>]| -> u16 {
-        let gaps = u16::try_from(sections.len().saturating_sub(1)).unwrap_or(u16::MAX);
-        sections.iter().map(|lines| rows(lines)).sum::<u16>() + gaps
+    let first = if title.trim().is_empty() {
+        sections.first_mut().and_then(heading).unwrap_or_default()
+    } else {
+        title.trim().to_string()
     };
-    while sections.len() > 1 && needed(&sections) > inner.height {
-        sections.pop();
+    let block = block()
+        .title(format!(" {first} "))
+        .padding(ratatui::widgets::Padding::horizontal(1));
+    sections_in(frame, area, block, sections);
+}
+
+/// The disk now and after `freed` bytes go: a gauge with the freed part in
+/// green, free space now, what goes (`freed_label`), and free space after
+pub fn after_cleanup(
+    disk: Option<&neet_core::disk::DiskSpace>,
+    freed: u64,
+    freed_label: &str,
+    width: u16,
+) -> Vec<Line<'static>> {
+    use ratatui::style::Stylize;
+    let mut lines = vec![Line::from("After cleanup").style(HEADING)];
+    let Some(disk) = disk else {
+        lines.push(Line::from("Disk space unavailable.").yellow());
+        return lines;
+    };
+    let freed = freed.min(disk.used());
+    let bar = usize::from(width).saturating_sub(18).clamp(10, 40);
+    let cells = |part: u64| {
+        usize::try_from(u128::from(part) * bar as u128 / u128::from(disk.total.max(1)))
+            .unwrap_or(bar)
+    };
+    let stays = cells(disk.used() - freed);
+    let green = cells(disk.used())
+        .saturating_sub(stays)
+        .max(usize::from(freed > 0));
+    let rest = bar.saturating_sub(stays + green);
+    let now = super::format::percent(disk.used(), disk.total);
+    let then = super::format::percent(disk.used() - freed, disk.total);
+    let field = |label: &str, value: Span<'static>| {
+        Line::from(vec![Span::raw(format!("{label:<11}")).bold(), value])
+    };
+    lines.extend([
+        Line::from(vec![
+            Span::raw("█".repeat(stays)).fg(ACCENT),
+            Span::raw("█".repeat(green)).green(),
+            Span::raw("░".repeat(rest)).fg(ACCENT),
+            Span::raw(format!(" {now}% → {then}% used")).bold(),
+        ]),
+        field(
+            "Free now",
+            Span::raw(format!(
+                "{} of {}",
+                super::format::size(disk.available),
+                super::format::size(disk.total)
+            )),
+        ),
+        field(
+            freed_label,
+            Span::raw(super::format::size(freed)).green().bold(),
+        ),
+        field(
+            "Free after",
+            Span::raw(super::format::size(disk.available.saturating_add(freed)))
+                .green()
+                .bold(),
+        ),
+    ]);
+    lines
+}
+
+/// From this width, [`side_by_side`] puts its two stacks next to each other
+pub const SIDE_BY_SIDE: u16 = 100;
+
+/// Two stacks of section boxes, as in [`sections`]: `left` titled `title`,
+/// and `right` titled by its headings. Side by side from [`SIDE_BY_SIDE`]
+/// columns, so a wide screen has small boxes instead of long thin ones, and
+/// one stack, left above right, below that.
+pub fn side_by_side(
+    frame: &mut ratatui::Frame,
+    area: ratatui::layout::Rect,
+    title: &str,
+    left: Vec<Vec<Line<'static>>>,
+    right: Vec<Vec<Line<'static>>>,
+) {
+    use ratatui::layout::Layout;
+    if area.width < SIDE_BY_SIDE {
+        let mut all = left;
+        all.extend(right);
+        sections(frame, area, title, all);
+        return;
     }
-    let areas = Layout::vertical(sections.iter().map(|lines| Constraint::Length(rows(lines))))
-        .flex(Flex::SpaceBetween)
-        .split(inner);
-    for (lines, area) in sections.into_iter().zip(areas.iter()) {
-        frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), *area);
+    let [left_area, right_area] =
+        Layout::horizontal([Constraint::Percentage(55), Constraint::Fill(1)]).areas(area);
+    sections(frame, left_area, title, left);
+    sections(frame, right_area, "", right);
+}
+
+/// The first line of `lines` as a title, taken out, when it is a heading
+fn heading(lines: &mut Vec<Line<'static>>) -> Option<String> {
+    let first = lines.first()?;
+    if first.style != HEADING {
+        return None;
+    }
+    let text = first.to_string();
+    lines.remove(0);
+    Some(text)
+}
+
+/// [`sections`] with the first box given, such as one with a bottom title
+pub fn sections_in(
+    frame: &mut ratatui::Frame,
+    area: ratatui::layout::Rect,
+    first: Block<'static>,
+    sections: Vec<Vec<Line<'static>>>,
+) {
+    use ratatui::layout::Rect;
+    use ratatui::widgets::Padding;
+    let mut boxes: Vec<(Block<'static>, Vec<Line<'static>>)> = Vec::new();
+    let mut first = Some(first);
+    for mut lines in sections {
+        let block = if let Some(first) = first.take() {
+            first
+        } else {
+            let title = heading(&mut lines).unwrap_or_default();
+            let block = block().padding(Padding::horizontal(1));
+            if title.is_empty() {
+                block
+            } else {
+                block.title(format!(" {title} "))
+            }
+        };
+        boxes.push((block, lines));
+    }
+    // Each box's text, and its border
+    let inner = area.width.saturating_sub(4);
+    let mut heights: Vec<u16> = boxes
+        .iter()
+        .map(|(_, lines)| wrapped_rows(lines, inner).max(1) + 2)
+        .collect();
+    while heights.len() > 1 && heights.iter().sum::<u16>() > area.height {
+        heights.pop();
+        boxes.pop();
+    }
+    let shares = u16::try_from(heights.len()).unwrap_or(1).max(1);
+    let leftover = area.height.saturating_sub(heights.iter().sum());
+    let mut y = area.y;
+    for (index, ((block, lines), height)) in boxes.into_iter().zip(heights).enumerate() {
+        // The last box takes what is left after the even shares.
+        let share = if usize::from(shares) == index + 1 {
+            area.bottom().saturating_sub(y)
+        } else {
+            (height + leftover / shares).min(area.bottom().saturating_sub(y))
+        };
+        let rect = Rect::new(area.x, y, area.width, share);
+        frame.render_widget(
+            Paragraph::new(lines)
+                .wrap(Wrap { trim: false })
+                .block(block),
+            rect,
+        );
+        y += share;
     }
 }
 
