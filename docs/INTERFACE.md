@@ -46,18 +46,18 @@
 
 ```text
   .     *      .        +       .        +- neet ------------------------------+
-      .     .      *        .            | > 1 Quick Clean                     |
-  *        .           .        *        |   2 Deep Clean                      |
+      .     .      *        .            | > 1 Disk                            |
+  *        .           .        *        |   2 Quick Clean                     |
        .        Art        .             |   ...                               |
    .       *          .          .       |   6 Startup       soon              |
        .        .        *       .       |     Quit                            |
   +        .        .        .           +-------------------------------------+
-     .        *         .       *        + Quick Clean ------------------------+
+     .        *         .       *        + Disk -------------------------------+
   .      .        .        .        .    |                                     |
-      *       .        +       .         | Find reclaimable space.             |
+      *       .        +       .         | Browse folders by size.             |
   .        .        *        .           |                                     |
      .        .         .       .        +-------------------------------------+
-  .       .       .        .       *     + Disk -------------------------------+
+  .       .       .        .       *     + This Mac ---------------------------+
      .        *        .       .         | ##################.......  64% used |
   *      .        .         .       .    | Free     88.1 GB of 245.1 GB        |
      .       .        *        .         | Used     157.0 GB                   |
@@ -67,7 +67,7 @@
      .        .       .        .         | Size     at least 58.8 GB           |
   .      *        .        +        .    | Items    714,329 . scanned in 8s    |
       .       .        .       .         | Blocked  147 paths . s shows them   |
-  +       .       *        .       *     | Can free ~1.8 GB in caches and logs |
+  +       .       *        .       *     | Can free ~1.8 GB in caches & logs   |
      .        .       .        .         +-------------------------------------+
  up/down move . enter open . s skipped . ? help . q quit
 ```
@@ -75,11 +75,11 @@
 * **Left:** the neet art. Stars cover the whole screen evenly, corners and the space above and below the boxes included, and never sit between or right beside the boxes. It takes about 45% of the width, and more on a wide screen, since the right side is at most 72 columns. It is hidden when the terminal is narrower than 90 columns.
 * **Right:** the menu and three boxes, each sized to its lines, a row apart, centred top to bottom like the art. When room is short, the rows between them go first, then the last boxes.
 * **Menu:** one numbered row per feature.
-  1. The rows go from the quickest way to free space to the most detailed: Quick Clean, Deep Clean, Remove App, Large Files, then Disk.
-  2. Quick Clean comes first, and is selected when neet opens.
+  1. Disk comes first, and is selected when neet opens, so you can see where the space went. Then the cleanups, from the quickest to the most detailed: Quick Clean, Deep Clean, Remove App, and Large Files. Then Startup, Dotfiles, AI Tools, Settings, and SSH last, with Quit below.
+  2. The number keys open rows in that order: `1` Disk, `2` Quick Clean, `3` Deep Clean, `4` Remove App, `5` Large Files.
   3. Features not built yet remain readable and have a yellow `soon` label. The selection skips them. No other row has a note.
 * **The selected row:** its name as the title, and what it does, with a blank row above and below, so it stands a little taller than the boxes under it.
-* **Disk:** a gauge of how full the disk is, as wide as the box allows. It turns yellow at 75% and red at 90%, and the free space is green, yellow, or red to match. Then free, total, and used space. When macOS can clear 100 MB or more on its own, a last line says how much free space Finder shows, counting that purgeable space. It is read about once a minute.
+* **This Mac:** a gauge of how full the disk is, as wide as the box allows. It turns yellow at 75% and red at 90%, and the free space is green, yellow, or red to match. Then free, total, and used space. When macOS can clear 100 MB or more on its own, a last line says how much free space Finder shows, counting that purgeable space. It is read about once a minute.
 * **Home folder:** scan progress, then the folder's total size and item count. If some folders could not be read, the size is marked `at least`, and yellow lines say how many were blocked by macOS or could not be read, and to press `s`. **Can free** shows `finding...`, then in green the total every Deep Clean rule found. It is worked out again after each cleanup, and when you press `r` in Deep Clean.
 
 | Key | Action |

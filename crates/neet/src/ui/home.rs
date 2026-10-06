@@ -55,6 +55,11 @@ impl Entry {
 
 const ENTRIES: &[Entry] = &[
     Entry {
+        label: "Disk",
+        about: "Browse folders by size.",
+        target: Target::Screen(|| Box::new(Disk::new())),
+    },
+    Entry {
         label: "Quick Clean",
         about: "Find reclaimable space. Select a cleanup action.",
         target: Target::Screen(|| Box::new(QuickClean::new())),
@@ -75,18 +80,8 @@ const ENTRIES: &[Entry] = &[
         target: Target::Screen(|| Box::new(LargeFiles::new())),
     },
     Entry {
-        label: "Disk",
-        about: "Browse folders by size.",
-        target: Target::Screen(|| Box::new(Disk::new())),
-    },
-    Entry {
         label: "Startup",
         about: "Manage startup programs.",
-        target: Target::Soon,
-    },
-    Entry {
-        label: "SSH",
-        about: "Manage hosts, keys, and permissions.",
         target: Target::Soon,
     },
     Entry {
@@ -105,11 +100,24 @@ const ENTRIES: &[Entry] = &[
         target: Target::Soon,
     },
     Entry {
+        label: "SSH",
+        about: "Manage hosts, keys, and permissions.",
+        target: Target::Soon,
+    },
+    Entry {
         label: "Quit",
         about: "Close neet.",
         target: Target::Quit,
     },
 ];
+
+/// The number key that opens the row named `label`
+fn key_of(label: &str) -> usize {
+    ENTRIES
+        .iter()
+        .position(|entry| entry.label == label)
+        .map_or(0, |index| index + 1)
+}
 
 pub struct Home {
     list: ListState,
@@ -186,7 +194,7 @@ impl Home {
         let inner = width.saturating_sub(4);
         vec![
             (format!(" {} ", entry.label), vec![Line::from(entry.about)]),
-            (" Disk ".to_string(), disk_lines(context.disk, inner)),
+            (" This Mac ".to_string(), disk_lines(context.disk, inner)),
             (
                 " Home folder ".to_string(),
                 scan_lines(context.scan, context.cleanable),
@@ -336,7 +344,10 @@ fn scan_lines(scan: &ScanStatus, cleanable: Option<u64>) -> Vec<Line<'static>> {
             None => vec![Span::raw("finding…").fg(super::visual::ACCENT)],
             Some(size) => vec![
                 Span::raw(format!("~{}", format::size(size))).green().bold(),
-                Span::raw(" in caches and logs · 2 Deep Clean"),
+                Span::raw(format!(
+                    " in caches & logs · {} Deep Clean",
+                    key_of("Deep Clean")
+                )),
             ],
         },
     ));
@@ -503,6 +514,8 @@ mod tests {
     #[test]
     fn down_skips_rows_that_are_not_built() {
         let mut home = Home::new();
+        assert_eq!(ENTRIES[home.selected()].label, "Disk");
+        press(&mut home, KeyCode::Down);
         assert_eq!(ENTRIES[home.selected()].label, "Quick Clean");
         press(&mut home, KeyCode::Down);
         assert_eq!(ENTRIES[home.selected()].label, "Deep Clean");
@@ -510,8 +523,6 @@ mod tests {
         assert_eq!(ENTRIES[home.selected()].label, "Remove App");
         press(&mut home, KeyCode::Down);
         assert_eq!(ENTRIES[home.selected()].label, "Large Files");
-        press(&mut home, KeyCode::Down);
-        assert_eq!(ENTRIES[home.selected()].label, "Disk");
         press(&mut home, KeyCode::Down);
         assert_eq!(ENTRIES[home.selected()].label, "Dotfiles");
         press(&mut home, KeyCode::Down);
@@ -556,11 +567,11 @@ mod tests {
             .collect();
         let title = rows
             .iter()
-            .position(|row| row.contains("┌ Quick Clean"))
+            .position(|row| row.contains("┌ Disk ─"))
             .unwrap();
         assert!(rows[title + 1].trim_end().ends_with('│'));
-        assert!(!rows[title + 1].contains("Find"));
-        assert!(rows[title + 2].contains("Find reclaimable space."));
+        assert!(!rows[title + 1].contains("Browse"));
+        assert!(rows[title + 2].contains("Browse folders by size."));
         // The menu says only which rows come later.
         assert!(!screen.contains("overview"));
         assert!(!screen.contains("found"));
