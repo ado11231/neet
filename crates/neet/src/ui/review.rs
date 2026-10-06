@@ -150,7 +150,7 @@ impl Review {
             .collect();
         groups.sort_by_key(|&(_, size)| std::cmp::Reverse(size));
         let field = |label: &str, value: Span<'static>| {
-            Line::from(vec![Span::raw(format!("{label:<9}")).bold(), value])
+            Line::from(vec![Span::raw(format!("{label:<11}")).bold(), value])
         };
         let totals = vec![
             field("Size", Span::raw(format::size(total)).green().bold()),
@@ -169,24 +169,28 @@ impl Review {
                 Span::raw(format!("  {name}")),
             ]));
         }
-        let step = |number: usize, text: &'static str| {
-            Line::from(vec![
-                Span::raw(format!("{number}. "))
-                    .fg(super::visual::ACCENT)
-                    .bold(),
-                Span::raw(text),
-            ])
-        };
-        let steps = vec![
-            Line::from("Steps").style(super::visual::HEADING),
-            step(1, "Press Enter to confirm."),
-            step(
-                2,
-                "neet checks each item again, then moves it to the Trash.",
-            ),
-            step(3, "Changed your mind? Use Put Back in the Trash."),
-            step(4, "Empty the Trash to free the space."),
-        ];
+        let mut steps = vec![Line::from("Steps").style(super::visual::HEADING)];
+        for (number, text) in [
+            "Press Enter to confirm.",
+            "neet checks each item again, then moves it to the Trash.",
+            "Changed your mind? Use Put Back in the Trash.",
+            "Empty the Trash to free the space.",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            steps.extend(super::visual::hanging(
+                vec![
+                    Span::raw(format!("{}. ", number + 1))
+                        .fg(super::visual::ACCENT)
+                        .bold(),
+                ],
+                3,
+                text,
+                ratatui::style::Style::default(),
+                usize::from(width),
+            ));
+        }
         let after = super::visual::after_cleanup(context.disk.as_ref(), total, "Cleanup", width);
         vec![totals, overview, steps, after]
     }
@@ -205,7 +209,7 @@ impl Screen for Review {
     fn draw(&mut self, frame: &mut Frame, area: Rect, context: &Context) {
         let plan = &self.planned.plan;
         let title = format!(
-            " Review: {}, {} ",
+            " Review · {} · {} ",
             items(plan.selected_count()),
             format::size(plan.selected_size())
         );
@@ -238,8 +242,8 @@ impl Screen for Review {
             SCROLL_HELP[0],
             SCROLL_HELP[1],
             SCROLL_HELP[2],
-            ("Enter", "Confirm selected paths"),
-            ("Esc", "Back to Clean"),
+            ("Enter", "Confirm & move the items to the Trash"),
+            ("Esc", "Back to Deep Clean"),
             ("q", "Quit"),
         ]
     }
@@ -267,8 +271,8 @@ impl Screen for Confirm {
             ))
             .bold(),
             Line::default(),
-            Line::from("Restore from Trash with Finder’s Put Back."),
-            Line::from("Paths rechecked before moving."),
+            Line::from("neet checks each item again before moving it."),
+            Line::from("Changed your mind? Use Put Back in the Trash."),
             Line::default(),
             Line::from(vec![
                 Span::raw("y").bold().fg(super::visual::ACCENT),
@@ -690,7 +694,7 @@ mod tests {
         let (_dir, planned) = planned();
         let screen = render(&mut Review::new(planned));
 
-        assert!(screen.contains("Review: 1 item,"));
+        assert!(screen.contains("Review · 1 item ·"));
         assert!(screen.contains("Xcode DerivedData"));
         assert!(screen.contains("~/Library/Developer/Xcode/DerivedData/App-abc"));
         assert!(!screen.contains("npm cache"));
@@ -741,7 +745,7 @@ mod tests {
         let screen = render(&mut cleanup);
         assert!(screen.contains("Nothing was moved."));
         assert!(screen.contains("Skipped 1 item,"));
-        assert!(screen.contains("com.apple.dt.Xcode is open"));
+        assert!(screen.contains("Xcode is open"));
     }
 
     #[test]
@@ -756,7 +760,7 @@ mod tests {
 
         let screen = render(&mut Review::new(planned));
 
-        assert!(screen.contains("Review: 2 items"));
+        assert!(screen.contains("Review · 2 items"));
         assert!(screen.contains("npm cache"));
     }
 
