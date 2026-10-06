@@ -1925,7 +1925,12 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("secret        may hold a token: kept private"));
-        assert!(row_of("Kept in") >= rows.len() - 4, "{text}");
+        // Each section after the first starts just under its rule.
+        // The Backups heading is the row above its first line.
+        for (first, heading) in [("What the marks mean", 0), ("Saved    none yet", 1)] {
+            let row = row_of(first) - heading;
+            assert!(rows[row - 2].contains('╌'), "{first}:\n{text}");
+        }
     }
 
     #[test]

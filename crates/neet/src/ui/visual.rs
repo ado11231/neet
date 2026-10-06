@@ -24,17 +24,21 @@ pub fn wrapped_rows(lines: &[Line<'_>], width: u16) -> u16 {
     .unwrap_or(u16::MAX)
 }
 
-/// A box holding `sections`: the first at the top, the last at the bottom,
-/// and the space between shared evenly, so a tall box reads as full instead
-/// of empty below its text. Sections that do not fit are left out, the last
-/// first. Leading spaces are kept, so right aligned values stay lined up.
+/// A box holding `sections`, so a tall box reads as full instead of empty
+/// below its text. When there is room, the box is split into even bands,
+/// one a section: each after the first starts with a light dashed rule, a
+/// blank row, then its text, and the space left over sits below the text.
+/// When there is not, the sections are spread from top to bottom instead,
+/// with a rule halfway down any wide gap. Sections that do not fit at all
+/// are left out, the last first. Leading spaces are kept, so right aligned
+/// values stay lined up.
 pub fn sections(
     frame: &mut ratatui::Frame,
     area: ratatui::layout::Rect,
     title: &str,
     mut sections: Vec<Vec<Line<'static>>>,
 ) {
-    use ratatui::layout::{Flex, Layout};
+    use ratatui::layout::{Flex, Layout, Rect};
     use ratatui::widgets::Padding;
     let block = block()
         .title(title.to_string())
@@ -49,22 +53,74 @@ pub fn sections(
     while sections.len() > 1 && needed(&sections) > inner.height {
         sections.pop();
     }
-    let areas = Layout::vertical(sections.iter().map(|lines| Constraint::Length(rows(lines))))
+    let rule = |frame: &mut ratatui::Frame, y: u16| {
+        frame.render_widget(
+            Paragraph::new("╌".repeat(usize::from(inner.width))),
+            Rect::new(inner.x, y, inner.width, 1),
+        );
+    };
+    let heights: Vec<u16> = sections.iter().map(|lines| rows(lines)).collect();
+    if let Some(bands) = bands(inner, &heights) {
+        for (index, (lines, band)) in sections.into_iter().zip(bands).enumerate() {
+            let text = if index == 0 {
+                band
+            } else {
+                rule(frame, band.y);
+                Rect {
+                    y: band.y + 2,
+                    height: band.height - 2,
+                    ..band
+                }
+            };
+            frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), text);
+        }
+        return;
+    }
+    let areas = Layout::vertical(heights.iter().map(|&height| Constraint::Length(height)))
         .flex(Flex::SpaceBetween)
         .split(inner);
     for (lines, area) in sections.into_iter().zip(areas.iter()) {
         frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), *area);
     }
-    // A light dashed rule halfway down each wide gap, so the sections read as
-    // parts of one box rather than lines adrift in it
     for pair in areas.windows(2) {
         let gap = pair[1].y.saturating_sub(pair[0].bottom());
         if gap >= DIVIDER_GAP {
-            let row =
-                ratatui::layout::Rect::new(inner.x, pair[0].bottom() + gap / 2, inner.width, 1);
-            frame.render_widget(Paragraph::new("╌".repeat(usize::from(inner.width))), row);
+            rule(frame, pair[0].bottom() + gap / 2);
         }
     }
+}
+
+/// `inner` split into even bands, one for each section of these heights,
+/// or `None` when a section would not fit in its band with its rule and a
+/// blank row on either side
+fn bands(inner: ratatui::layout::Rect, heights: &[u16]) -> Option<Vec<ratatui::layout::Rect>> {
+    let count = u16::try_from(heights.len()).ok()?;
+    if count < 2 {
+        return None;
+    }
+    let start = |index: u16| {
+        inner.y
+            + u16::try_from(u32::from(inner.height) * u32::from(index) / u32::from(count))
+                .unwrap_or(0)
+    };
+    let mut bands = Vec::with_capacity(heights.len());
+    for (index, &height) in (0..count).zip(heights) {
+        let (top, bottom) = (start(index), start(index + 1));
+        // A rule and a blank row above the text, after the first, and a
+        // blank row below it, before the next rule
+        let above = if index == 0 { 0 } else { 2 };
+        let below = u16::from(index + 1 < count);
+        if top + above + height + below > bottom {
+            return None;
+        }
+        bands.push(ratatui::layout::Rect::new(
+            inner.x,
+            top,
+            inner.width,
+            bottom - top,
+        ));
+    }
+    Some(bands)
 }
 
 /// The fewest blank rows between sections that get a rule in the middle

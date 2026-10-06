@@ -822,9 +822,16 @@ impl Screen for QuickClean {
             let after = self.after_lines(context, inner_width);
             let found = self.found_lines(context, inner_width);
             let used = after.len() + found.len() + 2;
-            let rows = usize::from(side.height.saturating_sub(2))
-                .saturating_sub(used)
-                .clamp(1, 12);
+            // As many as fill the box, or, when it splits into even bands,
+            // as many as fit in the top one.
+            let inner_height = usize::from(side.height.saturating_sub(2));
+            let band = inner_height / 3;
+            let rows = if band >= used / 2 + 3 {
+                band.saturating_sub(2)
+            } else {
+                inner_height.saturating_sub(used)
+            }
+            .clamp(1, 12);
             let mut list = vec![Line::from("Largest in this row").style(super::visual::HEADING)];
             list.extend(
                 self.largest_lines(context, side.width, rows)
@@ -1085,11 +1092,20 @@ mod tests {
         assert!(rows[0].contains("┌ Quick Clean") && rows[0].contains("┌ Space"));
         let bottom = rows.iter().rposition(|row| row.contains('└')).unwrap();
         assert!(bottom >= 46, "the boxes end at row {bottom}");
-        // Text at the top of each box, numbers held to its bottom.
+        // Each box is split into even bands, and every section after the
+        // first starts just under its rule, with the space below its text.
         assert!(row_of("Largest in this row") < row_of("Everything found"));
         assert!(row_of("Everything found") < row_of("After cleanup"));
-        assert!(row_of("Free after ~125.6 GB") >= bottom - 2);
-        assert!(row_of("Cleared by neet, to the Trash") >= bottom - 2);
+        for heading in [
+            "Everything found",
+            "After cleanup",
+            "What it is",
+            "In numbers",
+        ] {
+            let row = row_of(heading);
+            assert!(rows[row - 2].contains('╌'), "{heading}:\n{text}");
+        }
+        assert!(row_of("Free after ~125.6 GB") < bottom - 3);
         // The table's rows stand apart on a tall screen.
         assert_eq!(
             rows[row_of("Caches and logs") + 1].trim_matches(['│', ' ']),
@@ -1107,11 +1123,11 @@ mod tests {
         for pair in order.windows(2) {
             let (above, below) = (row_of(pair[0]), row_of(pair[1]));
             assert!(above < below, "{pair:?}");
+            let left = rows[below - 2];
             assert!(
-                rows[above..below]
-                    .iter()
-                    .any(|row| row[..row.find("││").unwrap_or(row.len())].contains('╌')),
-                "no rule between {pair:?}:\n{text}"
+                left[..left.find("││").unwrap_or(left.len())].contains('╌'),
+                "no rule just above {:?}:\n{text}",
+                pair[1]
             );
         }
         assert!(text.contains("Undo       Put Back in the Trash, until you empty it"));
