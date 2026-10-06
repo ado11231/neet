@@ -612,7 +612,12 @@ mod tests {
         // what the selected folder is, the totals, and the steps.
         let buffer = crate::ui::visual::tests::render("pick", &mut pick, &context, 120, 40);
         let tall = crate::ui::visual::tests::text(&buffer);
-        for text in ["┌ node_modules", "Packages a JavaScript project", "In all", "How"] {
+        for text in [
+            "┌ node_modules",
+            "Packages a JavaScript project",
+            "In all",
+            "How",
+        ] {
             assert!(tall.contains(text), "{text}:\n{tall}");
         }
         let text = render(&mut pick);

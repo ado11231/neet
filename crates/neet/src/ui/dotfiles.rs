@@ -1929,7 +1929,7 @@ mod tests {
         // The Backups heading is the row above its first line.
         for (first, heading) in [("What the marks mean", 0), ("Saved    none yet", 1)] {
             let row = row_of(first) - heading;
-            assert!(rows[row - 2].contains('╌'), "{first}:\n{text}");
+            assert!(rows[row - 1].contains('╌'), "{first}:\n{text}");
         }
     }
 

@@ -1103,7 +1103,7 @@ mod tests {
             "In numbers",
         ] {
             let row = row_of(heading);
-            assert!(rows[row - 2].contains('╌'), "{heading}:\n{text}");
+            assert!(rows[row - 1].contains('╌'), "{heading}:\n{text}");
         }
         assert!(row_of("Free after ~125.6 GB") < bottom - 3);
         // The table's rows stand apart on a tall screen.
@@ -1123,7 +1123,7 @@ mod tests {
         for pair in order.windows(2) {
             let (above, below) = (row_of(pair[0]), row_of(pair[1]));
             assert!(above < below, "{pair:?}");
-            let left = rows[below - 2];
+            let left = rows[below - 1];
             assert!(
                 left[..left.find("││").unwrap_or(left.len())].contains('╌'),
                 "no rule just above {:?}:\n{text}",
