@@ -9,13 +9,17 @@ use std::time::SystemTime;
 use neet_core::dotfiles::change::{self, Checked, Done, Edit};
 use neet_core::rewrite::Backup;
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::{Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Padding, Paragraph, Wrap};
 use similar::{ChangeTag, TextDiff};
 
 use super::super::visual;
+
+/// The widest a review or question card gets, so short lines do not sit in a
+/// box as wide as a full screen
+const CARD_WIDTH: u16 = 110;
 
 /// Which fix `r` or `p` asked for
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -234,9 +238,21 @@ fn draw_with_diff(
     diff: &Diff,
     hidden: bool,
 ) {
-    frame.render_widget(Clear, area);
-    let width = area.width.saturating_sub(4);
+    // A card in the middle, as wide as reads well and as tall as the diff,
+    // with the screen still showing around it
+    let card_width = area.width.min(CARD_WIDTH);
+    let width = card_width.saturating_sub(4);
     let height = (visual::wrapped_rows(&lines, width) + 2).min(area.height / 2);
+    let rows = if hidden { 1 } else { diff.lines.len() };
+    let diff_height = u16::try_from(rows).unwrap_or(u16::MAX).saturating_add(2);
+    let card_height = height.saturating_add(diff_height).min(area.height);
+    let [area] = Layout::vertical([Constraint::Length(card_height)])
+        .flex(Flex::Center)
+        .areas(area);
+    let [area] = Layout::horizontal([Constraint::Length(card_width)])
+        .flex(Flex::Center)
+        .areas(area);
+    frame.render_widget(Clear, area);
     let [top, below] =
         Layout::vertical([Constraint::Length(height), Constraint::Fill(1)]).areas(area);
     frame.render_widget(
@@ -247,9 +263,6 @@ fn draw_with_diff(
         ),
         top,
     );
-    let rows = if hidden { 1 } else { diff.lines.len() };
-    let fits = u16::try_from(rows).unwrap_or(u16::MAX).saturating_add(2);
-    let [below, _] = Layout::vertical([Constraint::Length(fits), Constraint::Fill(1)]).areas(below);
     let block = visual::block()
         .title(" Diff ")
         .padding(Padding::horizontal(1));
