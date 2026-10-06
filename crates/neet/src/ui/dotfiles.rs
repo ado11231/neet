@@ -1925,12 +1925,9 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("secret        may hold a token: kept private"));
-        // Each section after the first starts just under its rule.
-        // The Backups heading is the row above its first line.
-        for (first, heading) in [("Legend", 0), ("Saved    none yet", 1)] {
-            let row = row_of(first) - heading;
-            assert!(rows[row - 1].contains('╌'), "{first}:\n{text}");
-        }
+        // Each section is a box of its own, titled with its heading.
+        assert!(row_of("┌ Legend") < row_of("┌ Backups"));
+        assert_eq!(row_of("┌ Backups") + 1, row_of("Saved    none yet"));
     }
 
     #[test]

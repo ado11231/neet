@@ -479,7 +479,7 @@ impl Simulators {
             lines.push(field(
                 "Simulators",
                 Span::raw(if names.is_empty() {
-                    "none run on it".to_string()
+                    "none".to_string()
                 } else {
                     format!(
                         "{}, {}: {}",
@@ -492,8 +492,7 @@ impl Simulators {
             if !runtime.deletable {
                 lines.push(field(
                     "Blocked",
-                    Span::raw("simctl will not delete this runtime, so it cannot be selected.")
-                        .yellow(),
+                    Span::raw("Xcode won't let this one be deleted.").yellow(),
                 ));
             }
             (format!(" {} ", runtime.name), lines)
@@ -512,16 +511,16 @@ impl Simulators {
                     ),
                     field(
                         "Why",
-                        Span::raw("their runtime is gone, so they can never start again.").yellow(),
+                        Span::raw("their iOS version is gone, so they can't start.").yellow(),
                     ),
                 ],
             )
         };
         // Kept with the details, so it shows on the smallest screen too
         lines.push(labeled(
-            "Permanently",
+            "Warning",
             Color::Red,
-            vec![Span::raw("none of it goes to the Trash.")],
+            vec![Span::raw("deleted for good, not moved to the Trash.")],
         ));
         (title, lines)
     }
@@ -538,24 +537,22 @@ impl Simulators {
         let removing = vec![
             Line::from("Removal").style(super::visual::HEADING),
             labeled(
-                "Runtime",
+                "What",
                 super::visual::ACCENT,
                 vec![Span::raw(
-                    "lets Xcode run simulators of one iOS, watchOS, tvOS, or visionOS version.",
+                    "a runtime is one iOS version Xcode uses for simulators.",
                 )],
             ),
             labeled(
-                "Removes",
+                "Deletes",
                 Color::Red,
-                vec![Span::raw(
-                    "the runtimes you select and every simulator on them, apps and data included.",
-                )],
+                vec![Span::raw("the runtimes you pick, and their simulators.")],
             ),
             labeled(
-                "Undo",
+                "Get back",
                 Color::Green,
                 vec![Span::raw(
-                    "Xcode downloads a runtime again in Settings, Components.",
+                    "download it again in Xcode, Settings, Components.",
                 )],
             ),
         ];
@@ -595,20 +592,22 @@ impl Simulators {
             step(
                 1,
                 vec![
+                    Span::raw("Press "),
                     key("Space"),
-                    Span::raw(" selects a runtime. Nothing starts selected."),
+                    Span::raw(" to pick a runtime."),
                 ],
             ),
             step(
                 2,
                 vec![
+                    Span::raw("Press "),
                     key("Enter"),
-                    Span::raw(" asks first, in red, and lists what goes."),
+                    Span::raw(" to see what gets deleted."),
                 ],
             ),
             step(
                 3,
-                vec![key("y"), Span::raw(" removes it with xcrun simctl.")],
+                vec![Span::raw("Press "), key("y"), Span::raw(" to delete it.")],
             ),
         ];
         (title, vec![selected, removing, in_all, how])
@@ -1866,7 +1865,7 @@ mod tests {
         for (width, height) in view::SIZES {
             let buffer = view::render("simulators", &mut sims, &context, width, height);
             view::aligned(&buffer, "Size", "8.8 GB");
-            assert!(view::text(&buffer).contains("Permanently"));
+            assert!(view::text(&buffer).contains("deleted for good"));
             let buffer = view::render("docker", &mut docker, &context, width, height);
             view::aligned(&buffer, "Count", "1234567");
             view::aligned(&buffer, "Reclaimable", "1.105GB (61%)");

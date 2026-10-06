@@ -187,16 +187,16 @@ fn item_row(
 fn what_it_is(name: &str) -> &'static str {
     let lower = name.to_ascii_lowercase();
     if lower == "node_modules" {
-        "Packages a JavaScript project installed. npm, pnpm, or yarn install puts them back."
+        "JavaScript packages. Running npm install brings them back."
     } else if lower == "target" {
-        "What cargo built for a Rust project. The next cargo build makes it again."
+        "Rust build files. Your next cargo build makes them again."
     } else if [".dmg", ".pkg", ".iso"]
         .iter()
         .any(|end| lower.ends_with(end))
     {
-        "An installer. Once its app is installed, it is rarely needed. Download it again if you are."
+        "An app installer. You rarely need it after installing."
     } else if [".zip", ".xip"].iter().any(|end| lower.ends_with(end)) {
-        "An archive an app may have come in. Download it again if you need it."
+        "A zip file an app came in. Download it again if you need it."
     } else {
         "An item this cleanup found."
     }
@@ -224,7 +224,7 @@ impl Pick {
             } else {
                 selected.green().bold()
             })
-            .title(Line::from(" Trash · Put Back restores ").right_aligned());
+            .title(Line::from(" Goes to the Trash ").right_aligned());
 
         let sizes = format::column_width(
             "Size",
@@ -322,7 +322,7 @@ impl Pick {
             changed = vec![field(
                 "Changed",
                 Span::raw(format!(
-                    "{}, this week: you may be working in it",
+                    "{}, you may still be using it",
                     format::age(elapsed)
                 ))
                 .yellow(),
@@ -343,9 +343,9 @@ impl Pick {
         lines.push(field(
             "Selected",
             if rule.selected {
-                Span::raw("yes, it goes to the Trash").green()
+                Span::raw("yes").green()
             } else {
-                Span::raw("no, it stays")
+                Span::raw("no")
             },
         ));
         lines.push(Line::default());
@@ -392,9 +392,9 @@ impl Pick {
         ];
         if recent > 0 {
             lines.push(field(
-                "This week",
+                "Recent",
                 Span::raw(format!(
-                    "{} changed. Leave out projects you are working in.",
+                    "{} changed this week. Unpick ones you still use.",
                     super::clean::items(recent)
                 ))
                 .yellow(),
@@ -414,15 +414,9 @@ impl Pick {
         };
         vec![
             Line::from("Steps").style(super::visual::HEADING),
-            step(
-                1,
-                "Space selects or clears one. a selects or clears them all.",
-            ),
-            step(2, "Enter shows every selected path before anything moves."),
-            step(
-                3,
-                "Confirm moves them to the Trash, where Put Back restores them.",
-            ),
+            step(1, "Press Space to pick or unpick one, or a for all."),
+            step(2, "Press Enter to check the list."),
+            step(3, "Confirm to move them to the Trash."),
         ]
     }
 }
@@ -614,9 +608,9 @@ mod tests {
         let tall = crate::ui::visual::tests::text(&buffer);
         for text in [
             "┌ node_modules",
-            "Packages a JavaScript project",
-            "Total",
-            "Steps",
+            "JavaScript packages",
+            "┌ Total",
+            "┌ Steps",
         ] {
             assert!(tall.contains(text), "{text}:\n{tall}");
         }

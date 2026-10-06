@@ -130,78 +130,60 @@ fn who_span(who: Who) -> Span<'static> {
 /// What the item is
 fn about(item: Item) -> &'static str {
     match item {
-        Item::Rules => "Caches and logs the cleanup rules found, for apps and developer tools.",
-        Item::Clutter(Kind::Trash) => {
-            "Items already in the Trash still take space until it is emptied."
-        }
+        Item::Rules => "Saved files and logs from apps and tools.",
+        Item::Clutter(Kind::Trash) => "Files in the Trash still use space until you empty it.",
         Item::Clutter(Kind::Installers) => {
-            "Disk images and installers in Downloads. Once an app is installed, its installer is rarely needed."
+            "App installers in Downloads. You rarely need them after installing."
         }
         Item::Clutter(Kind::BuildFolders) => {
-            "Project node_modules and Rust target folders. Recreated on install or build."
+            "Build files in your code projects. They come back when you build again."
         }
         Item::Clutter(Kind::DockerImage) => {
-            "The disk image Docker Desktop keeps containers and images in. It does not shrink on its own."
+            "The file Docker keeps all its data in. It does not shrink by itself."
         }
         Item::Clutter(Kind::SimulatorRuntimes) => {
-            "Xcode runtimes and their simulators, outside the home folder."
+            "iPhone and iPad simulators that Xcode downloaded."
         }
-        Item::Clutter(Kind::TempFiles) => "Temporary app files in /private/var/folders.",
+        Item::Clutter(Kind::TempFiles) => "Temporary files apps left behind.",
     }
 }
 
 /// Where the item's files are
 fn place(item: Item) -> &'static str {
     match item {
-        Item::Rules => {
-            "~/Library/Caches, ~/Library/Logs, and the caches of tools such as npm, pip, and Cargo."
-        }
-        Item::Clutter(Kind::Trash) => "~/.Trash, the Trash of your home folder.",
-        Item::Clutter(Kind::Installers) => {
-            "~/Downloads: disk images, packages, and other installers."
-        }
-        Item::Clutter(Kind::BuildFolders) => {
-            "node_modules folders, and target folders next to a Cargo.toml, in your projects."
-        }
-        Item::Clutter(Kind::DockerImage) => {
-            "Docker.raw, in ~/Library/Containers/com.docker.docker."
-        }
-        Item::Clutter(Kind::SimulatorRuntimes) => {
-            "/Library/Developer/CoreSimulator, shared by every user of the Mac."
-        }
-        Item::Clutter(Kind::TempFiles) => "Your own folder in /private/var/folders.",
+        Item::Rules => "~/Library/Caches, ~/Library/Logs, and tool caches like npm and pip.",
+        Item::Clutter(Kind::Trash) => "~/.Trash",
+        Item::Clutter(Kind::Installers) => "~/Downloads",
+        Item::Clutter(Kind::BuildFolders) => "node_modules and target folders in your projects.",
+        Item::Clutter(Kind::DockerImage) => "~/Library/Containers/com.docker.docker",
+        Item::Clutter(Kind::SimulatorRuntimes) => "/Library/Developer/CoreSimulator",
+        Item::Clutter(Kind::TempFiles) => "/private/var/folders",
     }
 }
 
 /// What changes once the item is cleared
 fn afterwards(item: Item) -> &'static str {
     match item {
-        Item::Rules => {
-            "Apps make them again as they need them, so some may open more slowly at first."
-        }
-        Item::Clutter(Kind::Trash) => "Its files are deleted for good.",
-        Item::Clutter(Kind::Installers) => "Download an installer again if you need it later.",
-        Item::Clutter(Kind::BuildFolders) => {
-            "The next install or build in each project takes longer while it makes them again."
-        }
+        Item::Rules => "Apps make them again. Some may open a bit slower at first.",
+        Item::Clutter(Kind::Trash) => "The files are gone for good.",
+        Item::Clutter(Kind::Installers) => "Download it again if you ever need it.",
+        Item::Clutter(Kind::BuildFolders) => "Your next build takes a bit longer.",
         Item::Clutter(Kind::DockerImage) => {
-            "Prune deletes unused images, containers, and build cache. A reset deletes everything Docker keeps."
+            "Unused Docker data is deleted. A reset deletes all of it."
         }
-        Item::Clutter(Kind::SimulatorRuntimes) => {
-            "Xcode downloads a runtime again when a project needs it."
-        }
-        Item::Clutter(Kind::TempFiles) => "Nothing to do. The space comes back on its own.",
+        Item::Clutter(Kind::SimulatorRuntimes) => "Xcode downloads it again if you need it.",
+        Item::Clutter(Kind::TempFiles) => "Nothing to do. The space comes back by itself.",
     }
 }
 
 /// Whether clearing the item can be undone, in the color that says so
 fn undo(item: Item) -> Span<'static> {
     match who(item) {
-        Who::Neet => Span::raw("Put Back in the Trash, until you empty it").green(),
-        Who::Tool => Span::raw("none, it is deleted for good").red(),
+        Who::Neet => Span::raw("Yes, from the Trash").green(),
+        Who::Tool => Span::raw("No, deleted for good").red(),
         // Only the Trash is left to you, and emptying it cannot be undone.
-        Who::You => Span::raw("none, once the Trash is emptied").red(),
-        Who::Mac => Span::raw("nothing to undo").fg(super::visual::ACCENT),
+        Who::You => Span::raw("No, once emptied").red(),
+        Who::Mac => Span::raw("Not needed").fg(super::visual::ACCENT),
     }
 }
 
@@ -209,38 +191,38 @@ fn undo(item: Item) -> Span<'static> {
 fn steps_of(item: Item) -> &'static [&'static str] {
     match item {
         Item::Rules => &[
-            "Enter: open Deep Clean.",
-            "Space: select rules. Review every path.",
-            "Confirm: move files to Trash.",
+            "Press Enter to open Deep Clean.",
+            "Press Space to pick what to clean.",
+            "Check the list, then confirm.",
         ],
         Item::Clutter(Kind::BuildFolders) => &[
-            "Enter: list build folders.",
-            "All selected. Deselect active projects.",
-            "Review and confirm: move to Trash.",
+            "Press Enter to see the folders.",
+            "All are picked. Unpick projects you use.",
+            "Check the list, then confirm.",
         ],
         Item::Clutter(Kind::Installers) => &[
-            "Enter: list installers.",
-            "All selected. Deselect installers to keep.",
-            "Review and confirm: move to Trash.",
+            "Press Enter to see the installers.",
+            "All are picked. Unpick ones to keep.",
+            "Check the list, then confirm.",
         ],
         Item::Clutter(Kind::Trash) => &[
-            "Empty the Trash in Finder, or right click it in the Dock.",
-            "neet never empties the Trash, so Put Back always works.",
+            "Empty the Trash in Finder.",
+            "neet never empties it for you.",
         ],
         Item::Clutter(Kind::DockerImage) => &[
-            "Enter: review Docker usage and unused volumes.",
-            "Confirm: run docker system prune --all.",
-            "x: reset Docker. Move its disk image to Trash.",
+            "Press Enter to see what Docker uses.",
+            "Confirm to delete unused data.",
+            "Press x to reset Docker fully.",
         ],
         Item::Clutter(Kind::SimulatorRuntimes) => &[
-            "Enter: list runtimes and orphaned simulators. None selected.",
-            "Select runtimes to remove with their simulators.",
-            "Confirm permanent removal. Skips Trash; cannot undo.",
+            "Press Enter to see the simulators.",
+            "Press Space to pick ones you don't need.",
+            "Confirm. They are deleted for good.",
         ],
         Item::Clutter(Kind::TempFiles) => &[
-            "macOS removes old ones on its own.",
-            "Restarting the Mac clears more.",
-            "Do not delete them by hand.",
+            "macOS removes old ones by itself.",
+            "Restarting your Mac clears more.",
+            "Don't delete them yourself.",
         ],
     }
 }
@@ -480,7 +462,7 @@ impl QuickClean {
             Who::You => Color::Yellow,
             Who::Mac => super::visual::ACCENT,
         };
-        let mut steps = vec![Line::from("Steps").style(super::visual::HEADING)];
+        let mut steps = Vec::new();
         steps.extend(steps_of(item).iter().enumerate().map(|(number, step)| {
             Line::from(vec![
                 Span::raw(format!("{}. ", number + 1)).fg(color),
@@ -569,10 +551,7 @@ impl QuickClean {
                     "Share",
                     vec![
                         format::size_bar(size, found, SHARE_BAR),
-                        Span::raw(format!(
-                            " {}% of everything found",
-                            format::percent(size, found)
-                        )),
+                        Span::raw(format!(" {}% of all found", format::percent(size, found))),
                     ],
                 ));
             }
@@ -583,10 +562,10 @@ impl QuickClean {
             Status::Nothing => lines.push(field("Size", vec![Span::raw("none found")])),
         }
         let how = match who(item) {
-            Who::Neet => "neet, to the Trash, after you review it",
-            Who::Tool => "neet asks its own tool, permanently",
+            Who::Neet => "neet, to the Trash",
+            Who::Tool => "neet, deleted for good",
             Who::You => "you",
-            Who::Mac => "macOS, on its own",
+            Who::Mac => "macOS",
         };
         // In the color the table uses for who clears it
         let style = who_span(who(item)).style;
@@ -822,22 +801,17 @@ impl Screen for QuickClean {
             let after = self.after_lines(context, inner_width);
             let found = self.found_lines(context, inner_width);
             let used = after.len() + found.len() + 2;
-            // As many as fill the box, or, when it splits into even bands,
-            // as many as fit in the top one.
-            let inner_height = usize::from(side.height.saturating_sub(2));
-            let band = inner_height / 3;
-            let rows = if band >= used / 2 + 3 {
-                band.saturating_sub(2)
-            } else {
-                inner_height.saturating_sub(used)
-            }
-            .clamp(1, 12);
+            // As many as fit with the other two boxes below, each with its
+            // border, and their headings as titles
+            let rows = usize::from(side.height)
+                .saturating_sub(used + 2)
+                .clamp(1, 12);
             let mut list = vec![Line::from("Largest items").style(super::visual::HEADING)];
             list.extend(
                 self.largest_lines(context, side.width, rows)
                     .unwrap_or_else(|note| vec![note]),
             );
-            super::visual::sections(frame, side, " Space ", vec![list, found, after]);
+            super::visual::sections(frame, side, "", vec![list, found, after]);
         } else {
             let [table, below] =
                 Layout::vertical([Constraint::Length(table_height), Constraint::Fill(1)])
@@ -1010,7 +984,7 @@ mod tests {
         assert!(screen.contains("Manual: 2.0 MB"));
         assert!(screen.contains("neet, permanently"));
         assert!(screen.contains("macOS"));
-        assert!(screen.contains("Enter: open Deep Clean"));
+        assert!(screen.contains("Press Enter to open Deep Clean"));
     }
 
     #[test]
@@ -1022,7 +996,7 @@ mod tests {
         press(&mut screen, &scan, KeyCode::Down);
         let text = render(&mut screen, &scan);
         assert!(text.contains("~/code/web/node_modules"));
-        assert!(text.contains("Enter: list build folders"));
+        assert!(text.contains("Press Enter to see the folders"));
         assert!(matches!(
             press(&mut screen, &scan, KeyCode::Enter),
             Action::Open(_)
@@ -1089,37 +1063,32 @@ mod tests {
                 .unwrap_or_else(|| panic!("{needle:?} missing:\n{text}"))
         };
         // The boxes still run the full height, as before.
-        assert!(rows[0].contains("┌ Quick Clean") && rows[0].contains("┌ Space"));
+        assert!(rows[0].contains("┌ Quick Clean") && rows[0].contains("┌ Largest items"));
         let bottom = rows.iter().rposition(|row| row.contains('└')).unwrap();
         assert!(bottom >= 46, "the boxes end at row {bottom}");
-        // Each box is split into even bands, and every section after the
-        // first starts just under its rule, with the space below its text.
-        assert!(row_of("Largest items") < row_of("Overview"));
-        assert!(row_of("Overview") < row_of("After cleanup"));
-        for heading in ["Overview", "After cleanup", "About", "Summary"] {
-            let row = row_of(heading);
-            assert!(rows[row - 1].contains('╌'), "{heading}:\n{text}");
-        }
+        // Each section is a box of its own, titled with its heading, and
+        // the boxes share the height.
+        assert!(row_of("┌ Largest items") < row_of("┌ Overview"));
+        assert!(row_of("┌ Overview") < row_of("┌ After cleanup"));
         assert!(row_of("Free after ~125.6 GB") < bottom - 3);
         // The table's rows stand apart on a tall screen.
         assert_eq!(
             rows[row_of("Caches and logs") + 1].trim_matches(['│', ' ']),
             ""
         );
-        // Under the table: how, what, where, after, and numbers, in order,
-        // with a rule between each.
-        let order = ["Steps", "About", "Location", "Impact", "Summary"];
+        // Under the table: the steps, what it is, where, after, and the
+        // numbers, each in its own box, in order.
+        let order = [
+            "┌ Caches and logs",
+            "┌ About",
+            "┌ Location",
+            "┌ Impact",
+            "┌ Summary",
+        ];
         for pair in order.windows(2) {
-            let (above, below) = (row_of(pair[0]), row_of(pair[1]));
-            assert!(above < below, "{pair:?}");
-            let left = rows[below - 1];
-            assert!(
-                left[..left.find("││").unwrap_or(left.len())].contains('╌'),
-                "no rule just above {:?}:\n{text}",
-                pair[1]
-            );
+            assert!(row_of(pair[0]) < row_of(pair[1]), "{pair:?}:\n{text}");
         }
-        assert!(text.contains("Undo       Put Back in the Trash, until you empty it"));
+        assert!(text.contains("Undo       Yes, from the Trash"));
     }
 
     #[test]

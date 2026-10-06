@@ -24,116 +24,96 @@ pub fn wrapped_rows(lines: &[Line<'_>], width: u16) -> u16 {
     .unwrap_or(u16::MAX)
 }
 
-/// A box holding `sections`, so a tall box reads as full instead of empty
-/// below its text. When there is room, the box is split into even bands,
-/// one a section: each after the first starts with a light dashed rule with
-/// its text right under it, and the space left over sits below the text.
-/// When there is not, the sections are spread from top to bottom instead,
-/// with a rule halfway down any wide gap. Sections that do not fit at all
+/// `sections` as a stack of boxes filling `area`, one a section. The first
+/// is titled `title`. A section that starts with a heading line, styled
+/// [`HEADING`], takes that heading as its box's title instead, and so does
+/// the first when `title` is blank. The room left over is shared evenly, so
+/// a tall area has no empty space below the boxes. Sections that do not fit
 /// are left out, the last first. Leading spaces are kept, so right aligned
 /// values stay lined up.
 pub fn sections(
     frame: &mut ratatui::Frame,
     area: ratatui::layout::Rect,
     title: &str,
-    sections: Vec<Vec<Line<'static>>>,
+    mut sections: Vec<Vec<Line<'static>>>,
 ) {
+    let first = if title.trim().is_empty() {
+        sections.first_mut().and_then(heading).unwrap_or_default()
+    } else {
+        title.trim().to_string()
+    };
     let block = block()
-        .title(title.to_string())
+        .title(format!(" {first} "))
         .padding(ratatui::widgets::Padding::horizontal(1));
     sections_in(frame, area, block, sections);
 }
 
-/// [`sections`] in a box of your own, such as one with a bottom title
+/// The first line of `lines` as a title, taken out, when it is a heading
+fn heading(lines: &mut Vec<Line<'static>>) -> Option<String> {
+    let first = lines.first()?;
+    if first.style != HEADING {
+        return None;
+    }
+    let text = first.to_string();
+    lines.remove(0);
+    Some(text)
+}
+
+/// [`sections`] with the first box given, such as one with a bottom title
 pub fn sections_in(
     frame: &mut ratatui::Frame,
     area: ratatui::layout::Rect,
-    block: Block<'_>,
-    mut sections: Vec<Vec<Line<'static>>>,
+    first: Block<'static>,
+    sections: Vec<Vec<Line<'static>>>,
 ) {
-    use ratatui::layout::{Flex, Layout, Rect};
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-    let rows = |lines: &[Line<'static>]| wrapped_rows(lines, inner.width);
-    let needed = |sections: &[Vec<Line<'static>>]| -> u16 {
-        let gaps = u16::try_from(sections.len().saturating_sub(1)).unwrap_or(u16::MAX);
-        sections.iter().map(|lines| rows(lines)).sum::<u16>() + gaps
-    };
-    while sections.len() > 1 && needed(&sections) > inner.height {
-        sections.pop();
-    }
-    let rule = |frame: &mut ratatui::Frame, y: u16| {
-        frame.render_widget(
-            Paragraph::new("╌".repeat(usize::from(inner.width))),
-            Rect::new(inner.x, y, inner.width, 1),
-        );
-    };
-    let heights: Vec<u16> = sections.iter().map(|lines| rows(lines)).collect();
-    if let Some(bands) = bands(inner, &heights) {
-        for (index, (lines, band)) in sections.into_iter().zip(bands).enumerate() {
-            let text = if index == 0 {
-                band
+    use ratatui::layout::Rect;
+    use ratatui::widgets::Padding;
+    let mut boxes: Vec<(Block<'static>, Vec<Line<'static>>)> = Vec::new();
+    let mut first = Some(first);
+    for mut lines in sections {
+        let block = if let Some(first) = first.take() {
+            first
+        } else {
+            let title = heading(&mut lines).unwrap_or_default();
+            let block = block().padding(Padding::horizontal(1));
+            if title.is_empty() {
+                block
             } else {
-                rule(frame, band.y);
-                Rect {
-                    y: band.y + 1,
-                    height: band.height - 1,
-                    ..band
-                }
-            };
-            frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), text);
-        }
-        return;
+                block.title(format!(" {title} "))
+            }
+        };
+        boxes.push((block, lines));
     }
-    let areas = Layout::vertical(heights.iter().map(|&height| Constraint::Length(height)))
-        .flex(Flex::SpaceBetween)
-        .split(inner);
-    for (lines, area) in sections.into_iter().zip(areas.iter()) {
-        frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), *area);
+    // Each box's text, and its border
+    let inner = area.width.saturating_sub(4);
+    let mut heights: Vec<u16> = boxes
+        .iter()
+        .map(|(_, lines)| wrapped_rows(lines, inner).max(1) + 2)
+        .collect();
+    while heights.len() > 1 && heights.iter().sum::<u16>() > area.height {
+        heights.pop();
+        boxes.pop();
     }
-    for pair in areas.windows(2) {
-        let gap = pair[1].y.saturating_sub(pair[0].bottom());
-        if gap >= DIVIDER_GAP {
-            rule(frame, pair[0].bottom() + gap / 2);
-        }
+    let shares = u16::try_from(heights.len()).unwrap_or(1).max(1);
+    let leftover = area.height.saturating_sub(heights.iter().sum());
+    let mut y = area.y;
+    for (index, ((block, lines), height)) in boxes.into_iter().zip(heights).enumerate() {
+        // The last box takes what is left after the even shares.
+        let share = if usize::from(shares) == index + 1 {
+            area.bottom().saturating_sub(y)
+        } else {
+            (height + leftover / shares).min(area.bottom().saturating_sub(y))
+        };
+        let rect = Rect::new(area.x, y, area.width, share);
+        frame.render_widget(
+            Paragraph::new(lines)
+                .wrap(Wrap { trim: false })
+                .block(block),
+            rect,
+        );
+        y += share;
     }
 }
-
-/// `inner` split into even bands, one for each section of these heights,
-/// or `None` when a section would not fit in its band with its rule above
-/// it and a blank row below it
-fn bands(inner: ratatui::layout::Rect, heights: &[u16]) -> Option<Vec<ratatui::layout::Rect>> {
-    let count = u16::try_from(heights.len()).ok()?;
-    if count < 2 {
-        return None;
-    }
-    let start = |index: u16| {
-        inner.y
-            + u16::try_from(u32::from(inner.height) * u32::from(index) / u32::from(count))
-                .unwrap_or(0)
-    };
-    let mut bands = Vec::with_capacity(heights.len());
-    for (index, &height) in (0..count).zip(heights) {
-        let (top, bottom) = (start(index), start(index + 1));
-        // A rule right above the text, after the first, and a blank row
-        // below it, before the next rule
-        let above = u16::from(index > 0);
-        let below = u16::from(index + 1 < count);
-        if top + above + height + below > bottom {
-            return None;
-        }
-        bands.push(ratatui::layout::Rect::new(
-            inner.x,
-            top,
-            inner.width,
-            bottom - top,
-        ));
-    }
-    Some(bands)
-}
-
-/// The fewest blank rows between sections that get a rule in the middle
-const DIVIDER_GAP: u16 = 3;
 
 /// Keys remain distinct from their actions, including when the footer wraps.
 pub fn hints(text: &str) -> Line<'static> {

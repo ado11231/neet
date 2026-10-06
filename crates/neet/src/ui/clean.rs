@@ -364,9 +364,9 @@ fn tier_span(tier: Tier) -> Span<'static> {
 
 fn tier_meaning(tier: Tier) -> &'static str {
     match tier {
-        Tier::Safe => "Recreated as needed. Selected by default.",
-        Tier::Caution => "May require downloads, indexing, or sign-in. Select manually.",
-        Tier::Expert => "May contain unique files. Type the rule ID to select.",
+        Tier::Safe => "Apps make these again. Picked for you.",
+        Tier::Caution => "May need a re-download or sign-in. You pick these.",
+        Tier::Expert => "May hold files you can't get back. Type its ID to pick it.",
     }
 }
 
@@ -388,10 +388,10 @@ pub(super) fn skip_reason(reason: &SkipReason, min_age_days: Option<u32>) -> Str
             None => "changed too recently".to_string(),
         },
         SkipReason::Unreadable(error) => format!("could not be read: {error}"),
-        SkipReason::Overlaps => "already found by another rule".to_string(),
-        SkipReason::Link => "a link, left in place".to_string(),
+        SkipReason::Overlaps => "found by another rule".to_string(),
+        SkipReason::Link => "a link, kept".to_string(),
         SkipReason::AppOpen(app) => format!("{app} is open"),
-        SkipReason::Replaced => "changed into a different file after the review".to_string(),
+        SkipReason::Replaced => "changed after you checked it".to_string(),
         SkipReason::MoveFailed(error) => format!("could not be moved: {error}"),
     }
 }
@@ -530,16 +530,13 @@ fn about(rule: &RulePlan, home: &Path) -> Vec<Line<'static>> {
         ]),
     ];
     if !rule.rule.requires_quit.is_empty() {
-        lines.push(field(
-            "Close",
-            Span::raw(rule.rule.requires_quit.join(", ")),
-        ));
+        lines.push(field("Quit", Span::raw(rule.rule.requires_quit.join(", "))));
     }
     if rule.rule.min_age_days > 0 {
         lines.push(field(
             "Keeps",
             Span::raw(format!(
-                "anything changed in the last {} days",
+                "files changed in the last {} days",
                 rule.rule.min_age_days
             )),
         ));
@@ -652,11 +649,8 @@ impl Clean {
             let room = inner.saturating_sub(skipped.len() + 2);
             sections.push(found_lines(rule, home, room, width));
             let mut left = vec![
-                Line::from(format!(
-                    "Skipped · {} left in place",
-                    count(rule.skipped.len())
-                ))
-                .style(super::visual::HEADING),
+                Line::from(format!("Skipped · {}", count(rule.skipped.len())))
+                    .style(super::visual::HEADING),
             ];
             left.extend(skipped);
             sections.push(left);
@@ -679,7 +673,7 @@ impl Clean {
         };
         super::visual::block()
             .title(Line::from(title).bold())
-            .title_bottom(Line::from(" Trash · restore with Put Back ").right_aligned())
+            .title_bottom(Line::from(" Goes to the Trash ").right_aligned())
             .padding(Padding::horizontal(1))
     }
 
@@ -767,9 +761,7 @@ impl Clean {
 /// Where the space is: every rule's bar, each risk, and the rules that
 /// found nothing
 fn draw_location(frame: &mut Frame, area: Rect, planned: &Planned, chart: Vec<Line<'static>>) {
-    let mut by_rule = vec![Line::from("Rules").style(super::visual::HEADING)];
-    by_rule.extend(chart);
-    let mut sections = vec![by_rule];
+    let mut sections = vec![chart];
     sections.extend(by_risk(planned));
     sections.extend(found_nothing(planned));
     super::visual::sections(frame, area, " Location ", sections);
@@ -833,7 +825,7 @@ fn chart_lines(planned: &Planned, current: &RulePlan, width: usize) -> Vec<Line<
         lines.push(Line::default());
         lines.push(Line::from(vec![
             Span::raw(format!("{:>9}  ", format::size(total))).bold(),
-            Span::raw("in all · "),
+            Span::raw("total · "),
             Span::raw(format::size(planned.plan.selected_size()))
                 .green()
                 .bold(),
@@ -924,9 +916,7 @@ fn selection(planned: &Planned) -> Vec<Line<'static>> {
     if chosen.is_empty() {
         return vec![
             Line::from("Nothing selected yet.").bold(),
-            Line::from(
-                "Space selects a rule. Safe rules start selected, and caution rules are yours to choose.",
-            ),
+            Line::from("Press Space to pick a rule."),
         ];
     }
     let mut lines: Vec<Line<'static>> = chosen
@@ -999,13 +989,10 @@ fn in_all(planned: &Planned) -> Vec<Line<'static>> {
             )),
         ),
         wide("Selected", selected),
-        wide(
-            "Next",
-            Span::raw("Enter shows every path before anything moves."),
-        ),
+        wide("Next", Span::raw("Press Enter to check the list first.")),
         wide(
             "Goes to",
-            Span::raw("the Trash, where Put Back restores it").green(),
+            Span::raw("the Trash, so you can put it back").green(),
         ),
     ]
 }
@@ -1449,7 +1436,7 @@ mod tests {
         assert!(screen.contains("App-abc"));
         assert!(screen.contains("Found · 1 item · 4.1 KB"));
         assert!(screen.contains("Location"));
-        assert!(screen.contains("16.4 KB  in all · 4.1 KB selected"));
+        assert!(screen.contains("16.4 KB  total · 4.1 KB selected"));
     }
 
     #[test]

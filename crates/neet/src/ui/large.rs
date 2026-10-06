@@ -364,13 +364,13 @@ impl LargeFiles {
         let width = usize::from(area.width.saturating_sub(4));
         let kinds = kind_lines(tree, found, width);
         let inner = usize::from(area.height.saturating_sub(2));
-        // The heading, then a folder a row. The kinds go below when there
-        // is room for them and at least a few folders.
+        // A folder a row. The types go in a box below, its heading as the
+        // title, when there is room for them and at least a few folders.
         let with_kinds = inner.saturating_sub(kinds.len() + 1) >= 5;
         let rows = if with_kinds {
-            inner - kinds.len() - 2
+            inner - kinds.len() - 1
         } else {
-            inner.saturating_sub(1)
+            inner
         };
         let mut sections = vec![folder_lines(&groups, width, rows)];
         if with_kinds {
@@ -407,7 +407,6 @@ fn folder_lines(groups: &[(String, u64)], width: usize, rows: usize) -> Vec<Line
             format::count(u64::try_from(groups.len() - lines.len()).unwrap_or(u64::MAX))
         )));
     }
-    lines.insert(0, Line::from("Folders").style(super::visual::HEADING));
     lines
 }
 
@@ -954,11 +953,11 @@ mod tests {
             .map(ratatui::buffer::Cell::symbol)
             .collect();
 
-        assert!(screen.contains("Folders"));
+        assert!(screen.contains("Location"));
         assert!(screen.contains("Types"));
         assert!(screen.contains("Video"));
         assert!(screen.contains("Archive"));
-        assert!(screen.find("Folders") < screen.find("Types"));
+        assert!(screen.find("Location") < screen.find("Types"));
     }
 
     #[test]
