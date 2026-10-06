@@ -7,6 +7,9 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
+mod tmux;
+mod toml_file;
+
 /// How long Git may take to read or change one file
 const GIT_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -14,8 +17,24 @@ const GIT_TIMEOUT: Duration = Duration::from_secs(10);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Text,
-    /// `true` or `false`
-    OnOff,
+    /// A whole number, such as `50000`
+    Number,
+    /// One of these, which `Enter` steps through
+    Choice(&'static [&'static str]),
+}
+
+const ON_OFF: Kind = Kind::Choice(&["on", "off"]);
+const TRUE_FALSE: Kind = Kind::Choice(&["true", "false"]);
+
+/// How a program's file is read and written
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Format {
+    /// With `git config --file`
+    Git,
+    /// tmux's own commands, one a line, such as `set -g mouse on`
+    Tmux,
+    /// TOML, where `a.b` is the key `b` in the table `[a]`
+    Toml,
 }
 
 /// One setting neet can change
@@ -26,6 +45,8 @@ pub struct Setting {
     /// What it does, in a few words
     pub about: &'static str,
     pub kind: Kind,
+    /// For tmux, the command a new line starts with, such as `set -g`
+    pub command: &'static str,
 }
 
 /// A program, the files its settings live in, and the settings neet knows
@@ -34,38 +55,160 @@ pub struct Program {
     pub name: &'static str,
     /// Paths from the home folder
     pub files: &'static [&'static str],
+    pub format: Format,
     pub settings: &'static [Setting],
 }
 
 const fn setting(key: &'static str, about: &'static str, kind: Kind) -> Setting {
-    Setting { key, about, kind }
+    Setting {
+        key,
+        about,
+        kind,
+        command: "",
+    }
+}
+
+/// A tmux setting, added as `command key value` when the file has none
+const fn tmux(
+    command: &'static str,
+    key: &'static str,
+    about: &'static str,
+    kind: Kind,
+) -> Setting {
+    Setting {
+        key,
+        about,
+        kind,
+        command,
+    }
 }
 
 /// Every program Configure knows. Keep in step with the table in SAFETY.md.
-pub const PROGRAMS: &[Program] = &[Program {
-    name: "Git",
-    files: &[".gitconfig", ".config/git/config"],
-    settings: &[
-        setting("user.name", "Name on your commits.", Kind::Text),
-        setting("user.email", "Email on your commits.", Kind::Text),
-        setting(
-            "init.defaultBranch",
-            "Branch name for new repositories.",
-            Kind::Text,
-        ),
-        setting("core.editor", "Editor for commit messages.", Kind::Text),
-        setting(
-            "pull.rebase",
-            "Rebase instead of merge when pulling.",
-            Kind::OnOff,
-        ),
-        setting(
-            "push.autoSetupRemote",
-            "Push a new branch without naming the remote.",
-            Kind::OnOff,
-        ),
-    ],
-}];
+pub const PROGRAMS: &[Program] = &[
+    Program {
+        name: "Git",
+        files: &[".gitconfig", ".config/git/config"],
+        format: Format::Git,
+        settings: &[
+            setting("user.name", "Name on your commits.", Kind::Text),
+            setting("user.email", "Email on your commits.", Kind::Text),
+            setting(
+                "init.defaultBranch",
+                "Branch name for new repositories.",
+                Kind::Text,
+            ),
+            setting("core.editor", "Editor for commit messages.", Kind::Text),
+            setting(
+                "pull.rebase",
+                "Rebase instead of merge when pulling.",
+                TRUE_FALSE,
+            ),
+            setting(
+                "push.autoSetupRemote",
+                "Push a new branch without naming the remote.",
+                TRUE_FALSE,
+            ),
+        ],
+    },
+    Program {
+        name: "tmux",
+        files: &[".tmux.conf", ".config/tmux/tmux.conf"],
+        format: Format::Tmux,
+        settings: &[
+            tmux(
+                "set -g",
+                "mouse",
+                "Click, scroll, and resize panes with the mouse.",
+                ON_OFF,
+            ),
+            tmux(
+                "set -g",
+                "history-limit",
+                "Lines each pane keeps to scroll back through.",
+                Kind::Number,
+            ),
+            tmux(
+                "set -g",
+                "base-index",
+                "Number of the first window: 0 or 1.",
+                Kind::Number,
+            ),
+            tmux(
+                "set -g",
+                "renumber-windows",
+                "Number windows again when one closes.",
+                ON_OFF,
+            ),
+            tmux(
+                "setw -g",
+                "mode-keys",
+                "Keys for copy mode.",
+                Kind::Choice(&["vi", "emacs"]),
+            ),
+            tmux(
+                "set -s",
+                "escape-time",
+                "Milliseconds to wait after Esc. Low suits vim.",
+                Kind::Number,
+            ),
+            tmux(
+                "set -g",
+                "status-position",
+                "Where the status line sits.",
+                Kind::Choice(&["top", "bottom"]),
+            ),
+            tmux(
+                "set -g",
+                "default-terminal",
+                "Terminal type inside tmux, such as tmux-256color.",
+                Kind::Text,
+            ),
+        ],
+    },
+    Program {
+        name: "Starship",
+        files: &[".config/starship.toml"],
+        format: Format::Toml,
+        settings: &[
+            setting("add_newline", "Blank line before each prompt.", TRUE_FALSE),
+            setting(
+                "line_break.disabled",
+                "Keep the prompt on the same line as the folder.",
+                TRUE_FALSE,
+            ),
+            setting(
+                "character.success_symbol",
+                "Prompt mark after a command works.",
+                Kind::Text,
+            ),
+            setting(
+                "character.error_symbol",
+                "Prompt mark after a command fails.",
+                Kind::Text,
+            ),
+            setting(
+                "directory.truncation_length",
+                "How many folders the path shows.",
+                Kind::Number,
+            ),
+            setting(
+                "cmd_duration.min_time",
+                "Milliseconds a command runs before its time shows.",
+                Kind::Number,
+            ),
+            setting(
+                "command_timeout",
+                "Milliseconds a command may take before it is skipped.",
+                Kind::Number,
+            ),
+            setting(
+                "scan_timeout",
+                "Milliseconds to look through the folder's files.",
+                Kind::Number,
+            ),
+        ],
+    },
+];
 
 /// The program whose settings live in `path`, a path from the home folder
 #[must_use]
@@ -92,14 +235,76 @@ fn git(file: &Path, args: &[&str]) -> Result<crate::run::Captured, String> {
     }
 }
 
-/// The value of each of `program`'s settings in `file`, in the same order,
-/// or `None` when it is not set. Only that file is read, not the files it
-/// includes.
+/// Why `value` cannot be `setting`'s value, before anything is written
 ///
 /// # Errors
 ///
-/// Returns Git's message when the file cannot be read.
+/// Returns the reason in plain words.
+pub fn check(setting: &Setting, value: &str) -> Result<(), String> {
+    if value.contains(['\n', '\r', '\0']) {
+        return Err("A value cannot have more than one line.".to_string());
+    }
+    match setting.kind {
+        Kind::Text => Ok(()),
+        Kind::Number if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) => {
+            value
+                .parse::<i64>()
+                .map(|_| ())
+                .map_err(|_| format!("{} is too large.", setting.key))
+        }
+        Kind::Number => Err(format!("{} is a whole number, such as 10.", setting.key)),
+        Kind::Choice(choices) if choices.contains(&value) => Ok(()),
+        Kind::Choice(choices) => Err(format!("{} is {}.", setting.key, choices.join(" or "))),
+    }
+}
+
+/// The value of each of `program`'s settings in `file`, in the same order,
+/// or `None` when it is not set. Only that file is read, not the files it
+/// includes or sources.
+///
+/// # Errors
+///
+/// Returns why the file cannot be read.
 pub fn values(program: &Program, file: &Path) -> Result<Vec<Option<String>>, String> {
+    match program.format {
+        Format::Git => git_values(program, file),
+        Format::Tmux => Ok(tmux::values(program, &read(file)?)),
+        Format::Toml => toml_file::values(program, &read(file)?),
+    }
+}
+
+/// Sets `setting` in `file` to `value`, or removes it for `None`. Every
+/// other line, comment, and their order stay as they are.
+///
+/// # Errors
+///
+/// Returns why the value was refused, or why the file could not be changed.
+pub fn set(
+    program: &Program,
+    file: &Path,
+    setting: &Setting,
+    value: Option<&str>,
+) -> Result<(), String> {
+    if let Some(value) = value {
+        check(setting, value)?;
+    }
+    match program.format {
+        Format::Git => git_set(file, setting, value),
+        Format::Tmux => write(file, &tmux::set(&read(file)?, setting, value)?),
+        Format::Toml => write(file, &toml_file::set(&read(file)?, setting, value)?),
+    }
+}
+
+fn read(file: &Path) -> Result<String, String> {
+    std::fs::read_to_string(file).map_err(|error| format!("It could not be read: {error}."))
+}
+
+/// Writes the copy. It is neet's own copy, so it is written in place.
+fn write(file: &Path, text: &str) -> Result<(), String> {
+    std::fs::write(file, text).map_err(|error| format!("It could not be changed: {error}."))
+}
+
+fn git_values(program: &Program, file: &Path) -> Result<Vec<Option<String>>, String> {
     let captured = git(file, &["--list", "--null"])?;
     if !captured.success {
         return Err(format!("git could not read it: {}", captured.stderr.trim()));
@@ -130,20 +335,8 @@ pub fn values(program: &Program, file: &Path) -> Result<Vec<Option<String>>, Str
         .collect())
 }
 
-/// Sets `setting` in `file` to `value`, or removes it for `None`. Every
-/// other line, comment, and their order stay as they are.
-///
-/// # Errors
-///
-/// Returns why the value was refused, or Git's message.
-pub fn set(file: &Path, setting: &Setting, value: Option<&str>) -> Result<(), String> {
+fn git_set(file: &Path, setting: &Setting, value: Option<&str>) -> Result<(), String> {
     let captured = if let Some(value) = value {
-        if value.contains(['\n', '\r', '\0']) {
-            return Err("A value cannot have more than one line.".to_string());
-        }
-        if setting.kind == Kind::OnOff && value != "true" && value != "false" {
-            return Err(format!("{} is on or off.", setting.key));
-        }
         git(file, &["--", setting.key, value])?
     } else {
         let captured = git(file, &["--unset-all", "--", setting.key])?;
@@ -171,6 +364,10 @@ mod tests {
 
     const GIT: &Program = &PROGRAMS[0];
 
+    fn set(file: &std::path::Path, setting: &Setting, value: Option<&str>) -> Result<(), String> {
+        super::set(GIT, file, setting, value)
+    }
+
     fn setting(key: &str) -> &'static Setting {
         GIT.settings
             .iter()
@@ -184,6 +381,14 @@ mod tests {
         assert_eq!(
             program_for(".config/git/config").map(|p| p.name),
             Some("Git")
+        );
+        assert_eq!(
+            program_for(".config/tmux/tmux.conf").map(|p| p.name),
+            Some("tmux")
+        );
+        assert_eq!(
+            program_for(".config/starship.toml").map(|p| p.name),
+            Some("Starship")
         );
         assert_eq!(program_for(".zshrc"), None);
     }
@@ -239,12 +444,50 @@ mod tests {
     }
 
     #[test]
+    fn checks_numbers_and_choices() {
+        let tmux = &PROGRAMS[1];
+        let find = |key: &str| tmux.settings.iter().find(|s| s.key == key).unwrap();
+        assert!(check(find("history-limit"), "50000").is_ok());
+        assert!(check(find("history-limit"), "lots").is_err());
+        assert!(check(find("history-limit"), "-1").is_err());
+        assert!(check(find("history-limit"), "99999999999999999999").is_err());
+        assert!(check(find("mouse"), "on").is_ok());
+        assert_eq!(
+            check(find("mouse"), "yes"),
+            Err("mouse is on or off.".to_string())
+        );
+        assert!(check(find("default-terminal"), "a\nb").is_err());
+    }
+
+    #[test]
+    fn every_setting_is_listed_once_and_tmux_ones_say_how_to_add_them() {
+        for program in PROGRAMS {
+            for (index, setting) in program.settings.iter().enumerate() {
+                assert!(
+                    !program.settings[..index]
+                        .iter()
+                        .any(|s| s.key == setting.key),
+                    "{} twice",
+                    setting.key
+                );
+                assert_eq!(
+                    program.format == Format::Tmux,
+                    !setting.command.is_empty(),
+                    "{}",
+                    setting.key
+                );
+            }
+        }
+    }
+
+    #[test]
     fn refuses_values_git_would_misread() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join(".gitconfig");
         fs::write(&file, "").unwrap();
         assert!(set(&file, setting("user.name"), Some("a\nb")).is_err());
         assert!(set(&file, setting("pull.rebase"), Some("yes")).is_err());
+        assert_eq!(fs::read_to_string(&file).unwrap(), "");
         set(&file, setting("user.name"), Some("--global")).unwrap();
         assert_eq!(values(GIT, &file).unwrap()[0].as_deref(), Some("--global"));
     }
