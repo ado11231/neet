@@ -424,15 +424,14 @@ impl Simulators {
         }
         let header = columns
             .row([
-                Cell::from(""),
+                super::visual::check_header(),
                 Cell::from("Runtime"),
                 Cell::from("Build"),
                 Cell::from(Line::from("Size").right_aligned()),
                 Cell::from("Last used"),
                 Cell::from("Simulators"),
             ])
-            .style(super::visual::HEADING)
-            .bottom_margin(1);
+            .style(super::visual::HEADING);
         let total = found
             .runtimes
             .iter()
@@ -440,7 +439,7 @@ impl Simulators {
             .sum::<u64>()
             + size_of(&found.devices.iter().collect::<Vec<_>>());
         let picked = self.picked_size();
-        let selected = Span::raw(format!(" Selected: {} ", format::size(picked)));
+        let selected = Span::raw(format!(" Selected · {} ", format::size(picked)));
         let table = Table::new(rows, columns.widths())
             .header(header)
             .column_spacing(2)
@@ -811,7 +810,8 @@ impl Screen for Simulators {
             }
         }
         let row_count = self.stage.found().map_or(0, SimulatorsFound::row_count);
-        let list_height = u16::try_from(row_count + 4).unwrap_or(u16::MAX);
+        // Border and header above the rows, and the border below
+        let list_height = u16::try_from(row_count + 3).unwrap_or(u16::MAX);
         let [list, rest] =
             Layout::vertical([Constraint::Length(list_height), Constraint::Fill(1)]).areas(area);
         self.draw_list(frame, list);
@@ -1785,7 +1785,7 @@ mod tests {
         assert!(text.contains("8.8 GB"));
         assert!(text.contains("2026-09-17"));
         assert!(text.contains("1 simulator, 2.1 GB"));
-        assert!(text.contains("Selected: 0 B"));
+        assert!(text.contains("Selected · 0 B"));
 
         // Nothing selected, so Enter does not ask.
         press(&mut screen, KeyCode::Enter);

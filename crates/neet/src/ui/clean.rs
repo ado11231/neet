@@ -917,7 +917,7 @@ fn totals(planned: &Planned) -> Line<'static> {
         .filter(|rule| rule.selected && !rule.items.is_empty())
         .count();
     let text = Span::raw(format!(
-        " Selected: {} {} · {} · {} ",
+        " Selected · {} {} · {} · {} ",
         count(rules),
         if rules == 1 { "rule" } else { "rules" },
         items(plan.selected_count()),

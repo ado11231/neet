@@ -214,7 +214,7 @@ impl Pick {
     ) {
         let plan = &planned.plan;
         let selected = Span::raw(format!(
-            " Selected: {} · {} ",
+            " Selected · {} · {} ",
             super::clean::items(plan.selected_count()),
             format::size(plan.selected_size())
         ));
@@ -646,7 +646,7 @@ mod tests {
             let buffer =
                 crate::ui::visual::tests::render("pick", &mut pick, &context, width, height);
             assert!(crate::ui::visual::tests::text(&buffer).contains("node_modules"));
-            assert!(crate::ui::visual::tests::text(&buffer).contains("Selected: 2 items"));
+            assert!(crate::ui::visual::tests::text(&buffer).contains("Selected · 2 items"));
         }
         // A tall screen: the table fits its rows, and the box below says
         // what the selected folder is, the totals, and the steps.
@@ -662,14 +662,14 @@ mod tests {
         }
         let text = render(&mut pick);
         assert!(text.contains("~/Documents/web/node_modules"));
-        assert!(text.contains("Selected: 2 items"));
+        assert!(text.contains("Selected · 2 items"));
 
         press(&mut pick, KeyCode::Char(' '));
-        assert!(render(&mut pick).contains("Selected: 1 item "));
+        assert!(render(&mut pick).contains("Selected · 1 item "));
         press(&mut pick, KeyCode::Char('a'));
-        assert!(render(&mut pick).contains("Selected: 2 items"));
+        assert!(render(&mut pick).contains("Selected · 2 items"));
         press(&mut pick, KeyCode::Char('a'));
-        assert!(render(&mut pick).contains("Selected: 0 items"));
+        assert!(render(&mut pick).contains("Selected · 0 items"));
         assert!(matches!(press(&mut pick, KeyCode::Enter), Action::None));
 
         press(&mut pick, KeyCode::Char(' '));
