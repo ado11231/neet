@@ -629,7 +629,7 @@ impl Clean {
             .saturating_sub(skipped_height);
         let found_height = u16::try_from(found_all.len() + 2).unwrap_or(u16::MAX);
         let chart = chart_lines(planned, rule, width);
-        let chart_height = u16::try_from(chart.len() + 2).unwrap_or(u16::MAX);
+        let chart_height = u16::try_from(chart.len() + 3).unwrap_or(u16::MAX);
         let found_height = if free >= found_height + chart_height {
             found_height
         } else {
@@ -690,14 +690,12 @@ impl Clean {
         }
 
         if chart_area.height >= 3 {
-            frame.render_widget(
-                Paragraph::new(chart).block(
-                    super::visual::block()
-                        .title(Line::from(" Where the space is ").bold())
-                        .padding(Padding::horizontal(1)),
-                ),
-                chart_area,
-            );
+            let mut by_rule = vec![Line::from("By rule").style(super::visual::HEADING)];
+            by_rule.extend(chart);
+            let mut sections = vec![by_rule];
+            sections.extend(by_risk(planned));
+            sections.extend(found_nothing(planned));
+            super::visual::sections(frame, chart_area, " Where the space is ", sections);
         }
     }
 }
@@ -823,24 +821,20 @@ fn found_overall(planned: &Planned) -> Line<'static> {
 }
 
 /// What is selected so far, rule by rule, with the total
-fn selection(planned: &Planned) -> Paragraph<'static> {
+fn selection(planned: &Planned) -> Vec<Line<'static>> {
     let chosen: Vec<&RulePlan> = planned
         .plan
         .rules
         .iter()
         .filter(|rule| rule.selected && !rule.items.is_empty())
         .collect();
-    let block = super::visual::block()
-        .title(" Selected ")
-        .padding(Padding::horizontal(1));
     if chosen.is_empty() {
-        return Paragraph::new(vec![
-            Line::from("Nothing selected yet."),
-            Line::default(),
-            Line::from("Press Space to select a rule. Safe rules start selected, and caution rules are yours to choose."),
-        ])
-        .wrap(Wrap { trim: false })
-        .block(block);
+        return vec![
+            Line::from("Nothing selected yet.").bold(),
+            Line::from(
+                "Space selects a rule. Safe rules start selected, and caution rules are yours to choose.",
+            ),
+        ];
     }
     let mut lines: Vec<Line<'static>> = chosen
         .iter()
@@ -851,7 +845,6 @@ fn selection(planned: &Planned) -> Paragraph<'static> {
             ])
         })
         .collect();
-    lines.push(Line::default());
     lines.push(Line::from(vec![
         Span::raw(format!(
             "{:>9}  ",
@@ -859,19 +852,144 @@ fn selection(planned: &Planned) -> Paragraph<'static> {
         ))
         .green()
         .bold(),
-        Span::raw(format!(
-            "total, in {}",
-            items(planned.plan.selected_count())
-        ))
-        .bold(),
+        Span::raw(format!("in all, {}", items(planned.plan.selected_count()))).bold(),
     ]));
-    lines.push(Line::default());
-    lines.push(Line::from(
-        "Press Enter to see every path before anything moves.",
-    ));
-    Paragraph::new(lines)
-        .wrap(Wrap { trim: false })
-        .block(block)
+    lines
+}
+
+/// What each risk the rules use means, with how many rules have it
+fn risks(planned: &Planned) -> Vec<Line<'static>> {
+    let mut lines = vec![Line::from("What the risks mean").style(super::visual::HEADING)];
+    for tier in [Tier::Safe, Tier::Caution, Tier::Expert] {
+        let rules = planned
+            .plan
+            .rules
+            .iter()
+            .filter(|rule| rule.rule.tier == tier)
+            .count();
+        if rules == 0 {
+            continue;
+        }
+        let padding = " ".repeat(9 - tier_name(tier).len());
+        lines.push(Line::from(vec![
+            tier_span(tier).bold(),
+            Span::raw(padding),
+            Span::raw(tier_meaning(tier)),
+        ]));
+    }
+    lines
+}
+
+/// Every rule's finds added up, and what happens next
+fn in_all(planned: &Planned) -> Vec<Line<'static>> {
+    let rules = &planned.plan.rules;
+    let found = rules.iter().filter(|rule| !rule.items.is_empty()).count();
+    let found_items: usize = rules.iter().map(|rule| rule.items.len()).sum();
+    let size: u64 = rules.iter().map(RulePlan::size).sum();
+    let selected = planned.plan.selected_size();
+    let selected = Span::raw(format::size(selected));
+    let selected = if planned.plan.selected_count() == 0 {
+        selected
+    } else {
+        selected.green().bold()
+    };
+    vec![
+        Line::from("In all").style(super::visual::HEADING),
+        wide(
+            "Found",
+            Span::raw(format!(
+                "{} · {} of {} rules · {}",
+                format::size(size),
+                count(found),
+                count(rules.len()),
+                items(found_items)
+            )),
+        ),
+        wide("Selected", selected),
+        wide(
+            "Next",
+            Span::raw("Enter shows every path before anything moves."),
+        ),
+        wide(
+            "Goes to",
+            Span::raw("the Trash, where Put Back restores it").green(),
+        ),
+    ]
+}
+
+/// A label and its value, with room for longer labels than [`field`]
+fn wide(label: &str, value: Span<'static>) -> Line<'static> {
+    Line::from(vec![Span::raw(format!("{label:<10}")).bold(), value])
+}
+
+/// The space found by each risk, largest first, as its own section
+fn by_risk(planned: &Planned) -> Option<Vec<Line<'static>>> {
+    let mut tiers: Vec<(Tier, u64, usize)> = [Tier::Safe, Tier::Caution, Tier::Expert]
+        .into_iter()
+        .map(|tier| {
+            let rules: Vec<&RulePlan> = planned
+                .plan
+                .rules
+                .iter()
+                .filter(|rule| rule.rule.tier == tier && !rule.items.is_empty())
+                .collect();
+            (
+                tier,
+                rules.iter().map(|rule| rule.size()).sum(),
+                rules.len(),
+            )
+        })
+        .filter(|&(_, _, rules)| rules > 0)
+        .collect();
+    if tiers.is_empty() {
+        return None;
+    }
+    tiers.sort_by_key(|&(_, size, _)| Reverse(size));
+    let top = tiers.first().map_or(0, |&(_, size, _)| size);
+    let mut lines = vec![Line::from("By risk").style(super::visual::HEADING)];
+    for (tier, size, rules) in tiers {
+        let bar = Span::raw(format::bar(size, top, ITEM_BAR));
+        let bar = match tier {
+            Tier::Safe => bar.green(),
+            Tier::Caution => bar.yellow(),
+            Tier::Expert => bar.red(),
+        };
+        lines.push(Line::from(vec![
+            format::size_span(size, format!("{:>9}  ", format::size(size))),
+            bar,
+            Span::raw("  "),
+            tier_span(tier),
+            Span::raw(format!(
+                ", {} {}",
+                count(rules),
+                if rules == 1 { "rule" } else { "rules" }
+            )),
+        ]));
+    }
+    Some(lines)
+}
+
+/// The rules that found nothing, by name, so you know they looked
+fn found_nothing(planned: &Planned) -> Option<Vec<Line<'static>>> {
+    let names: Vec<&str> = planned
+        .plan
+        .rules
+        .iter()
+        .filter(|rule| rule.items.is_empty())
+        .map(|rule| rule.rule.name.as_str())
+        .collect();
+    if names.is_empty() {
+        return None;
+    }
+    Some(vec![
+        Line::from(format!(
+            "Found nothing · {} {}",
+            count(names.len()),
+            if names.len() == 1 { "rule" } else { "rules" }
+        ))
+        .style(super::visual::HEADING),
+        Line::from(names.join(", ")),
+    ])
 }
 
 /// Every rule as a table, largest first, with `summary` on the bottom edge
@@ -986,7 +1104,12 @@ impl Screen for Clean {
                 Constraint::Fill(1),
             ])
             .areas(left);
-            frame.render_widget(selection(planned), cart);
+            super::visual::sections(
+                frame,
+                cart,
+                " Selected ",
+                vec![selection(planned), risks(planned), in_all(planned)],
+            );
             (list, detail, found_overall(planned))
         } else {
             let [list, detail] = Layout::vertical([
@@ -1229,7 +1352,7 @@ mod tests {
         assert!(screen.contains("[ ]  npm cache"));
         assert!(screen.contains("caution"));
         assert!(screen.contains("none"));
-        assert!(screen.contains("total, in 1 item"));
+        assert!(screen.contains("in all, 1 item"));
         assert!(screen.contains("Folder  ~/Library/Developer/Xcode/DerivedData"));
         assert!(screen.contains("App-abc"));
         assert!(screen.contains("Found · 1 item · 4.1 KB"));
@@ -1285,7 +1408,7 @@ mod tests {
         select_rule(&mut clean, "npm-cache");
         press(&mut clean, KeyCode::Char(' '));
         assert!(is_selected(&clean, "npm-cache"));
-        assert!(render(&mut clean).contains("total, in 2 items"));
+        assert!(render(&mut clean).contains("in all, 2 items"));
 
         press(&mut clean, KeyCode::Char(' '));
         assert!(!is_selected(&clean, "npm-cache"));

@@ -196,7 +196,8 @@
 + Selected: 2 items . 22.9 GB --------------- Everything goes to the Trash, where Put Back works +
 ```
 
-* Lists every build folder, or every installer, largest first, each with a checkbox, its size, its path with the folder in blue, and when anything inside last changed. A change in the last 7 days is yellow, since you may be working in it.
+* Lists every build folder, or every installer, largest first, each with a checkbox, its size, its path with the folder in blue, and when anything inside last changed. A change in the last 7 days is yellow, since you may be working in it. The path column is only as wide as the longest path, so the age sits beside it, and the table is only as tall as its rows.
+* **Below the table,** titled with the selected item's name, when there is room: its project or folder, size, when it changed, whether it is selected, and what it is, such as what `node_modules` or `target` holds and how it comes back. Then **In all**: what was found, what is selected, and how many items changed this week. Then **How**: the three steps. The sections sit in even bands under dashed rules, as in Quick Clean.
 * Everything starts selected. Measuring and checking each item shows the loading box first.
 * An item the check refuses remains readable, with the reason in yellow. What is allowed is in [SAFETY.md](SAFETY.md#build-folders-and-installers).
 
@@ -210,6 +211,7 @@
 
 * These cannot go to the Trash, so neet asks their own tool to remove them. Removing ends in a red question that lists what goes and says it is permanent. Only `y` goes ahead. See [SAFETY.md](SAFETY.md#tools-neet-runs).
 * **Simulators:** a table of each runtime with a checkbox, its version, build, size, the day a simulator last used it, and how many simulators run on it. Simulators left without a runtime share one yellow `No runtime` row. None start selected. `Enter` asks, then removes each runtime with `xcrun simctl`, then the simulators on it, and the `No runtime` simulators if selected.
+* **Below the Simulators table,** titled with the selected runtime: its build, size, when it was last used, and the simulators on it by name, then **Permanently: none of it goes to the Trash**, which every screen size keeps. Then **What removing does**, **In all**: runtimes, simulators, and what is selected, in red, and **How**: the three steps.
 * **Docker:** a table of what `docker system df` reports: images, containers, volumes, and build cache, with how many, how many are in use, their size, and how much can be freed, in yellow. Below it, the volumes no container uses, none selected, which `Space` adds to the prune. The box below that says, in colored labels, what `docker system prune --all` removes, what it keeps, and how to reset. `Enter` asks, then runs it and removes the selected volumes.
 * **Reset Docker:** `x` asks, in a yellow box, to stop Docker Desktop and move its whole disk image to the Trash. See [Resetting Docker](SAFETY.md#resetting-docker).
 * If Docker Desktop is not running, a small box in the middle says so, with numbered steps: `o` opens it, then `r` asks Docker again. `x` resets Docker without opening it.
@@ -253,12 +255,12 @@
 * neet looks for everything the rules cover once, in the background, as soon as it opens. Deep Clean opens on that result, so going back and opening it again does not look again. If Deep Clean opens before the look is done, the loading box shows a timer. Nothing changes while it looks.
 * neet looks again after a cleanup, and when you press `r`, such as after removing files yourself.
 * **Left, top, 55% of the width:** a table of rules, largest first, with a checkbox, the rule's name, its risk level, how many items it found, and their size. Rules that found nothing are listed last with no checkbox. The bottom edge shows what every rule found together.
-* **Left, bottom:** the Selected box. Each selected rule with its size, then the total. Before anything is selected, it says how selecting works.
+* **Left, bottom:** the Selected box. Each selected rule with its size, then the total. Before anything is selected, it says how selecting works. Below that, **What the risks mean**, for the risks the rules use, and **In all**: everything found, what is selected, that `Enter` shows every path first, and that it goes to the Trash. The sections sit in even bands under dashed rules, as in Quick Clean.
 * **Right:** the rule the arrow is on, in boxes that fit what they hold:
   1. **Top,** titled with the rule's name: what it removes, its risk level and what that means on one line, apps to close first, how recent files it keeps, and the folder it looks in, in blue.
   2. **Found:** every path it found, largest first, with its size and a bar against the largest. When they share a folder, only their names are shown.
   3. **Skipped:** only when something was skipped. Every path with the reason. A reason shared by more than two paths is shown once, with how many. It takes at most a third of the height.
-  4. **Where the space is:** every rule that found something, largest first, with a bar, green when selected. The rule the arrow is on is bold. The last line adds up everything found and what is selected. It takes whatever room is left, and is left out when there is none.
+  4. **Where the space is:** every rule that found something, largest first, with a bar, green when selected. The rule the arrow is on is bold. The last line adds up everything found and what is selected. Below it, when there is room, **By risk**: the space each risk found, with a bar in its color, and **Found nothing**: the rules that looked and found nothing, by name. It takes whatever room is left, and is left out when there is none.
   5. If a list is too long, its last line says how many more there are.
 * When the terminal is narrower than 100 columns, the details go under the list, and the list's bottom edge shows the selected total instead.
 * A selected checkbox is a green `[✓]`. The arrow's row shows its name in bold, so the checkbox and risk keep their colors.

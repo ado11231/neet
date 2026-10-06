@@ -450,8 +450,93 @@ impl Simulators {
         frame.render_stateful_widget(table, area, &mut self.list);
     }
 
-    fn about(&self) -> Vec<Line<'static>> {
-        let mut lines = vec![
+    /// The selected row: a runtime's details, or the simulators with no
+    /// runtime, then that nothing goes to the Trash. Returns the box title.
+    fn selected_lines(&self, found: &SimulatorsFound) -> (String, Vec<Line<'static>>) {
+        let index = self.list.selected().unwrap_or(0);
+        let field =
+            |label: &'static str, value: Span<'static>| labeled(label, Color::Reset, vec![value]);
+        let (title, mut lines) = if let Some(runtime) = found.runtimes.get(index) {
+            let on = found.on(runtime);
+            let mut lines = vec![
+                field("Build", Span::raw(runtime.build.clone())),
+                field(
+                    "Size",
+                    format::size_span(runtime.size, format::size(runtime.size)),
+                ),
+                field(
+                    "Last used",
+                    Span::raw(
+                        runtime
+                            .last_used
+                            .as_deref()
+                            .map_or("never", day)
+                            .to_string(),
+                    ),
+                ),
+            ];
+            let names: Vec<&str> = on.iter().map(|device| device.name.as_str()).collect();
+            lines.push(field(
+                "Simulators",
+                Span::raw(if names.is_empty() {
+                    "none run on it".to_string()
+                } else {
+                    format!(
+                        "{}, {}: {}",
+                        counted(on.len(), "simulator"),
+                        format::size(size_of(&on)),
+                        names.join(", ")
+                    )
+                }),
+            ));
+            if !runtime.deletable {
+                lines.push(field(
+                    "Blocked",
+                    Span::raw("simctl will not delete this runtime, so it cannot be selected.")
+                        .yellow(),
+                ));
+            }
+            (format!(" {} ", runtime.name), lines)
+        } else {
+            let stranded = found.stranded();
+            (
+                " No runtime ".to_string(),
+                vec![
+                    field(
+                        "Simulators",
+                        Span::raw(format!(
+                            "{}, {}",
+                            counted(stranded.len(), "simulator"),
+                            format::size(size_of(&stranded))
+                        )),
+                    ),
+                    field(
+                        "Why",
+                        Span::raw("their runtime is gone, so they can never start again.").yellow(),
+                    ),
+                ],
+            )
+        };
+        // Kept with the details, so it shows on the smallest screen too
+        lines.push(labeled(
+            "Permanently",
+            Color::Red,
+            vec![Span::raw("none of it goes to the Trash.")],
+        ));
+        (title, lines)
+    }
+
+    /// The box under the table: the selected row, what removing does,
+    /// everything found, and the steps, with the box's title
+    fn about(&self) -> (String, Vec<Vec<Line<'static>>>) {
+        let Some(found) = self.stage.found() else {
+            return (String::new(), Vec::new());
+        };
+        let field =
+            |label: &'static str, value: Span<'static>| labeled(label, Color::Reset, vec![value]);
+        let (title, selected) = self.selected_lines(found);
+        let removing = vec![
+            Line::from("What removing does").style(super::visual::HEADING),
             labeled(
                 "Runtime",
                 super::visual::ACCENT,
@@ -466,48 +551,67 @@ impl Simulators {
                     "the runtimes you select and every simulator on them, apps and data included.",
                 )],
             ),
-        ];
-        if let Some(runtime) = self
-            .stage
-            .found()
-            .and_then(|found| found.runtimes.get(self.list.selected().unwrap_or(0)))
-        {
-            lines.push(
-                Line::from(format!(
-                    "{} · Build {} · Last used {}",
-                    runtime.name,
-                    runtime.build,
-                    runtime.last_used.as_deref().map_or("never", day)
-                ))
-                .fg(super::visual::ACCENT),
-            );
-        }
-        if self
-            .stage
-            .found()
-            .is_some_and(|found| !found.stranded().is_empty())
-        {
-            lines.push(labeled(
-                "No runtime",
-                Color::Yellow,
+            labeled(
+                "Undo",
+                Color::Green,
                 vec![Span::raw(
-                    "simulators whose runtime is gone. They can never start again.",
+                    "Xcode downloads a runtime again in Settings, Components.",
                 )],
-            ));
-        }
-        lines.push(labeled(
-            "Undo",
-            Color::Green,
-            vec![Span::raw(
-                "Xcode downloads a runtime again in Settings, Components.",
-            )],
-        ));
-        lines.push(Line::default());
-        lines.push(Line::from(vec![
-            Span::raw("Permanently: ").red().bold(),
-            Span::raw("none of it goes to the Trash."),
-        ]));
-        lines
+            ),
+        ];
+        let runtimes: u64 = found.runtimes.iter().map(|runtime| runtime.size).sum();
+        let devices = size_of(&found.devices.iter().collect::<Vec<_>>());
+        let picked = self.picked_size();
+        let picked = Span::raw(format::size(picked));
+        let in_all = vec![
+            Line::from("In all").style(super::visual::HEADING),
+            field(
+                "Runtimes",
+                Span::raw(format!(
+                    "{}, {}",
+                    counted(found.runtimes.len(), "runtime"),
+                    format::size(runtimes)
+                )),
+            ),
+            field(
+                "Simulators",
+                Span::raw(format!(
+                    "{}, {}",
+                    counted(found.devices.len(), "simulator"),
+                    format::size(devices)
+                )),
+            ),
+            field(
+                "Selected",
+                if self.nothing_picked() {
+                    picked
+                } else {
+                    picked.red().bold()
+                },
+            ),
+        ];
+        let how = vec![
+            Line::from("How").style(super::visual::HEADING),
+            step(
+                1,
+                vec![
+                    key("Space"),
+                    Span::raw(" selects a runtime. Nothing starts selected."),
+                ],
+            ),
+            step(
+                2,
+                vec![
+                    key("Enter"),
+                    Span::raw(" asks first, in red, and lists what goes."),
+                ],
+            ),
+            step(
+                3,
+                vec![key("y"), Span::raw(" removes it with xcrun simctl.")],
+            ),
+        ];
+        (title, vec![selected, removing, in_all, how])
     }
 
     fn question(&self) -> Vec<Line<'static>> {
@@ -703,7 +807,8 @@ impl Screen for Simulators {
         let [list, rest] =
             Layout::vertical([Constraint::Length(list_height), Constraint::Fill(1)]).areas(area);
         self.draw_list(frame, list);
-        about_box(frame, rest, self.about());
+        let (title, sections) = self.about();
+        super::visual::sections(frame, rest, &title, sections);
         if matches!(self.stage, Stage::Asking(_)) {
             ask(
                 frame,
