@@ -76,16 +76,33 @@ pub fn size_bar(size: u64, largest: u64, width: usize) -> Span<'static> {
 
 /// How long ago something was, in the largest whole unit, such as `3 days`.
 pub fn age(elapsed: Duration) -> String {
+    age_parts(elapsed).map_or_else(
+        || "today".to_string(),
+        |(value, unit)| format!("{value} {unit} ago"),
+    )
+}
+
+/// Like [`age`], with the number right aligned in two places, so in a column
+/// the ones line up and every unit starts at the same place: ` 3 days ago`,
+/// `39 days ago`, `   today`.
+pub fn age_aligned(elapsed: Duration) -> String {
+    age_parts(elapsed).map_or_else(
+        || format!("{:>2} today", ""),
+        |(value, unit)| format!("{value:>2} {unit} ago"),
+    )
+}
+
+/// The number and unit of an age, or `None` for today
+fn age_parts(elapsed: Duration) -> Option<(u64, &'static str)> {
     const DAY: u64 = 24 * 60 * 60;
     let days = elapsed.as_secs() / DAY;
-    let (value, unit) = match days {
-        0 => return "today".to_string(),
-        1..=59 => (days, "day"),
-        60..=364 => (days / 30, "month"),
-        _ => (days / 365, "year"),
+    let (value, unit, units) = match days {
+        0 => return None,
+        1..=59 => (days, "day", "days"),
+        60..=364 => (days / 30, "month", "months"),
+        _ => (days / 365, "year", "years"),
     };
-    let plural = if value == 1 { "" } else { "s" };
-    format!("{value} {unit}{plural} ago")
+    Some((value, if value == 1 { unit } else { units }))
 }
 
 /// `part` as a whole percent of `total`, rounded down.
@@ -173,7 +190,7 @@ pub fn column_width(header: &str, values: impl IntoIterator<Item = String>) -> u
 
 #[cfg(test)]
 mod tests {
-    use super::{age, bar, count, percent, shorten_middle, shorten_path, size};
+    use super::{age, age_aligned, bar, count, percent, shorten_middle, shorten_path, size};
     use std::time::Duration;
 
     #[test]
@@ -195,6 +212,22 @@ mod tests {
         assert_eq!(age(day * 90), "3 months ago");
         assert_eq!(age(day * 400), "1 year ago");
         assert_eq!(age(day * 800), "2 years ago");
+    }
+
+    #[test]
+    fn aligned_ages_line_up_the_ones_and_the_units() {
+        let day = Duration::from_secs(24 * 60 * 60);
+        let ages = [day / 2, day * 3, day * 39, day * 90, day * 400].map(age_aligned);
+        assert_eq!(
+            ages,
+            [
+                "   today",
+                " 3 days ago",
+                "39 days ago",
+                " 3 months ago",
+                " 1 year ago"
+            ]
+        );
     }
 
     #[test]
