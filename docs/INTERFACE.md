@@ -195,7 +195,7 @@
 | > [✓]    20.8 GB  ~/Documents/rust/slingshot/target                       today        |
 |   [✓]     2.1 GB  ~/Documents/app/node_modules                            14 days ago  |
 |   [ ]   956.2 MB  ~/Documents/web/node_modules                            2 months ago |
-+ Selected: 2 items . 22.9 GB --------------- Everything goes to the Trash, where Put Back works +
++ Selected . 2 items . 22.9 GB --------------- Everything goes to the Trash, where Put Back works +
 ```
 
 * Lists every build folder, or every installer, largest first, each with a checkbox, its size, its path with the folder in blue, and when anything inside last changed. A change in the last 7 days is yellow, since you may be working in it. The path column is only as wide as the longest path, so the age sits beside it, and the table is only as tall as its rows.
@@ -355,7 +355,6 @@
 ```text
 + Remove App --------------------------------------------------------------------------------+
 |   Name             Size                Folder          App ID                               |
-|                                                                                            |
 | > Discord      500.4 MB  ##..........  /Applications   com.hnc.Discord                      |
 |   Docker         2.6 GB  #######.....  /Applications   com.docker.docker                    |
 |   Slingshot    585.7 KB  ............  ~/Applications  dev.slingshot.menubar                |
@@ -376,8 +375,7 @@
 +----------------------------------------------++--------------------------------------------+
 
 + Discord ----------------------------------------------------------------- Goes to the Trash +
-|             Size  Name                   Folder                          Kind              |
-|                                                                                            |
+|   ✓         Size  Name                   Folder                          Kind              |
 | > [✓]   500.4 MB  Discord.app            /Applications                   the app           |
 |   [✓]     1.1 MB  com.hnc.Discord        ~/Library/Caches                made again        |
 |   [ ]     4.1 KB  com.hnc.Discord.plist  ~/Library/Preferences           settings          |
@@ -396,9 +394,9 @@
 * **App list:** a table of each app in `/Applications` and `~/Applications`, with its name, its size, a bar of its size against the largest app, its folder, and its app ID (the name macOS uses to identify it). Apps neet can remove come first. Apps it will not remove are listed after them, marked `[blocked]`, with the reason in plain words in yellow: `part of macOS`, `a shortcut to another app`, or `neet can't tell which app it is`.
 * **Colors:** sizes and bars are red from 5 GB and yellow from 1 GB, and bars are green below that. `/Applications` and app IDs use moonlight blue; `~/Applications` is magenta.
 * Sizes are measured in the background, one app after another, and show `…` until then. Press `s` to list the largest first, and again to go back to names.
-* The table is only as tall as its rows. The bottom edge shows how many apps can be removed and how much space they take, with the sort order or a note on the top edge.
+* The table is only as tall as its rows, with no gap under its header. The bottom edge shows how many apps can be removed and how much space they take, with the sort order or a note on the top edge.
 * **Below the app list,** in small boxes as in Quick Clean, side by side from 100 columns: the app the arrow is on (Location, Size, App ID, and Status: can be removed, open, or blocked, with what to do next), **Largest**, the ten largest apps with bars; then **Total** (apps, removable, blocked, size), **Folders** (what each Applications folder holds, in the list's colors), and **Steps**. On a screen too short for the boxes, a Selected box under the list keeps the path and app ID instead.
-* **App files:** opening an app finds and measures its files, with the loading box and a timer. Then a table, only as tall as its rows, lists the app and each file, with a checkbox, size, name, folder, and its kind: `the app`, `made again` in green, or one to check first in yellow, such as `may be your data`.
+* **App files:** opening an app finds and measures its files, with the loading box and a timer. Then a table, only as tall as its rows, lists the app and each file, with a checkbox under a blue `✓` header, size, name, folder, and its kind: `the app`, `made again` in green, or one to check first in yellow, such as `may be your data`.
 * **Below the file list:** the file the arrow is on (Folder, Size, Kind, Selected, and a plain sentence on why it starts selected or not), **Overview**, every file's size with a bar, green when selected; then **Total** (found, selected, app ID), **Steps**, and **After cleanup**, the disk now and after.
 * The bottom edge shows the selected total, in green once something is selected.
 * What is found, and what starts selected, is in [SAFETY.md](SAFETY.md#app-removal).
