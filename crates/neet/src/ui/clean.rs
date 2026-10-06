@@ -620,28 +620,15 @@ impl Clean {
             u16::try_from(skipped.len() + 2).unwrap_or(u16::MAX)
         };
 
-        // The found box fits its items, and the chart of every rule takes
-        // what is left, when there is room for it.
         let found_all = found_lines(rule, home, usize::MAX, width);
-        let free = area
-            .height
-            .saturating_sub(top_height)
-            .saturating_sub(skipped_height);
-        let found_height = u16::try_from(found_all.len() + 2).unwrap_or(u16::MAX);
         let chart = chart_lines(planned, rule, width);
-        let chart_height = u16::try_from(chart.len() + 3).unwrap_or(u16::MAX);
-        let found_height = if free >= found_height + chart_height {
-            found_height
-        } else {
-            free
-        };
-        let [about_area, found_area, skipped_area, chart_area] = Layout::vertical([
-            Constraint::Length(top_height),
-            Constraint::Length(found_height),
-            Constraint::Length(skipped_height),
-            Constraint::Fill(1),
-        ])
-        .areas(area);
+        let [about_area, found_area, skipped_area, chart_area] = detail_areas(
+            area,
+            top_height,
+            u16::try_from(found_all.len() + 2).unwrap_or(u16::MAX),
+            skipped_height,
+            u16::try_from(chart.len() + 3).unwrap_or(u16::MAX),
+        );
 
         frame.render_widget(
             Paragraph::new(top).wrap(Wrap { trim: false }).block(
@@ -690,15 +677,58 @@ impl Clean {
         }
 
         if chart_area.height >= 3 {
-            let mut by_rule = vec![Line::from("By rule").style(super::visual::HEADING)];
-            by_rule.extend(chart);
-            let mut sections = vec![by_rule];
-            sections.extend(by_risk(planned));
-            sections.extend(found_nothing(planned));
-            super::visual::sections(frame, chart_area, " Where the space is ", sections);
+            draw_location(frame, chart_area, planned, chart);
         }
     }
 }
+
+/// Where the space is: every rule's bar, each risk, and the rules that
+/// found nothing
+fn draw_location(frame: &mut Frame, area: Rect, planned: &Planned, chart: Vec<Line<'static>>) {
+    let mut by_rule = vec![Line::from("Rules").style(super::visual::HEADING)];
+    by_rule.extend(chart);
+    let mut sections = vec![by_rule];
+    sections.extend(by_risk(planned));
+    sections.extend(found_nothing(planned));
+    super::visual::sections(frame, area, " Location ", sections);
+}
+
+/// The details' boxes: about, found, skipped, and the chart. The found box
+/// fits its items, and the chart takes what is left when there is room. On
+/// a tall screen the chart keeps the same place whichever rule is selected,
+/// so its sections do not jump as the arrow moves, and the boxes above
+/// share the rest.
+fn detail_areas(area: Rect, top: u16, found: u16, skipped: u16, chart: u16) -> [Rect; 4] {
+    let (area, fixed_chart) = if area.height >= TALL_DETAILS {
+        let [above, chart] = Layout::vertical([
+            Constraint::Fill(1),
+            Constraint::Length(area.height * 9 / 20),
+        ])
+        .areas(area);
+        (above, Some(chart))
+    } else {
+        (area, None)
+    };
+    let free = area.height.saturating_sub(top).saturating_sub(skipped);
+    let found = if fixed_chart.is_some() {
+        found.min(free)
+    } else if free >= found + chart {
+        found
+    } else {
+        free
+    };
+    let [about, found, skipped, rest] = Layout::vertical([
+        Constraint::Length(top),
+        Constraint::Length(found),
+        Constraint::Length(skipped),
+        Constraint::Fill(1),
+    ])
+    .areas(area);
+    [about, found, skipped, fixed_chart.unwrap_or(rest)]
+}
+
+/// From this many rows, the right side keeps a fixed place for the chart
+const TALL_DETAILS: u16 = 34;
 
 /// Every rule that found something, largest first, with a bar against the
 /// largest. The selected rule's name is bold.
@@ -859,7 +889,7 @@ fn selection(planned: &Planned) -> Vec<Line<'static>> {
 
 /// What each risk the rules use means, with how many rules have it
 fn risks(planned: &Planned) -> Vec<Line<'static>> {
-    let mut lines = vec![Line::from("What the risks mean").style(super::visual::HEADING)];
+    let mut lines = vec![Line::from("Risk levels").style(super::visual::HEADING)];
     for tier in [Tier::Safe, Tier::Caution, Tier::Expert] {
         let rules = planned
             .plan
@@ -894,7 +924,7 @@ fn in_all(planned: &Planned) -> Vec<Line<'static>> {
         selected.green().bold()
     };
     vec![
-        Line::from("In all").style(super::visual::HEADING),
+        Line::from("Total").style(super::visual::HEADING),
         wide(
             "Found",
             Span::raw(format!(
@@ -922,51 +952,50 @@ fn wide(label: &str, value: Span<'static>) -> Line<'static> {
     Line::from(vec![Span::raw(format!("{label:<10}")).bold(), value])
 }
 
-/// The space found by each risk, largest first, as its own section
+/// Every risk the rules use, with the space its rules found, a bar of it
+/// against everything found, and how many of its rules found something
 fn by_risk(planned: &Planned) -> Option<Vec<Line<'static>>> {
-    let mut tiers: Vec<(Tier, u64, usize)> = [Tier::Safe, Tier::Caution, Tier::Expert]
-        .into_iter()
-        .map(|tier| {
-            let rules: Vec<&RulePlan> = planned
-                .plan
-                .rules
-                .iter()
-                .filter(|rule| rule.rule.tier == tier && !rule.items.is_empty())
-                .collect();
-            (
-                tier,
-                rules.iter().map(|rule| rule.size()).sum(),
-                rules.len(),
-            )
-        })
-        .filter(|&(_, _, rules)| rules > 0)
-        .collect();
-    if tiers.is_empty() {
-        return None;
-    }
-    tiers.sort_by_key(|&(_, size, _)| Reverse(size));
-    let top = tiers.first().map_or(0, |&(_, size, _)| size);
-    let mut lines = vec![Line::from("By risk").style(super::visual::HEADING)];
-    for (tier, size, rules) in tiers {
-        let bar = Span::raw(format::bar(size, top, ITEM_BAR));
+    let rules = &planned.plan.rules;
+    let total: u64 = rules.iter().map(RulePlan::size).sum();
+    let mut lines = vec![Line::from("Risk").style(super::visual::HEADING)];
+    for tier in [Tier::Safe, Tier::Caution, Tier::Expert] {
+        let of_tier: Vec<&RulePlan> = rules.iter().filter(|rule| rule.rule.tier == tier).collect();
+        if of_tier.is_empty() {
+            continue;
+        }
+        let size: u64 = of_tier.iter().map(|rule| rule.size()).sum();
+        let found = of_tier.iter().filter(|rule| !rule.items.is_empty()).count();
+        let bar = Span::raw(format::bar(size, total, ITEM_BAR));
         let bar = match tier {
             Tier::Safe => bar.green(),
             Tier::Caution => bar.yellow(),
             Tier::Expert => bar.red(),
+        };
+        let padding = " ".repeat(9 - tier_name(tier).len());
+        let rules_text = if found == 0 {
+            format!("{}, nothing found", count_rules(of_tier.len()))
+        } else {
+            format!("{} of {} found", count(found), count_rules(of_tier.len()))
         };
         lines.push(Line::from(vec![
             format::size_span(size, format!("{:>9}  ", format::size(size))),
             bar,
             Span::raw("  "),
             tier_span(tier),
-            Span::raw(format!(
-                ", {} {}",
-                count(rules),
-                if rules == 1 { "rule" } else { "rules" }
-            )),
+            Span::raw(padding),
+            Span::raw(rules_text),
         ]));
     }
-    Some(lines)
+    (lines.len() > 1).then_some(lines)
+}
+
+/// `rules` rules, or 1 rule
+fn count_rules(rules: usize) -> String {
+    format!(
+        "{} {}",
+        count(rules),
+        if rules == 1 { "rule" } else { "rules" }
+    )
 }
 
 /// The rules that found nothing, by name, so you know they looked
@@ -983,7 +1012,7 @@ fn found_nothing(planned: &Planned) -> Option<Vec<Line<'static>>> {
     }
     Some(vec![
         Line::from(format!(
-            "Found nothing · {} {}",
+            "No findings · {} {}",
             count(names.len()),
             if names.len() == 1 { "rule" } else { "rules" }
         ))
@@ -1356,7 +1385,7 @@ mod tests {
         assert!(screen.contains("Folder  ~/Library/Developer/Xcode/DerivedData"));
         assert!(screen.contains("App-abc"));
         assert!(screen.contains("Found · 1 item · 4.1 KB"));
-        assert!(screen.contains("Where the space is"));
+        assert!(screen.contains("Location"));
         assert!(screen.contains("16.4 KB  in all · 4.1 KB selected"));
     }
 

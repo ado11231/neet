@@ -372,7 +372,7 @@ impl Pick {
             super::clean::items(plan.selected_count())
         ));
         let mut lines = vec![
-            Line::from("In all").style(super::visual::HEADING),
+            Line::from("Total").style(super::visual::HEADING),
             field(
                 "Found",
                 Span::raw(format!(
@@ -413,7 +413,7 @@ impl Pick {
             ])
         };
         vec![
-            Line::from("How").style(super::visual::HEADING),
+            Line::from("Steps").style(super::visual::HEADING),
             step(
                 1,
                 "Space selects or clears one. a selects or clears them all.",
@@ -615,8 +615,8 @@ mod tests {
         for text in [
             "┌ node_modules",
             "Packages a JavaScript project",
-            "In all",
-            "How",
+            "Total",
+            "Steps",
         ] {
             assert!(tall.contains(text), "{text}:\n{tall}");
         }

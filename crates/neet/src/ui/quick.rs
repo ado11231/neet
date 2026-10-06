@@ -480,7 +480,7 @@ impl QuickClean {
             Who::You => Color::Yellow,
             Who::Mac => super::visual::ACCENT,
         };
-        let mut steps = vec![Line::from("How").style(super::visual::HEADING)];
+        let mut steps = vec![Line::from("Steps").style(super::visual::HEADING)];
         steps.extend(steps_of(item).iter().enumerate().map(|(number, step)| {
             Line::from(vec![
                 Span::raw(format!("{}. ", number + 1)).fg(color),
@@ -488,15 +488,15 @@ impl QuickClean {
             ])
         }));
         let about = vec![
-            Line::from("What it is").style(super::visual::HEADING),
+            Line::from("About").style(super::visual::HEADING),
             Line::from(about(item)),
         ];
         let place = vec![
-            Line::from("Where it is").style(super::visual::HEADING),
+            Line::from("Location").style(super::visual::HEADING),
             Line::from(place(item)).fg(super::visual::ACCENT),
         ];
         let after = vec![
-            Line::from("After it is cleared").style(super::visual::HEADING),
+            Line::from("Impact").style(super::visual::HEADING),
             Line::from(afterwards(item)),
             Line::from(vec![
                 Span::raw(format!("{:<11}", "Undo")).bold(),
@@ -522,7 +522,7 @@ impl QuickClean {
         found.sort_by_key(|&(_, size)| Reverse(size));
         let largest = found.first().map_or(0, |&(_, size)| size);
         let bar = usize::from(width).saturating_sub(36).clamp(8, 40);
-        let mut lines = vec![Line::from("Everything found").style(super::visual::HEADING)];
+        let mut lines = vec![Line::from("Overview").style(super::visual::HEADING)];
         if found.is_empty() {
             lines.push(Line::from("Nothing yet."));
         }
@@ -553,7 +553,7 @@ impl QuickClean {
             spans.extend(value);
             Line::from(spans)
         };
-        let mut lines = vec![Line::from("In numbers").style(super::visual::HEADING)];
+        let mut lines = vec![Line::from("Summary").style(super::visual::HEADING)];
         match self.status(item, context) {
             Status::Found { size, count } => {
                 let mut value = vec![format::size_span(size, format::size(size)).bold()];
@@ -832,7 +832,7 @@ impl Screen for QuickClean {
                 inner_height.saturating_sub(used)
             }
             .clamp(1, 12);
-            let mut list = vec![Line::from("Largest in this row").style(super::visual::HEADING)];
+            let mut list = vec![Line::from("Largest items").style(super::visual::HEADING)];
             list.extend(
                 self.largest_lines(context, side.width, rows)
                     .unwrap_or_else(|note| vec![note]),
@@ -1094,14 +1094,9 @@ mod tests {
         assert!(bottom >= 46, "the boxes end at row {bottom}");
         // Each box is split into even bands, and every section after the
         // first starts just under its rule, with the space below its text.
-        assert!(row_of("Largest in this row") < row_of("Everything found"));
-        assert!(row_of("Everything found") < row_of("After cleanup"));
-        for heading in [
-            "Everything found",
-            "After cleanup",
-            "What it is",
-            "In numbers",
-        ] {
+        assert!(row_of("Largest items") < row_of("Overview"));
+        assert!(row_of("Overview") < row_of("After cleanup"));
+        for heading in ["Overview", "After cleanup", "About", "Summary"] {
             let row = row_of(heading);
             assert!(rows[row - 1].contains('╌'), "{heading}:\n{text}");
         }
@@ -1113,13 +1108,7 @@ mod tests {
         );
         // Under the table: how, what, where, after, and numbers, in order,
         // with a rule between each.
-        let order = [
-            "How",
-            "What it is",
-            "Where it is",
-            "After it is cleared",
-            "In numbers",
-        ];
+        let order = ["Steps", "About", "Location", "Impact", "Summary"];
         for pair in order.windows(2) {
             let (above, below) = (row_of(pair[0]), row_of(pair[1]));
             assert!(above < below, "{pair:?}");

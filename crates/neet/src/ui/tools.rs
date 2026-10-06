@@ -536,7 +536,7 @@ impl Simulators {
             |label: &'static str, value: Span<'static>| labeled(label, Color::Reset, vec![value]);
         let (title, selected) = self.selected_lines(found);
         let removing = vec![
-            Line::from("What removing does").style(super::visual::HEADING),
+            Line::from("Removal").style(super::visual::HEADING),
             labeled(
                 "Runtime",
                 super::visual::ACCENT,
@@ -564,7 +564,7 @@ impl Simulators {
         let picked = self.picked_size();
         let picked = Span::raw(format::size(picked));
         let in_all = vec![
-            Line::from("In all").style(super::visual::HEADING),
+            Line::from("Total").style(super::visual::HEADING),
             field(
                 "Runtimes",
                 Span::raw(format!(
@@ -591,7 +591,7 @@ impl Simulators {
             ),
         ];
         let how = vec![
-            Line::from("How").style(super::visual::HEADING),
+            Line::from("Steps").style(super::visual::HEADING),
             step(
                 1,
                 vec![

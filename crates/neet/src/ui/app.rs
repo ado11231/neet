@@ -233,8 +233,12 @@ impl App {
             cleanable: self.estimate.size(),
             plan: Some(&self.estimate),
         };
+        super::loading::start_frame();
         for screen in &mut self.stack[base..] {
             screen.draw(frame, body, &context);
+        }
+        if super::loading::shown() {
+            return;
         }
         frame.render_widget(
             ratatui::widgets::Paragraph::new(hints).wrap(ratatui::widgets::Wrap { trim: false }),

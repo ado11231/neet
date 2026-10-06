@@ -205,7 +205,7 @@ impl LargeFiles {
             )));
         }
         let block = super::visual::block()
-            .title(" Files, largest first ")
+            .title(" Files ")
             .title_bottom(Line::from(summary).right_aligned())
             .padding(Padding::horizontal(1));
         if found.is_empty() {
@@ -354,7 +354,7 @@ impl LargeFiles {
         let groups = by_folder(tree, found);
         if groups.is_empty() {
             let block = super::visual::block()
-                .title(" Where they are ")
+                .title(" Location ")
                 .padding(Padding::horizontal(1));
             let inner = block.inner(area);
             frame.render_widget(block, area);
@@ -376,7 +376,7 @@ impl LargeFiles {
         if with_kinds {
             sections.push(kinds);
         }
-        super::visual::sections(frame, area, " Where they are ", sections);
+        super::visual::sections(frame, area, " Location ", sections);
     }
 }
 
@@ -407,7 +407,7 @@ fn folder_lines(groups: &[(String, u64)], width: usize, rows: usize) -> Vec<Line
             format::count(u64::try_from(groups.len() - lines.len()).unwrap_or(u64::MAX))
         )));
     }
-    lines.insert(0, Line::from("By folder").style(super::visual::HEADING));
+    lines.insert(0, Line::from("Folders").style(super::visual::HEADING));
     lines
 }
 
@@ -428,7 +428,7 @@ fn kind_lines(tree: &Tree, found: &[NodeId], width: usize) -> Vec<Line<'static>>
     }
     kinds.sort_by(|a, b| Reverse(a.1).cmp(&Reverse(b.1)).then_with(|| a.0.cmp(b.0)));
     let largest = kinds.first().map_or(0, |(_, size, _)| *size);
-    let mut lines = vec![Line::from("By type").style(super::visual::HEADING)];
+    let mut lines = vec![Line::from("Types").style(super::visual::HEADING)];
     lines.extend(kinds.into_iter().map(|(kind, size, count)| {
         let files = if count == 1 { "file" } else { "files" };
         let count = format!("{:>5} {files:<5}", format::count(count));
@@ -907,7 +907,7 @@ mod tests {
         assert!(screen.contains("film.mov"));
         assert!(screen.contains("Type     Video"));
         assert!(screen.contains("86% of the files found"));
-        assert!(screen.contains("Where they are"));
+        assert!(screen.contains("Location"));
         assert!(screen.contains("~/Movies"));
         assert!(screen.contains("Enter shows it in Disk"));
     }
@@ -954,11 +954,11 @@ mod tests {
             .map(ratatui::buffer::Cell::symbol)
             .collect();
 
-        assert!(screen.contains("By folder"));
-        assert!(screen.contains("By type"));
+        assert!(screen.contains("Folders"));
+        assert!(screen.contains("Types"));
         assert!(screen.contains("Video"));
         assert!(screen.contains("Archive"));
-        assert!(screen.find("By folder") < screen.find("By type"));
+        assert!(screen.find("Folders") < screen.find("Types"));
     }
 
     #[test]
