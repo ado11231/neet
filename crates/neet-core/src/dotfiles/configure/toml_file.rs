@@ -48,6 +48,9 @@ fn typed(setting: &Setting, value: &str) -> Value {
         Kind::Number => value
             .parse::<i64>()
             .map_or_else(|_| Value::from(value), Value::from),
+        Kind::Decimal => value
+            .parse::<f64>()
+            .map_or_else(|_| Value::from(value), Value::from),
         Kind::Choice(["true", "false"]) => Value::from(value == "true"),
         Kind::Text | Kind::Choice(_) => Value::from(value),
     }
@@ -84,7 +87,11 @@ pub(super) fn set(text: &str, setting: &Setting, value: Option<&str>) -> Result<
             .ok_or_else(not_a_value)?;
     }
     match (table.get_mut(last), value) {
-        (Some(item), _) if !item.is_value() => return Err(not_a_value()),
+        // A list or table, such as `node = ["20", "22"]`, is more than one
+        // value, so it is not swapped for one.
+        (Some(item), _) if !item.is_value() || item.is_array() || item.is_inline_table() => {
+            return Err(not_a_value());
+        }
         (Some(item), Some(value)) => {
             // Keep the spacing and any comment around the old value.
             let decor = item.as_value().map(|old| old.decor().clone());
@@ -230,6 +237,38 @@ symbol = " "
         // Nothing to remove changes nothing.
         let same = set(CONFIG, setting("cmd_duration.min_time"), None).unwrap();
         assert_eq!(same, CONFIG);
+    }
+
+    #[test]
+    fn mise_versions_are_text_and_lists_are_left_alone() {
+        let mise = &PROGRAMS[4];
+        let node = mise
+            .settings
+            .iter()
+            .find(|s| s.key == "tools.node")
+            .unwrap();
+        let text = "[tools]\nnode = \"24\"\npython = \"3.12.7\"\n";
+        assert_eq!(values(mise, text).unwrap()[0].as_deref(), Some("24"));
+        assert_eq!(
+            set(text, node, Some("lts")).unwrap(),
+            "[tools]\nnode = \"lts\"\npython = \"3.12.7\"\n"
+        );
+        let jobs = mise
+            .settings
+            .iter()
+            .find(|s| s.key == "settings.jobs")
+            .unwrap();
+        assert!(
+            set(text, jobs, Some("4"))
+                .unwrap()
+                .ends_with("[settings]\njobs = 4\n")
+        );
+        let list = "[tools]\nnode = [\"20\", \"22\"]\n";
+        assert_eq!(
+            values(mise, list).unwrap()[0].as_deref(),
+            Some("[\"20\", \"22\"]")
+        );
+        assert!(set(list, node, Some("24")).is_err());
     }
 
     #[test]

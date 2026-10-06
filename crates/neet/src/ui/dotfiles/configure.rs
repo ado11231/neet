@@ -150,7 +150,7 @@ impl Configure {
                 };
                 self.change(index, next);
             }
-            Kind::Text | Kind::Number => {
+            Kind::Text | Kind::Number | Kind::Decimal => {
                 self.typing = Some(self.value(index).unwrap_or_default().to_string());
             }
         }
