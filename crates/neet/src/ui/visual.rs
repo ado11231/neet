@@ -48,6 +48,92 @@ pub fn sections(
     sections_in(frame, area, block, sections);
 }
 
+/// The disk now and after `freed` bytes go: a gauge with the freed part in
+/// green, free space now, what goes (`freed_label`), and free space after
+pub fn after_cleanup(
+    disk: Option<&neet_core::disk::DiskSpace>,
+    freed: u64,
+    freed_label: &str,
+    width: u16,
+) -> Vec<Line<'static>> {
+    use ratatui::style::Stylize;
+    let mut lines = vec![Line::from("After cleanup").style(HEADING)];
+    let Some(disk) = disk else {
+        lines.push(Line::from("Disk space unavailable.").yellow());
+        return lines;
+    };
+    let freed = freed.min(disk.used());
+    let bar = usize::from(width).saturating_sub(18).clamp(10, 40);
+    let cells = |part: u64| {
+        usize::try_from(u128::from(part) * bar as u128 / u128::from(disk.total.max(1)))
+            .unwrap_or(bar)
+    };
+    let stays = cells(disk.used() - freed);
+    let green = cells(disk.used())
+        .saturating_sub(stays)
+        .max(usize::from(freed > 0));
+    let rest = bar.saturating_sub(stays + green);
+    let now = super::format::percent(disk.used(), disk.total);
+    let then = super::format::percent(disk.used() - freed, disk.total);
+    let field = |label: &str, value: Span<'static>| {
+        Line::from(vec![Span::raw(format!("{label:<11}")).bold(), value])
+    };
+    lines.extend([
+        Line::from(vec![
+            Span::raw("█".repeat(stays)).fg(ACCENT),
+            Span::raw("█".repeat(green)).green(),
+            Span::raw("░".repeat(rest)).fg(ACCENT),
+            Span::raw(format!(" {now}% → {then}% used")).bold(),
+        ]),
+        field(
+            "Free now",
+            Span::raw(format!(
+                "{} of {}",
+                super::format::size(disk.available),
+                super::format::size(disk.total)
+            )),
+        ),
+        field(
+            freed_label,
+            Span::raw(super::format::size(freed)).green().bold(),
+        ),
+        field(
+            "Free after",
+            Span::raw(super::format::size(disk.available.saturating_add(freed)))
+                .green()
+                .bold(),
+        ),
+    ]);
+    lines
+}
+
+/// From this width, [`side_by_side`] puts its two stacks next to each other
+pub const SIDE_BY_SIDE: u16 = 100;
+
+/// Two stacks of section boxes, as in [`sections`]: `left` titled `title`,
+/// and `right` titled by its headings. Side by side from [`SIDE_BY_SIDE`]
+/// columns, so a wide screen has small boxes instead of long thin ones, and
+/// one stack, left above right, below that.
+pub fn side_by_side(
+    frame: &mut ratatui::Frame,
+    area: ratatui::layout::Rect,
+    title: &str,
+    left: Vec<Vec<Line<'static>>>,
+    right: Vec<Vec<Line<'static>>>,
+) {
+    use ratatui::layout::Layout;
+    if area.width < SIDE_BY_SIDE {
+        let mut all = left;
+        all.extend(right);
+        sections(frame, area, title, all);
+        return;
+    }
+    let [left_area, right_area] =
+        Layout::horizontal([Constraint::Percentage(55), Constraint::Fill(1)]).areas(area);
+    sections(frame, left_area, title, left);
+    sections(frame, right_area, "", right);
+}
+
 /// The first line of `lines` as a title, taken out, when it is a heading
 fn heading(lines: &mut Vec<Line<'static>>) -> Option<String> {
     let first = lines.first()?;

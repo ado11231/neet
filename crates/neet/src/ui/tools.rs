@@ -755,7 +755,7 @@ fn remove_simulators(runtimes: Vec<(Runtime, Vec<Device>)>, stranded: Vec<Device
 }
 
 impl Screen for Simulators {
-    fn draw(&mut self, frame: &mut Frame, area: Rect, _context: &Context) {
+    fn draw(&mut self, frame: &mut Frame, area: Rect, context: &Context) {
         self.stage.poll();
         let title = "Simulators";
         match &self.stage {
@@ -807,7 +807,16 @@ impl Screen for Simulators {
             Layout::vertical([Constraint::Length(list_height), Constraint::Fill(1)]).areas(area);
         self.draw_list(frame, list);
         let (title, sections) = self.about();
-        super::visual::sections(frame, rest, &title, sections);
+        let mut sections = sections.into_iter();
+        let left: Vec<_> = sections.by_ref().take(2).collect();
+        let mut right: Vec<_> = sections.collect();
+        right.push(super::visual::after_cleanup(
+            context.disk.as_ref(),
+            self.picked_size(),
+            "Selected",
+            rest.width / 2,
+        ));
+        super::visual::side_by_side(frame, rest, &title, left, right);
         if matches!(self.stage, Stage::Asking(_)) {
             ask(
                 frame,

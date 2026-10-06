@@ -403,6 +403,41 @@ impl Pick {
         lines
     }
 
+    /// Every item, largest first, with a bar against the largest, green
+    /// when selected
+    fn overview_lines(planned: &Planned, width: u16) -> Vec<Line<'static>> {
+        let mut found: Vec<(&RulePlan, u64)> = planned
+            .plan
+            .rules
+            .iter()
+            .filter_map(|rule| rule.items.first().map(|item| (rule, item.size)))
+            .collect();
+        found.sort_by_key(|&(_, size)| std::cmp::Reverse(size));
+        let largest = found.first().map_or(0, |&(_, size)| size);
+        let bar = 10;
+        let room = usize::from(width).saturating_sub(4 + 11 + bar + 2);
+        let mut lines = vec![Line::from("Overview").style(super::visual::HEADING)];
+        for (rule, size) in found {
+            let path = rule
+                .items
+                .first()
+                .map(|item| display_path(&planned.home, item.path.path()))
+                .unwrap_or_default();
+            let bar_span = Span::raw(format::bar(size, largest, bar));
+            lines.push(Line::from(vec![
+                format::size_span(size, format!("{:>9}  ", format::size(size))),
+                if rule.selected {
+                    bar_span.green()
+                } else {
+                    bar_span.fg(super::visual::ACCENT)
+                },
+                Span::raw("  "),
+                Span::raw(format::shorten_path(&path, room)),
+            ]));
+        }
+        lines
+    }
+
     fn how_lines() -> Vec<Line<'static>> {
         let step = |number: usize, text: &'static str| {
             Line::from(vec![
@@ -422,7 +457,7 @@ impl Pick {
 }
 
 impl Screen for Pick {
-    fn draw(&mut self, frame: &mut Frame, area: Rect, _context: &Context) {
+    fn draw(&mut self, frame: &mut Frame, area: Rect, context: &Context) {
         self.poll();
         let block = super::visual::block()
             .title(format!(" {} ", self.title))
@@ -468,11 +503,22 @@ impl Screen for Pick {
             let width = usize::from(below.width.saturating_sub(4));
             let (title, item) =
                 Self::item_lines(&planned, self.list.selected().unwrap_or(0), width);
-            super::visual::sections(
+            let half = below.width / 2;
+            super::visual::side_by_side(
                 frame,
                 below,
                 &title,
-                vec![item, Self::totals_lines(&planned), Self::how_lines()],
+                vec![item, Self::overview_lines(&planned, half)],
+                vec![
+                    Self::totals_lines(&planned),
+                    Self::how_lines(),
+                    super::visual::after_cleanup(
+                        context.disk.as_ref(),
+                        planned.plan.selected_size(),
+                        "Selected",
+                        half,
+                    ),
+                ],
             );
         }
     }
