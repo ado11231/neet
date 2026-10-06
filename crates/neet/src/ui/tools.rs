@@ -284,14 +284,16 @@ fn runtime_row(
                 .map_or("never", day)
                 .to_string(),
         ),
-        Cell::from(if runtime.deletable {
+        Cell::from(if !runtime.deletable {
+            Span::raw("Removal blocked").yellow()
+        } else if on.is_empty() {
+            Span::raw("none")
+        } else {
             Span::raw(format!(
                 "{}, {}",
                 counted(on.len(), "simulator"),
                 format::size(size_of(on))
             ))
-        } else {
-            Span::raw("Removal blocked").yellow()
         }),
     ])
 }
@@ -386,9 +388,27 @@ impl Simulators {
                 .map(|runtime| format::size(runtime.size)),
         )
         .max(9);
+        // Each column is as wide as what it holds, so the build and size sit
+        // beside the name. The last column takes what is left.
+        let names = format::column_width(
+            "No runtime",
+            found.runtimes.iter().map(|runtime| runtime.name.clone()),
+        )
+        .max(u16::try_from("Runtime".len()).unwrap_or(0));
+        let builds = format::column_width(
+            "Build",
+            found.runtimes.iter().map(|runtime| runtime.build.clone()),
+        );
         let columns = super::visual::Columns::new(
             area.width,
-            [(3, 0), (16, 1), (8, 0), (sizes, 0), (11, 0), (18, 1)],
+            [
+                (3, 0),
+                (names, 0),
+                (builds, 0),
+                (sizes, 0),
+                (11, 0),
+                (18, 1),
+            ],
             &[2, 4],
             true,
         );
@@ -423,7 +443,7 @@ impl Simulators {
                 Cell::from("Build"),
                 Cell::from(Line::from("Size").right_aligned()),
                 Cell::from("Last used"),
-                Cell::from("Simulators on it"),
+                Cell::from("Simulators"),
             ])
             .style(super::visual::HEADING)
             .bottom_margin(1);
