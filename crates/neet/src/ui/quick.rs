@@ -91,7 +91,7 @@ enum Status {
 
 fn name(item: Item) -> &'static str {
     match item {
-        Item::Rules => "Caches and logs",
+        Item::Rules => "Caches & logs",
         Item::Clutter(Kind::Trash) => "Trash",
         Item::Clutter(Kind::Installers) => "Installers in Downloads",
         Item::Clutter(Kind::BuildFolders) => "Project build folders",
@@ -135,7 +135,7 @@ fn who_span(who: Who) -> Span<'static> {
 /// What the item is
 fn about(item: Item) -> &'static str {
     match item {
-        Item::Rules => "Saved files and logs from apps and tools.",
+        Item::Rules => "Saved files & logs from apps & tools.",
         Item::Clutter(Kind::Trash) => "Files in the Trash still use space until you empty it.",
         Item::Clutter(Kind::Installers) => {
             "App installers in Downloads. You rarely need them after installing."
@@ -146,9 +146,7 @@ fn about(item: Item) -> &'static str {
         Item::Clutter(Kind::DockerImage) => {
             "The file Docker keeps all its data in. It does not shrink by itself."
         }
-        Item::Clutter(Kind::SimulatorRuntimes) => {
-            "iPhone and iPad simulators that Xcode downloaded."
-        }
+        Item::Clutter(Kind::SimulatorRuntimes) => "iPhone & iPad simulators that Xcode downloaded.",
         Item::Clutter(Kind::TempFiles) => "Temporary files apps left behind.",
     }
 }
@@ -156,10 +154,10 @@ fn about(item: Item) -> &'static str {
 /// Where the item's files are
 fn place(item: Item) -> &'static str {
     match item {
-        Item::Rules => "~/Library/Caches, ~/Library/Logs, and tool caches like npm and pip.",
+        Item::Rules => "~/Library/Caches, ~/Library/Logs & tool caches like npm & pip.",
         Item::Clutter(Kind::Trash) => "~/.Trash",
         Item::Clutter(Kind::Installers) => "~/Downloads",
-        Item::Clutter(Kind::BuildFolders) => "node_modules and target folders in your projects.",
+        Item::Clutter(Kind::BuildFolders) => "node_modules & target folders in your projects.",
         Item::Clutter(Kind::DockerImage) => "~/Library/Containers/com.docker.docker",
         Item::Clutter(Kind::SimulatorRuntimes) => "/Library/Developer/CoreSimulator",
         Item::Clutter(Kind::TempFiles) => "/private/var/folders",
@@ -732,7 +730,7 @@ impl QuickClean {
         if entries.len() > lines.len() {
             lines.pop();
             lines.push(Line::from(format!(
-                "{:>9}  and {} more",
+                "{:>9}  & {} more",
                 "",
                 format::count(u64::try_from(entries.len() - lines.len()).unwrap_or(u64::MAX))
             )));
@@ -1139,13 +1137,13 @@ mod tests {
         assert!(row_of("Free after ~125.6 GB") < bottom - 3);
         // The table's rows stand apart on a tall screen.
         assert_eq!(
-            rows[row_of("Caches and logs") + 1].trim_matches(['│', ' ']),
+            rows[row_of("Caches & logs") + 1].trim_matches(['│', ' ']),
             ""
         );
         // Under the table: the steps, what it is, where, after, and the
         // numbers, each in its own box, in order.
         let order = [
-            "┌ Caches and logs",
+            "┌ Caches & logs",
             "┌ About",
             "┌ Location",
             "┌ Impact",

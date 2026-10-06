@@ -402,7 +402,7 @@ fn folder_lines(groups: &[(String, u64)], width: usize, rows: usize) -> Vec<Line
     if groups.len() > lines.len() && !lines.is_empty() {
         lines.pop();
         lines.push(Line::from(format!(
-            "{:>9} and {} more",
+            "{:>9} & {} more",
             "",
             format::count(u64::try_from(groups.len() - lines.len()).unwrap_or(u64::MAX))
         )));

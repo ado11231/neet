@@ -432,7 +432,7 @@ impl Cleanup {
                 ]),
                 Line::from("Empty the Trash to free that space."),
                 Line::default(),
-                Line::from("To restore an item, select it in the Trash and choose Put Back."),
+                Line::from("To restore an item, select it in the Trash & choose Put Back."),
             ]
         };
         if !outcome.skipped.is_empty() {

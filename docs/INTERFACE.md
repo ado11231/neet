@@ -141,7 +141,7 @@
 + Quick Clean -------------------------------------------+  + Space ---------------------------------------+
 |   Item                        Size              Found  |  | Largest items                                |
 |                                                Cleared |  |   20.8 GB  ~/Documents/rust/slingshot/target |
-|   Caches and logs          ~193 MB  ......        neet |  |    5.4 GB  ~/Documents/rust/neet/target      |
+|   Caches & logs            ~193 MB  ......        neet |  |    5.4 GB  ~/Documents/rust/neet/target      |
 | > Project build folders    31.5 GB  ######   26   neet |  |                                              |
 |   Installers in Downloads     none                neet |  | Overview                                     |
 |   Trash                     4.4 MB  ......  2,195  you |  | Project build folders   31.5 GB  ##########  |
@@ -164,7 +164,7 @@
 
 * One table of everything taking space that can be cleared, so you can start with the biggest wins.
 * **Rows,** always in this order, what neet clears first:
-  1. Caches and logs: what every Deep Clean rule found.
+  1. Caches & logs: what every Deep Clean rule found.
   2. Project build folders and installers in Downloads, from the scan. neet moves these to the Trash after you pick and review them.
   3. The Trash, from the scan, which you empty yourself. macOS only lets a terminal read `~/.Trash` with Full Disk Access. Without it, the row says `no access` in yellow instead of `none`, and its Summary says how to turn it on.
   4. The Docker disk image, from the scan, and simulators, asked of `xcrun simctl` when there are simulators on the Mac: runtimes, and simulators left without one. neet asks their own tools to remove them, which is permanent.
@@ -173,7 +173,7 @@
 * The bottom edge adds up what neet can clear and what you can free yourself.
 * **The boxes run the full height.** Each side is a stack of small boxes, one for each section, titled with the section's name, such as **About** or **Overview**. The boxes share the height evenly, so a tall screen has no empty space below them. Boxes that do not fit are left out, the last first. From 45 rows, the table's rows stand a row apart.
 * **Below the table,** titled with the selected row: **Steps**, its numbered steps; **About**; **Location**, its folders in blue; **Impact**, what changes, and **Undo**: Put Back in green, or none in red for what is deleted for good; and **Summary**: its size and item count, a bar of its share of everything found, and who clears it, in the table's color. On a short screen, Where it is and After it is cleared are left out first.
-* **Space,** on the right: **Largest items**, as many as fit: rules for Caches and logs, folders and installers by path, and the largest item for the Trash and Docker, or why there is no list. **Overview**: every row that found something, largest first, with a bar in the color of who clears it. **After cleanup**: a gauge of the disk with the space the cleanup frees in green, then free space now, what neet can clear in green, what you clear by hand in yellow when there is any, and free space after. Space is hidden below 130 columns, and After cleanup moves to the bottom of the box under the table.
+* **Space,** on the right: **Largest items**, as many as fit: rules for Caches & logs, folders and installers by path, and the largest item for the Trash and Docker, or why there is no list. **Overview**: every row that found something, largest first, with a bar in the color of who clears it. **After cleanup**: a gauge of the disk with the space the cleanup frees in green, then free space now, what neet can clear in green, what you clear by hand in yellow when there is any, and free space after. Space is hidden below 130 columns, and After cleanup moves to the bottom of the box under the table.
 * Build folders and installers that are empty, or already gone since the scan, are left out.
 * Below 120 columns, the selected path and age sit below the file table when at least 18 rows are available.
 * Until the scan finishes, the screen shows the loading box.
@@ -183,7 +183,7 @@
 | --- | --- |
 | `Up` / `Down` | Move the selection. |
 | `g` / `G` | Jump to the first or last row. |
-| `Enter`, `Right`, or `l` | On Caches and logs, open [Deep Clean](#deep-clean). On build folders or installers, open [Pick](#pick). On Docker or simulator runtimes, open [Docker And Simulators](#docker-and-simulators). On the Trash, open the [Trash](#trash) screen. |
+| `Enter`, `Right`, or `l` | On Caches & logs, open [Deep Clean](#deep-clean). On build folders or installers, open [Pick](#pick). On Docker or simulator runtimes, open [Docker And Simulators](#docker-and-simulators). On the Trash, open the [Trash](#trash) screen. |
 | `d` | Show the largest item of the row in [Disk](#disk). |
 
 ### Pick
@@ -214,7 +214,7 @@
 * These cannot go to the Trash, so neet asks their own tool to remove them. Removing ends in a red question that lists what goes and says it is permanent. Only `y` goes ahead. See [SAFETY.md](SAFETY.md#tools-neet-runs).
 * **Simulators:** a table of each runtime with a checkbox, its version, build, size, the day a simulator last used it, and how many simulators run on it. Simulators left without a runtime share one yellow `No runtime` row. None start selected. `Enter` asks, then removes each runtime with `xcrun simctl`, then the simulators on it, and the `No runtime` simulators if selected.
 * **Below the Simulators table,** titled with the selected runtime: its build, size, when it was last used, and the simulators on it by name, then **Warning: deleted for good, not moved to the Trash**, which every screen size keeps. Then **Removal**, **Total**: runtimes, simulators, and what is selected, in red, **Steps**: the three steps, and **After cleanup**: the disk now and after the selected runtimes go. Each is its own box. From 100 columns they sit in two columns: the runtime and Removal on the left, and the rest on the right.
-* **Docker:** a table of what `docker system df` reports: images, containers, volumes, and build cache, with how many, how many are in use, their size, and how much can be freed, in yellow. Below it, the volumes no container uses, none selected, which `Space` adds to the prune. The box below that says, in colored labels, what `docker system prune --all` removes, what it keeps, and how to reset. `Enter` asks, then runs it and removes the selected volumes.
+* **Docker:** a table of what `docker system df` reports: images, containers, volumes, and build cache, with how many, how many are in use, their size, and how much can be freed, in yellow. Each column is only as wide as what it holds. Below it, the volumes no container uses, none selected, which `Space` adds to the prune. Below that, small boxes in two columns from 100 columns: **Prune**, in colored labels, what `docker system prune --all` deletes, what it keeps, and that it is for good; **Reset**, when there is a disk image; **Total**, what prune can free, the disk image, and the volumes picked; **Steps**; and **After cleanup**. `Enter` asks, then runs it and removes the selected volumes.
 * **Reset Docker:** `x` asks, in a yellow box, to stop Docker Desktop and move its whole disk image to the Trash. See [Resetting Docker](SAFETY.md#resetting-docker).
 * If Docker Desktop is not running, a small box in the middle says so, with numbered steps: `o` opens it, then `r` asks Docker again. `x` resets Docker without opening it.
 * When done, a small box in the middle ticks off what went and how much space it freed.

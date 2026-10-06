@@ -582,7 +582,7 @@ fn found_lines(rule: &RulePlan, home: &Path, room: usize, width: usize) -> Vec<L
     if lines.len() > room {
         let more = lines.len() - (room - 1);
         lines.truncate(room - 1);
-        lines.push(Line::from(format!("{:>9}  and {} more", "", count(more))));
+        lines.push(Line::from(format!("{:>9}  & {} more", "", count(more))));
     }
     lines
 }
@@ -644,7 +644,7 @@ impl Clean {
             if skipped.len() > most {
                 let more = skipped.len() - (most - 1).max(1);
                 skipped.truncate((most - 1).max(1));
-                skipped.push(Line::from(format!("{:>9}  and {} more", "", count(more))));
+                skipped.push(Line::from(format!("{:>9}  & {} more", "", count(more))));
             }
             let room = inner.saturating_sub(skipped.len() + 2);
             sections.push(found_lines(rule, home, room, width));
@@ -705,7 +705,7 @@ impl Clean {
                 let keep = most.saturating_sub(3).max(1);
                 let more = skipped.len() - keep;
                 skipped.truncate(keep);
-                skipped.push(Line::from(format!("{:>9}  and {} more", "", count(more))));
+                skipped.push(Line::from(format!("{:>9}  & {} more", "", count(more))));
             }
             u16::try_from(skipped.len() + 2).unwrap_or(u16::MAX)
         };
