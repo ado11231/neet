@@ -18,10 +18,12 @@ use super::app::{Action, Context, Screen};
 use super::format;
 use super::visual::{self, Columns};
 
+mod actions;
 mod change;
 mod configure;
 mod export;
 
+use actions::{Act, Menu};
 use change::{Diff, Fix, Mode, Review};
 use configure::Configure;
 use export::{Export, Step};
@@ -30,16 +32,14 @@ use neet_core::dotfiles::export as publish;
 use neet_core::rewrite::Backup;
 
 /// From this width the selected file and its preview show on the right.
-const MIN_SIDE_WIDTH: u16 = 120;
+const MIN_SIDE_WIDTH: u16 = 96;
 
-/// Width of the right side
-const SIDE_WIDTH: u16 = 48;
+/// The file list's width beside the details: wide enough for every name and
+/// status, never so wide that rows are mostly empty
+const LIST_WIDTH: (u16, u16) = (48, 64);
 
-/// Width of the last changed column, such as `11 months ago`
-const AGE_WIDTH: u16 = 13;
-
-/// Width of the status column, such as `may hold secrets`
-const STATUS_WIDTH: u16 = 16;
+/// Width of the status column, such as `+ not saved · secret`
+const STATUS_WIDTH: u16 = 20;
 
 /// What the repository line says while Git is still being read
 enum RepoState {
@@ -55,9 +55,9 @@ enum Item {
     File(usize),
 }
 
-/// Lists your settings files grouped by program, with how each stands with
-/// chezmoi. `e` edits one, and `r` and `p` fix one that differs from
-/// chezmoi's source file.
+/// Lists your settings files grouped by program, with whether each is saved
+/// in your dotfiles, which chezmoi keeps. `Enter` shows what can be done
+/// with one; each action also has its own key.
 pub struct Dotfiles {
     home: PathBuf,
     listing: Listing,
@@ -216,47 +216,30 @@ impl Dotfiles {
         )
     }
 
-    /// The line at the top: chezmoi, its repository, and what waits to be
-    /// committed or pushed
+    /// The line at the top: how many files are saved, changed, or not saved
     fn draw_top(&self, frame: &mut Frame, area: Rect) {
-        let mut spans = vec![Span::raw(" ")];
-        match &self.listing.chezmoi {
-            None => spans.push(Span::raw("chezmoi not found")),
-            Some(chezmoi) => {
-                spans.push(Span::raw("chezmoi").bold());
-                match &self.repo {
-                    RepoState::Reading(_) => spans.push(Span::raw(" · looking…")),
-                    RepoState::Read(None) => spans.push(Span::raw(" · not in a Git repository")),
-                    RepoState::Read(Some(repo)) => {
-                        spans.push(Span::raw(" · "));
-                        spans.push(Span::raw(
-                            repo.remote
-                                .clone()
-                                .unwrap_or_else(|| "no remote".to_string()),
-                        ));
-                        spans.push(Span::raw(" · "));
-                        spans.push(match repo.uncommitted {
-                            0 => Span::raw("nothing to commit").green(),
-                            count => Span::raw(format!("{count} to commit")).yellow(),
-                        });
-                        spans.push(Span::raw(" · "));
-                        spans.push(match repo.ahead_behind {
-                            None => Span::raw("not tracking a remote branch"),
-                            Some((0, 0)) => Span::raw("up to date").green(),
-                            Some((ahead, 0)) => Span::raw(format!("{ahead} to push")).yellow(),
-                            Some((0, behind)) => Span::raw(format!("{behind} to pull")).yellow(),
-                            Some((ahead, behind)) => {
-                                Span::raw(format!("{ahead} to push, {behind} to pull")).yellow()
-                            }
-                        });
-                    }
+        let mut spans = Vec::new();
+        if self.listing.chezmoi.is_some() {
+            let found: Vec<&Dotfile> = self
+                .listing
+                .files
+                .iter()
+                .filter(|file| file.found.is_some())
+                .collect();
+            for state in [State::Saved, State::Changed, State::NotSaved] {
+                let count = found.iter().filter(|file| State::of(file) == state).count();
+                if count == 0 {
+                    continue;
                 }
-                if chezmoi.may_not_run.is_some() {
+                if !spans.is_empty() {
                     spans.push(Span::raw(" · "));
-                    spans.push(Span::raw("neet will not run chezmoi").yellow());
                 }
+                spans.push(state.styled(format!("{count} {}", state.word())));
             }
+        } else {
+            spans.push(Span::raw("chezmoi not found"));
         }
+        spans.insert(0, Span::raw(" "));
         spans.push(Span::raw(" "));
         frame.render_widget(
             Block::new()
@@ -268,11 +251,12 @@ impl Dotfiles {
         );
     }
 
-    /// The file table, sized to its rows, with the summary below it when
-    /// there is room
+    /// The file table, sized to its rows, with your dotfiles' repository
+    /// below it when there is room
     fn draw_list(&mut self, frame: &mut Frame, area: Rect) {
-        let rows = u16::try_from(self.items().len()).unwrap_or(u16::MAX).max(1);
-        let table_height = rows.saturating_add(4);
+        // With no files, room for the message that says so
+        let rows = u16::try_from(self.items().len()).unwrap_or(u16::MAX).max(3);
+        let table_height = rows.saturating_add(2);
         let summary = self.summary();
         let summary_height =
             visual::wrapped_rows(&summary, area.width.saturating_sub(4)).saturating_add(2);
@@ -280,113 +264,159 @@ impl Dotfiles {
             self.draw_table(frame, area);
             return;
         }
-        let [table, below, _] = Layout::vertical([
-            Constraint::Length(table_height),
-            Constraint::Length(summary_height),
-            Constraint::Fill(1),
-        ])
-        .areas(area);
+        // The box under the list runs to the bottom: where your dotfiles
+        // are at its top, what the marks mean, and backups at its bottom.
+        let [table, below] =
+            Layout::vertical([Constraint::Length(table_height), Constraint::Fill(1)]).areas(area);
         self.draw_table(frame, table);
-        frame.render_widget(
-            Paragraph::new(summary).wrap(Wrap { trim: false }).block(
-                visual::block()
-                    .title(" chezmoi ")
-                    .padding(Padding::horizontal(1)),
-            ),
+        visual::sections(
+            frame,
             below,
+            " Your dotfiles ",
+            // The legend matters more than backups, so backups go first when
+            // room is short: they sit at the bottom.
+            vec![summary, self.legend(), self.backup_lines()],
         );
     }
 
-    /// How the files stand together, and what each status means
+    /// How many backups neet keeps of the listed files, the newest, and where
+    fn backup_lines(&self) -> Vec<Line<'static>> {
+        // Backups of each file, and of its source file in chezmoi
+        let all: Vec<Backup> = self
+            .listing
+            .files
+            .iter()
+            .flat_map(|file| {
+                let source = self
+                    .source_name(file)
+                    .map(|source| format!("chezmoi/{source}"));
+                [Some(file.known.path.to_string()), source]
+            })
+            .flatten()
+            .filter_map(|name| self.backups.list(&name).ok())
+            .flatten()
+            .collect();
+        let newest = all.iter().max_by(|a, b| a.saved.cmp(&b.saved));
+        let mut lines = vec![Line::from("Backups").style(visual::HEADING)];
+        lines.push(field(
+            "Saved",
+            match newest {
+                None => Span::raw("none yet, one before every change"),
+                Some(newest) => {
+                    Span::raw(format!("{} · newest {}", all.len(), change::saved(newest)))
+                }
+            },
+        ));
+        lines.push(field(
+            "Kept in",
+            Span::raw("~/.local/state/neet/backups/dotfiles"),
+        ));
+        lines
+    }
+
+    /// What each mark in the list means, for the marks it shows
+    fn legend(&self) -> Vec<Line<'static>> {
+        let shown: Vec<State> = self
+            .items()
+            .iter()
+            .filter_map(|item| match item {
+                Item::File(index) => Some(State::of(&self.listing.files[*index])),
+                Item::Group(_) => None,
+            })
+            .collect();
+        let mut lines = vec![Line::from("What the marks mean").style(visual::HEADING)];
+        for (state, meaning) in [
+            (State::Saved, "matches its saved copy"),
+            (State::Changed, "differs from its saved copy"),
+            (State::NotSaved, "not in your dotfiles yet"),
+            (State::ViewOnly, "neet will not change it"),
+            (State::LeftOut, ".chezmoiignore leaves it out"),
+            (State::Missing, "not on this Mac"),
+        ] {
+            if shown.contains(&state) {
+                lines.push(Line::from(vec![
+                    state.styled(format!(
+                        "{:<14}",
+                        format!("{} {}", state.symbol(), state.word())
+                    )),
+                    Span::raw(meaning),
+                ]));
+            }
+        }
+        if self.items().iter().any(
+            |item| matches!(item, Item::File(index) if self.listing.files[*index].may_hold_secrets),
+        ) {
+            lines.push(Line::from(vec![
+                Span::raw(format!("{:<14}", "secret")).red(),
+                Span::raw("may hold a token: kept private"),
+            ]));
+        }
+        lines
+    }
+
+    /// Where your dotfiles are kept, and what waits to be exported
     fn summary(&self) -> Vec<Line<'static>> {
         let Some(chezmoi) = &self.listing.chezmoi else {
             return vec![
-                Line::from("chezmoi was not found, so each file is shown on its own."),
+                Line::from("chezmoi was not found, so each file is changed on its own."),
                 Line::from(
                     "chezmoi keeps your dotfiles in a Git repository and sets up a new Mac from it.",
                 ),
             ];
         };
-        let found: Vec<&Dotfile> = self
-            .listing
-            .files
-            .iter()
-            .filter(|file| file.found.is_some())
-            .collect();
-        let count = |status: &str| {
-            found
-                .iter()
-                .filter(|file| status_text(file) == status)
-                .count()
-        };
-        let mut lines = vec![
-            field("Source", Span::raw(self.tilde(&chezmoi.source))),
-            field(
-                "May run",
-                match &chezmoi.may_not_run {
-                    None => Span::raw("apply, re-add, and add, one file at a time").green(),
-                    Some(reason) => Span::raw(format!("never: {reason}")).yellow(),
-                },
-            ),
-            Line::default(),
-        ];
-        let statuses: [(&str, Span<'static>, &str); 5] = [
-            (
-                "in sync",
-                Span::raw("in sync").green(),
-                "matches its source file in chezmoi",
-            ),
-            (
-                "differs",
-                Span::raw("differs").yellow(),
-                "does not match its source file",
-            ),
-            (
-                "not in chezmoi",
-                Span::raw("not in chezmoi"),
-                "chezmoi does not manage it",
-            ),
-            (
-                "view only",
-                Span::raw("view only").yellow(),
-                "neet will not change it; the details say why",
-            ),
-            (
-                "may hold secrets",
-                Span::raw("may hold secrets").red(),
-                "preview hidden, left out of exports",
-            ),
-        ];
-        for (status, span, about) in statuses {
-            let number = count(status);
-            if number == 0 {
-                continue;
+        let mut lines = match &self.repo {
+            RepoState::Reading(_) => vec![field("Repo", Span::raw("looking…"))],
+            RepoState::Read(None) => vec![field("Repo", Span::raw("not in a Git repository"))],
+            RepoState::Read(Some(repo)) => {
+                let remote = repo.remote.as_deref().unwrap_or("no remote");
+                let name = match &repo.branch {
+                    Some(branch) => format!("{remote} · {branch}"),
+                    None => remote.to_string(),
+                };
+                vec![
+                    field("Repo", Span::raw(name)),
+                    field(
+                        "Export",
+                        match repo.uncommitted {
+                            0 => Span::raw("nothing waiting").green(),
+                            1 => Span::raw("1 file waiting · x exports it").yellow(),
+                            count => Span::raw(format!("{count} files waiting · x exports them"))
+                                .yellow(),
+                        },
+                    ),
+                    field(
+                        "Push",
+                        match repo.ahead_behind {
+                            None => Span::raw("not tracking a remote branch"),
+                            Some((0, 0)) => Span::raw("up to date").green(),
+                            Some((ahead, 0)) => {
+                                Span::raw(format!("{ahead} to push · x pushes")).yellow()
+                            }
+                            Some((0, behind)) => Span::raw(format!("{behind} to pull")).yellow(),
+                            Some((ahead, behind)) => {
+                                Span::raw(format!("{ahead} to push, {behind} to pull")).yellow()
+                            }
+                        },
+                    ),
+                ]
             }
-            let label = span.content.len();
-            lines.push(Line::from(vec![
-                Span::raw(format!("{number:>2} ")).bold(),
-                span,
-                Span::raw(format!("{:width$}  {about}", "", width = 16 - label)),
-            ]));
+        };
+        lines.push(field("Folder", Span::raw(self.tilde(&chezmoi.source))));
+        if let Some(reason) = &chezmoi.may_not_run {
+            lines.push(
+                Line::from(format!(
+                    "neet will not run chezmoi: {reason}. It writes the saved copies itself, and says what to run."
+                ))
+                .yellow(),
+            );
         }
         lines
     }
 
     fn draw_table(&mut self, frame: &mut Frame, area: Rect) {
         let items = self.items();
-        let found = self
-            .listing
-            .files
-            .iter()
-            .filter(|file| file.found.is_some())
-            .count();
-        let summary = format!(
-            " {found} {} found ",
-            if found == 1 { "file" } else { "files" }
-        );
         let block = visual::block()
             .title(" Files ")
-            .title_bottom(Line::from(summary).right_aligned())
             .padding(Padding::horizontal(1));
         if items.is_empty() {
             let inner = block.inner(area);
@@ -399,43 +429,29 @@ impl Dotfiles {
             return;
         }
         let files = &self.listing.files;
-        let sizes = format::column_width(
-            "Size",
-            files
-                .iter()
-                .filter_map(|file| file.found.as_ref())
-                .map(|found| format::size(found.size)),
-        );
-        let columns = Columns::new(
-            area.width,
-            [(14, 1), (sizes, 0), (AGE_WIDTH, 0), (STATUS_WIDTH, 0)],
-            &[2],
-            true,
-        );
-        let now = SystemTime::now();
+        // Names take what the longest needs, so each status sits close to
+        // its name.
+        let longest = items
+            .iter()
+            .filter_map(|item| match item {
+                Item::File(index) => Some(format::display_width(shown_name(&files[*index]))),
+                Item::Group(_) => None,
+            })
+            .max()
+            .unwrap_or(0);
+        let name_width = u16::try_from(longest + 4).unwrap_or(u16::MAX).max(14);
+        let columns = Columns::new(area.width, [(name_width, 0), (STATUS_WIDTH, 1)], &[], true);
         let rows: Vec<Row> = items
             .iter()
             .map(|item| match *item {
                 Item::Group(group) => columns.row([
                     Cell::from(Span::styled(group.name(), visual::HEADING)),
                     Cell::from(""),
-                    Cell::from(""),
-                    Cell::from(""),
                 ]),
-                Item::File(index) => file_row(&files[index], now, &columns),
+                Item::File(index) => file_row(&files[index], &columns),
             })
             .collect();
-        let header = columns
-            .row([
-                Cell::from("Name"),
-                Cell::from(Line::from("Size").right_aligned()),
-                Cell::from("Changed"),
-                Cell::from("Status"),
-            ])
-            .style(visual::HEADING)
-            .bottom_margin(1);
         let table = Table::new(rows, columns.widths())
-            .header(header)
             .column_spacing(2)
             .block(block)
             .highlight_symbol("▸ ")
@@ -444,7 +460,7 @@ impl Dotfiles {
     }
 
     /// The selected file's name, and lines on where it is, how it stands,
-    /// and what that means. Paths are shortened to fit `width`.
+    /// and what to do. Paths are shortened to fit `width`.
     fn details(&self, index: usize, width: usize) -> (String, Vec<Line<'static>>) {
         let file = &self.listing.files[index];
         let name = file
@@ -466,75 +482,68 @@ impl Dotfiles {
                     Span::raw(format::shorten_path(&self.tilde(link), room)),
                 ));
             }
-            if let (Some(source), Some(chezmoi)) = (
-                file.managed.as_ref().and_then(Managed::source),
-                &self.listing.chezmoi,
-            ) {
-                let source = source.strip_prefix(&chezmoi.source).unwrap_or(source);
+            if let Some(source) = self.source_name(file) {
                 lines.push(field(
-                    "Source",
-                    Span::raw(format::shorten_path(&source.display().to_string(), room)),
+                    "Saved as",
+                    Span::raw(format::shorten_path(&source, room)),
                 ));
             }
-            lines.push(field(
-                "Size",
-                format::size_span(found.size, format::size(found.size)),
-            ));
             let changed = found
                 .modified
                 .and_then(|modified| SystemTime::now().duration_since(modified).ok())
                 .map_or_else(|| "unknown".to_string(), format::age);
             lines.push(field("Changed", Span::raw(changed)));
-            lines.push(field("Mode", Span::raw(format!("{:o}", found.mode))));
-        }
-        lines.push(field("Check", Span::raw(file.known.syntax.name())));
-        if file.found.is_some() {
-            let count = self
-                .backups
-                .list(file.known.path)
-                .map_or(0, |list| list.len());
+            let count = self.backup_count(file);
             lines.push(field("Backups", Span::raw(count.to_string())));
         }
         lines.push(Line::default());
-        lines.extend(self.notes(file));
+        lines.extend(Self::notes(file));
         (name, lines)
     }
 
-    /// What the file's status means, in plain words
-    fn notes(&self, file: &Dotfile) -> Vec<Line<'static>> {
+    fn backup_count(&self, file: &Dotfile) -> usize {
+        self.backups
+            .list(file.known.path)
+            .map_or(0, |list| list.len())
+    }
+
+    /// What the file's status means, and what to do, in plain words
+    fn notes(file: &Dotfile) -> Vec<Line<'static>> {
         let mut notes = Vec::new();
         if file.found.is_none() {
             notes.push(Line::from("Not on this Mac."));
             return notes;
+        }
+        if let Some(view_only) = &file.view_only {
+            notes.push(Line::from(format!("{}. View only.", view_only.describe())).yellow());
+        }
+        match (&file.managed, file.view_only.is_some()) {
+            (Some(Managed::InSync(_)), _) => {
+                notes.push(Line::from("✓ Saved in your dotfiles. Both copies match.").green());
+            }
+            (Some(Managed::Differs(_)), false) => notes.push(
+                Line::from(
+                    "! Changed since it was saved. Enter saves this version or uses the saved one.",
+                )
+                .yellow(),
+            ),
+            (Some(Managed::Differs(_)), true) => {
+                notes.push(Line::from("! Changed since it was saved.").yellow());
+            }
+            (Some(Managed::Ignored), _) => {
+                notes.push(Line::from(".chezmoiignore leaves it out of your dotfiles."));
+            }
+            (Some(Managed::No), false) => {
+                notes.push(Line::from("+ Not in your dotfiles yet. Enter adds it."));
+            }
+            (Some(Managed::No), true) => notes.push(Line::from("Not in your dotfiles.")),
+            (Some(Managed::Built(..)) | None, _) => {}
         }
         if file.may_hold_secrets {
             notes.push(
                 Line::from("It may hold a token. Its preview is hidden, and it starts left out of exports.")
                     .red(),
             );
-        }
-        if let Some(view_only) = &file.view_only {
-            notes.push(Line::from(format!("{}. View only.", view_only.describe())).yellow());
-        }
-        match &file.managed {
-            Some(Managed::InSync(_)) => {
-                notes.push(Line::from("It matches its source file in chezmoi.").green());
-            }
-            Some(Managed::Differs(_)) => {
-                notes.push(Line::from("It differs from its source file in chezmoi.").yellow());
-            }
-            Some(Managed::Ignored) => notes.push(Line::from(".chezmoiignore leaves it out.")),
-            Some(Managed::No) if file.view_only.is_none() => {
-                notes.push(Line::from("chezmoi does not manage it. a adds it."));
-            }
-            Some(Managed::No) => notes.push(Line::from("chezmoi does not manage it.")),
-            Some(Managed::Built(..)) | None => {}
-        }
-        if let (Some(managed), Some(chezmoi)) = (&file.managed, &self.listing.chezmoi)
-            && managed.source().is_some()
-            && let Some(reason) = &chezmoi.may_not_run
-        {
-            notes.push(Line::from(format!("neet will not run chezmoi: {reason}.")).yellow());
         }
         notes
     }
@@ -632,6 +641,55 @@ impl Dotfiles {
         )
     }
 
+    /// Why neet will not run chezmoi for `file`, if it will not: chezmoi's
+    /// config or templates, or the file being a link, which chezmoi would
+    /// replace with a plain file
+    fn why_not_run(&self, file: &Dotfile) -> Option<String> {
+        let chezmoi = self.listing.chezmoi.as_ref()?;
+        if let Some(reason) = &chezmoi.may_not_run {
+            return Some(reason.clone());
+        }
+        file.found
+            .as_ref()
+            .and_then(|found| found.link.as_ref())
+            .map(|_| "it is a link, which chezmoi would replace with a plain file".to_string())
+    }
+
+    /// `Enter`: shows what can be done with the selected file.
+    fn open_actions(&mut self) {
+        let Some(index) = self.selected() else {
+            return;
+        };
+        let file = &self.listing.files[index];
+        let acts = actions::for_file(file, self.listing.chezmoi.as_ref(), self.backup_count(file));
+        self.mode = if acts.is_empty() {
+            let mut lines = Self::notes(file);
+            lines.push(Line::from("There is nothing neet can do with it."));
+            Mode::Note {
+                title: file.known.path.to_string(),
+                lines,
+                color: visual::ACCENT,
+            }
+        } else {
+            Mode::Actions(Menu::new(index, acts))
+        };
+    }
+
+    /// Does `act` on the selected file, from the menu or its own key.
+    fn run_act(&mut self, act: Act) -> Action {
+        self.mode = Mode::Browse;
+        match act {
+            Act::Edit => return self.start_edit(),
+            Act::SaveMine => self.ask_fix(Fix::Keep),
+            Act::UseSaved => self.ask_fix(Fix::PutBack),
+            Act::Add => self.ask_add(),
+            Act::Changes => self.show_diff(),
+            Act::Configure => self.start_configure(),
+            Act::Backups => self.open_backups(),
+        }
+        Action::None
+    }
+
     /// `e`: opens a copy of the selected file in your editor.
     fn start_edit(&mut self) -> Action {
         let Some(index) = self.selected() else {
@@ -673,11 +731,7 @@ impl Dotfiles {
             return;
         };
         if fix == Fix::PutBack
-            && let Some(reason) = self
-                .listing
-                .chezmoi
-                .as_ref()
-                .and_then(|chezmoi| chezmoi.may_not_run.as_ref())
+            && let Some(reason) = self.why_not_run(file)
         {
             self.mode = change::done(
                 Err(format!(
@@ -772,10 +826,32 @@ impl Dotfiles {
         }
     }
 
+    /// Keys on the menu `Enter` opened
+    fn actions_key(&mut self, key: KeyEvent) -> Action {
+        let Mode::Actions(menu) = &mut self.mode else {
+            return Action::None;
+        };
+        let act = match key.code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                menu.step(false);
+                None
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                menu.step(true);
+                None
+            }
+            KeyCode::Enter => menu.chosen(),
+            KeyCode::Char(letter) => menu.acts.iter().copied().find(|act| act.key() == letter),
+            _ => None,
+        };
+        act.map_or(Action::None, |act| self.run_act(act))
+    }
+
     /// Keys while a review, question, list, or note is open
     fn mode_key(&mut self, key: KeyEvent) -> Action {
         match &mut self.mode {
             Mode::Browse => {}
+            Mode::Actions(_) => return self.actions_key(key),
             Mode::Editing { .. } => return Action::None,
             Mode::Note { .. } => {
                 self.mode = Mode::Browse;
@@ -1060,6 +1136,7 @@ impl Dotfiles {
     fn draw_mode(&self, frame: &mut Frame, area: Rect) {
         match &self.mode {
             Mode::Browse | Mode::Editing { .. } => {}
+            Mode::Actions(menu) => menu.draw(frame, area, &self.listing.files[menu.index]),
             Mode::Review(review) => {
                 change::draw_review(frame, area, review, self.writes(review));
             }
@@ -1096,7 +1173,7 @@ impl Dotfiles {
                 ];
                 if file.managed.as_ref().and_then(Managed::source).is_some() {
                     lines.push(Line::from(
-                        "It may then differ from its source file in chezmoi. r keeps it there.",
+                        "It may then differ from its saved copy. r saves it there.",
                     ));
                 }
                 let title = format!(" Restore {} ", file.known.path);
@@ -1261,16 +1338,12 @@ impl Dotfiles {
         };
     }
 
-    /// The question's lines for `r` or `p`
+    /// The question's lines for `r`, `p`, or `a`
     fn ask_lines(&self, fix: Fix, index: usize, diff: &Diff) -> (String, Vec<Line<'static>>) {
         let file = &self.listing.files[index];
         let shown = format!("~/{}", file.known.path);
         let source = self.source_name(file).unwrap_or_default();
-        let may_run = self
-            .listing
-            .chezmoi
-            .as_ref()
-            .is_some_and(|chezmoi| chezmoi.may_not_run.is_none());
+        let may_run = self.why_not_run(file).is_none();
         let field = |label: &str, value: String| {
             Line::from(vec![
                 Span::raw(format!("{label:<9}")).bold(),
@@ -1283,7 +1356,7 @@ impl Dotfiles {
         counts.push(Span::raw(format!("−{}", diff.removed)).red().bold());
         match fix {
             Fix::Keep => (
-                format!(" Keep this version of {} ", file.known.path),
+                format!(" Save my version of {} ", file.known.path),
                 vec![
                     field("Keeps", format!("{shown} as it is now, in chezmoi")),
                     field(
@@ -1299,7 +1372,7 @@ impl Dotfiles {
                 ],
             ),
             Fix::PutBack => (
-                format!(" Put chezmoi's version of {} back ", file.known.path),
+                format!(" Use the saved version of {} ", file.known.path),
                 vec![
                     field("Replaces", format!("{shown} with {source}")),
                     field("Runs", format!("chezmoi apply {shown}")),
@@ -1331,7 +1404,7 @@ impl Dotfiles {
                         .red(),
                     );
                 }
-                (format!(" Add {} to chezmoi ", file.known.path), lines)
+                (format!(" Add {} to your dotfiles ", file.known.path), lines)
             }
         }
     }
@@ -1345,61 +1418,95 @@ fn empty() -> Listing {
 }
 
 /// One file as a table row
-fn file_row(file: &Dotfile, now: SystemTime, columns: &Columns<4>) -> Row<'static> {
-    let name = file
-        .known
+/// A file's name in the list, without `.config/`
+fn shown_name(file: &Dotfile) -> &'static str {
+    file.known
         .path
         .strip_prefix(".config/")
-        .unwrap_or(file.known.path);
-    let (size, changed) = match &file.found {
-        Some(found) => (
-            format::size_span(found.size, format::size(found.size)),
-            found
-                .modified
-                .and_then(|modified| now.duration_since(modified).ok())
-                .map_or_else(|| "unknown".to_string(), format::age),
-        ),
-        None => (Span::raw(""), String::new()),
-    };
+        .unwrap_or(file.known.path)
+}
+
+fn file_row(file: &Dotfile, columns: &Columns<2>) -> Row<'static> {
+    let name = shown_name(file);
+    let state = State::of(file);
+    let mut status = vec![state.styled(format!("{} {}", state.symbol(), state.word()))];
+    if file.may_hold_secrets && file.found.is_some() {
+        status.push(Span::raw(" · "));
+        status.push(Span::raw("secret").red());
+    }
     columns.row([
         Cell::from(format!(
             "  {}",
             format::shorten_middle(name, columns.width(0).saturating_sub(2))
         )),
-        Cell::from(Line::from(size).right_aligned()),
-        Cell::from(changed),
-        Cell::from(status(file)),
+        Cell::from(Line::from(status)),
     ])
 }
 
-/// The status the list shows, in words
-fn status_text(file: &Dotfile) -> &'static str {
-    if file.found.is_none() {
-        return "missing";
-    }
-    if file.may_hold_secrets {
-        return "may hold secrets";
-    }
-    if file.view_only.is_some() {
-        return "view only";
-    }
-    match &file.managed {
-        Some(Managed::InSync(_)) => "in sync",
-        Some(Managed::Differs(_)) => "differs",
-        Some(Managed::Ignored) => "ignored",
-        Some(Managed::No) => "not in chezmoi",
-        Some(Managed::Built(..)) | None => "",
-    }
+/// How a file stands, as the list says it
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum State {
+    /// Its saved copy in chezmoi matches.
+    Saved,
+    /// It differs from its saved copy.
+    Changed,
+    /// chezmoi has no copy of it.
+    NotSaved,
+    /// `.chezmoiignore` leaves it out.
+    LeftOut,
+    ViewOnly,
+    Missing,
+    /// chezmoi is not in use.
+    OnItsOwn,
 }
 
-/// The status, colored by what it means
-fn status(file: &Dotfile) -> Span<'static> {
-    let text = status_text(file);
-    match text {
-        "in sync" => Span::raw(text).green(),
-        "differs" | "view only" => Span::raw(text).yellow(),
-        "may hold secrets" => Span::raw(text).red(),
-        _ => Span::raw(text),
+impl State {
+    fn of(file: &Dotfile) -> Self {
+        if file.found.is_none() {
+            return Self::Missing;
+        }
+        if file.view_only.is_some() {
+            return Self::ViewOnly;
+        }
+        match &file.managed {
+            Some(Managed::InSync(_)) => Self::Saved,
+            Some(Managed::Differs(_)) => Self::Changed,
+            Some(Managed::No) => Self::NotSaved,
+            Some(Managed::Ignored) => Self::LeftOut,
+            Some(Managed::Built(..)) => Self::ViewOnly,
+            None => Self::OnItsOwn,
+        }
+    }
+
+    fn word(self) -> &'static str {
+        match self {
+            Self::Saved => "saved",
+            Self::Changed => "changed",
+            Self::NotSaved => "not saved",
+            Self::LeftOut => "left out",
+            Self::ViewOnly => "view only",
+            Self::Missing => "not on this Mac",
+            Self::OnItsOwn => "on this Mac",
+        }
+    }
+
+    fn symbol(self) -> &'static str {
+        match self {
+            Self::Saved => "✓",
+            Self::Changed => "!",
+            Self::NotSaved => "+",
+            _ => "·",
+        }
+    }
+
+    /// `text` in this state's color
+    fn styled(self, text: String) -> Span<'static> {
+        match self {
+            Self::Saved => Span::raw(text).green(),
+            Self::Changed | Self::ViewOnly => Span::raw(text).yellow(),
+            Self::NotSaved => Span::styled(text, visual::ACCENT),
+            _ => Span::raw(text),
+        }
     }
 }
 
@@ -1451,10 +1558,10 @@ impl Screen for Dotfiles {
         let [top, body] =
             Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(area);
         self.draw_top(frame, top);
-        if body.width >= MIN_SIDE_WIDTH {
+        if body.width >= MIN_SIDE_WIDTH && self.selected().is_some() {
+            let width = (body.width * 45 / 100).clamp(LIST_WIDTH.0, LIST_WIDTH.1);
             let [list, side] =
-                Layout::horizontal([Constraint::Fill(1), Constraint::Length(SIDE_WIDTH)])
-                    .areas(body);
+                Layout::horizontal([Constraint::Length(width), Constraint::Fill(1)]).areas(body);
             self.draw_list(frame, list);
             self.draw_side(frame, side);
             self.draw_mode(frame, area);
@@ -1495,13 +1602,14 @@ impl Screen for Dotfiles {
             KeyCode::Char('g') | KeyCode::Home => self.jump(false),
             KeyCode::Char('G') | KeyCode::End => self.jump(true),
             KeyCode::Char('.') => self.toggle_missing(),
-            KeyCode::Char('e') => return self.start_edit(),
-            KeyCode::Char('r') => self.ask_fix(Fix::Keep),
-            KeyCode::Char('p') => self.ask_fix(Fix::PutBack),
-            KeyCode::Char('a') => self.ask_add(),
-            KeyCode::Char('b') => self.open_backups(),
-            KeyCode::Char('d') => self.show_diff(),
-            KeyCode::Char('c') => self.start_configure(),
+            KeyCode::Enter => self.open_actions(),
+            KeyCode::Char('e') => return self.run_act(Act::Edit),
+            KeyCode::Char('r') => return self.run_act(Act::SaveMine),
+            KeyCode::Char('p') => return self.run_act(Act::UseSaved),
+            KeyCode::Char('a') => return self.run_act(Act::Add),
+            KeyCode::Char('b') => return self.run_act(Act::Backups),
+            KeyCode::Char('d') => return self.run_act(Act::Changes),
+            KeyCode::Char('c') => return self.run_act(Act::Configure),
             KeyCode::Char('x') => self.start_export(),
             _ => {}
         }
@@ -1535,6 +1643,7 @@ impl Screen for Dotfiles {
                 Action::None
             }
             Mode::Ask { .. }
+            | Mode::Actions(_)
             | Mode::Push { .. }
             | Mode::Backups { .. }
             | Mode::Restore { .. }
@@ -1579,17 +1688,16 @@ impl Screen for Dotfiles {
 
     fn hints(&self) -> &'static str {
         match &self.mode {
-            Mode::Browse => {
-                "↑↓ move · e edit · c configure · d diff · b backups · r keep · p put back · a add · x export · . missing · esc home · ? help"
-            }
+            Mode::Browse => "↑↓ move · enter actions · x export · . missing · esc home · ? help",
+            Mode::Actions(_) => "↑↓ move · enter choose · esc go back",
             Mode::Editing { .. } => "Waiting for your editor to close",
             Mode::Review(review) if matches!(review.checked, Checked::Failed(_)) => {
                 "e fix it · ↑↓ scroll · esc drop the change"
             }
             Mode::Review(_) => "y write · e edit again · ↑↓ scroll · esc drop the change",
-            Mode::Ask { fix: Fix::Keep, .. } => "y keep this version · ↑↓ scroll · esc go back",
+            Mode::Ask { fix: Fix::Keep, .. } => "y save it · ↑↓ scroll · esc go back",
             Mode::Ask { fix: Fix::Add, .. } => "y add it · ↑↓ scroll · esc go back",
-            Mode::Ask { .. } => "y put it back · ↑↓ scroll · esc go back",
+            Mode::Ask { .. } => "y use it · ↑↓ scroll · esc go back",
             Mode::Backups { .. } => "↑↓ move · enter show the change · esc go back",
             Mode::Restore { .. } => "y restore it · ↑↓ scroll · esc go back",
             Mode::Show { .. } => "↑↓ scroll · any other key go back",
@@ -1610,16 +1718,18 @@ impl Screen for Dotfiles {
         &[
             ("↑ ↓  j k", "Move selection"),
             ("g  G", "Jump to the first or last file"),
+            ("Enter", "Show what you can do with the file"),
             (
                 "e",
                 "Edit a copy in your editor, then check, review, and write it",
             ),
-            ("r", "Keep this version in chezmoi, when it differs"),
-            ("p", "Put chezmoi's version back, when it differs"),
-            ("a", "Add it to chezmoi, when chezmoi does not manage it"),
+            ("r", "Save my version in your dotfiles, when it changed"),
+            ("p", "Use the saved version, when it changed"),
+            ("a", "Add it to your dotfiles"),
+            ("c", "Configure its settings, for Git files"),
             (
                 "d",
-                "Show how it differs from its source file or last backup",
+                "Show the changes since it was saved, or since its last backup",
             ),
             ("b", "List its backups, then restore one"),
             ("x", "Export: review for secrets, commit, then push"),
@@ -1706,16 +1816,16 @@ mod tests {
         let text = render(&mut screen, 140, 30);
 
         assert!(text.contains("Dotfiles"));
-        assert!(text.contains("4 files found"));
+        assert!(text.contains("1 saved · 1 changed · 2 not saved"), "{text}");
         for group in ["Shell", "Git", "Terminal", "Tools"] {
             assert!(text.contains(group), "{group}\n{text}");
         }
         assert!(!text.contains("Editors"));
         assert!(text.find("Shell") < text.find("  Git "));
-        assert!(text.contains("in sync"));
-        assert!(text.contains("differs"));
-        assert!(text.contains("not in chezmoi"));
-        assert!(text.contains("may hold secrets"));
+        assert!(text.contains("✓ saved"));
+        assert!(text.contains("! changed"));
+        assert!(text.contains("+ not saved"));
+        assert!(text.contains("+ not saved · secret"));
         assert!(text.contains("kitty/kitty.conf"));
         assert!(!text.contains(".bashrc"));
     }
@@ -1726,9 +1836,10 @@ mod tests {
         let text = render(&mut screen, 140, 30);
 
         assert!(text.contains("~/.zshrc"));
-        assert!(text.contains("Source   dot_zshrc"));
-        assert!(text.contains("Check    zsh -n"));
-        assert!(text.contains("It matches its source file in chezmoi."));
+        assert!(text.contains("Saved as dot_zshrc"));
+        assert!(text.contains("Saved in your dotfiles. Both copies match."));
+        assert!(text.contains("Your dotfiles"));
+        assert!(text.contains("Folder   ~/.local/share/chezmoi"));
         assert!(text.contains("export EDITOR=nvim"));
     }
 
@@ -1738,7 +1849,7 @@ mod tests {
         press(&mut screen, KeyCode::Down);
         let text = render(&mut screen, 140, 30);
         assert!(text.contains("~/.gitconfig"));
-        assert!(text.contains("It differs from its source file in chezmoi."));
+        assert!(text.contains("Changed since it was saved."));
 
         press(&mut screen, KeyCode::Char('G'));
         let text = render(&mut screen, 140, 30);
@@ -1771,7 +1882,7 @@ mod tests {
 
         assert!(text.contains(".bashrc"));
         assert!(text.contains("Editors"));
-        assert!(text.contains("missing"));
+        assert!(text.contains("not on this Mac"));
         assert_eq!(
             screen
                 .selected()
@@ -1795,6 +1906,29 @@ mod tests {
     }
 
     #[test]
+    fn a_tall_wide_screen_fills_the_box_under_the_list() {
+        let (_dir, mut screen) = screen();
+        let text = render(&mut screen, 200, 50);
+        let rows: Vec<&str> = text.lines().collect();
+        let row_of = |needle: &str| {
+            rows.iter()
+                .position(|row| row.contains(needle))
+                .unwrap_or_else(|| panic!("{needle:?} missing:\n{text}"))
+        };
+        // The list is only as wide as it needs; the preview gets the rest.
+        let files = rows[1].find('┐').unwrap();
+        assert!(files <= usize::from(LIST_WIDTH.1) * 3, "{}", rows[1]);
+        assert!(row_of("Repo") < row_of("What the marks mean"));
+        assert!(row_of("What the marks mean") < row_of("Saved    none yet"));
+        assert!(
+            text.contains("+ not saved   not in your dotfiles yet"),
+            "{text}"
+        );
+        assert!(text.contains("secret        may hold a token: kept private"));
+        assert!(row_of("Kept in") >= rows.len() - 4, "{text}");
+    }
+
+    #[test]
     fn fits_every_size() {
         for (width, height) in view::SIZES {
             let (_dir, mut screen) = screen();
@@ -1802,7 +1936,7 @@ mod tests {
             assert!(text.contains("Files"), "{width}x{height}\n{text}");
             assert!(text.contains("zshrc"), "{width}x{height}\n{text}");
             if width >= MIN_SIDE_WIDTH {
-                assert!(text.contains(" 1 differs "), "{width}x{height}\n{text}");
+                assert!(text.contains("1 changed"), "{width}x{height}\n{text}");
             }
         }
     }
@@ -1837,7 +1971,7 @@ mod tests {
 
         press(&mut screen, KeyCode::Enter);
         assert!(!screen.is_dialog());
-        assert!(render(&mut screen, 140, 30).contains("differs"));
+        assert!(render(&mut screen, 140, 30).contains("! changed"));
     }
 
     #[test]
@@ -1876,16 +2010,19 @@ mod tests {
         press(&mut screen, KeyCode::Down);
         assert!(matches!(screen.start_edit(), Action::None));
         let text = render(&mut screen, 120, 30);
-        assert!(text.contains("Press r to keep this"), "{text}");
+        assert!(text.contains("Press Enter to save"), "{text}");
         press(&mut screen, KeyCode::Enter);
 
         press(&mut screen, KeyCode::Char('r'));
         let text = render(&mut screen, 120, 30);
-        assert!(text.contains("Keep this version of .gitconfig"), "{text}");
+        assert!(text.contains("Save my version of .gitconfig"), "{text}");
         assert!(text.contains("-     name = Someone"));
         assert!(text.contains("+     name = You"));
         press(&mut screen, KeyCode::Char('y'));
-        assert!(render(&mut screen, 120, 30).contains("chezmoi now keeps this version"));
+        assert!(
+            render(&mut screen, 120, 30)
+                .contains("Saved this version of ~/.gitconfig in your dotfiles")
+        );
         let source = screen.home.join(".local/share/chezmoi/dot_gitconfig");
         assert_eq!(
             fs::read_to_string(source).unwrap(),
@@ -1893,7 +2030,7 @@ mod tests {
         );
 
         press(&mut screen, KeyCode::Enter);
-        assert!(render(&mut screen, 140, 30).contains("in sync"));
+        assert!(render(&mut screen, 140, 30).contains("2 saved"));
     }
 
     #[test]
@@ -1905,11 +2042,11 @@ mod tests {
 
         press(&mut screen, KeyCode::Down);
         press(&mut screen, KeyCode::Down);
-        assert!(render(&mut screen, 140, 30).contains("a adds it"));
+        assert!(render(&mut screen, 140, 30).contains("Enter adds it"));
         press(&mut screen, KeyCode::Char('a'));
         let text = render(&mut screen, 120, 30);
         assert!(
-            text.contains("Add .config/kitty/kitty.conf to chezmoi"),
+            text.contains("Add .config/kitty/kitty.conf to your dotfiles"),
             "{text}"
         );
         assert!(
@@ -1920,7 +2057,7 @@ mod tests {
         press(&mut screen, KeyCode::Char('y'));
         let text = render(&mut screen, 120, 30);
         assert!(
-            text.contains("chezmoi now manages ~/.config/kitty/kitty.conf"),
+            text.contains("~/.config/kitty/kitty.conf is now in your dotfiles"),
             "{text}"
         );
         let source = screen
@@ -1929,7 +2066,55 @@ mod tests {
         assert_eq!(fs::read_to_string(source).unwrap(), "font_size 14\n");
 
         press(&mut screen, KeyCode::Enter);
-        assert!(render(&mut screen, 140, 30).contains("in sync"));
+        assert!(render(&mut screen, 140, 30).contains("2 saved"));
+    }
+
+    #[test]
+    fn enter_offers_only_what_can_be_done_with_the_file() {
+        let (_dir, mut screen) = screen();
+        press(&mut screen, KeyCode::Enter);
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains("Edit  e"), "{text}");
+        assert!(!text.contains("Save my version"));
+        press(&mut screen, KeyCode::Esc);
+        screen.back();
+
+        press(&mut screen, KeyCode::Down);
+        press(&mut screen, KeyCode::Enter);
+        let text = render(&mut screen, 120, 30);
+        for offered in [
+            "Save my version",
+            "Use the saved version",
+            "Show the changes",
+        ] {
+            assert!(text.contains(offered), "{offered}\n{text}");
+        }
+        assert!(!text.contains("Edit  e"), "{text}");
+        assert!(!text.contains("Configure Git settings"), "{text}");
+        press(&mut screen, KeyCode::Enter);
+        assert!(render(&mut screen, 120, 30).contains("Save my version of .gitconfig"));
+        screen.back();
+
+        press(&mut screen, KeyCode::Down);
+        press(&mut screen, KeyCode::Enter);
+        assert!(render(&mut screen, 120, 30).contains("Add to your dotfiles"));
+        press(&mut screen, KeyCode::Char('a'));
+        assert!(
+            render(&mut screen, 120, 30).contains("Add .config/kitty/kitty.conf to your dotfiles")
+        );
+    }
+
+    #[test]
+    fn enter_says_so_when_nothing_can_be_done() {
+        let (_dir, mut screen) = screen();
+        press(&mut screen, KeyCode::Char('.'));
+        press(&mut screen, KeyCode::Down);
+        press(&mut screen, KeyCode::Enter);
+        let text = render(&mut screen, 120, 40);
+        assert!(
+            text.contains("There is nothing neet can do with it."),
+            "{text}"
+        );
     }
 
     #[test]
@@ -1990,7 +2175,7 @@ mod tests {
         assert!(text.contains("Restore .zshrc"), "{text}");
         assert!(text.contains("- export EDITOR=hx"));
         assert!(text.contains("+ export EDITOR=nvim"));
-        assert!(text.contains("r keeps it there"));
+        assert!(text.contains("r saves it there"));
 
         press(&mut screen, KeyCode::Char('y'));
         assert!(render(&mut screen, 120, 30).contains("Saved ~/.zshrc"));

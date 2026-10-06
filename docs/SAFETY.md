@@ -251,7 +251,7 @@ min_age_days = 0
   2. Files that hold passwords or tokens: `.netrc`, `.git-credentials`, `.config/gh/hosts.yml`, and everything in `~/.aws`, `~/.docker`, and `~/.kube`.
   3. Everything in `~/.ssh` except `config`.
   4. Files a shell makes for itself, such as `.zcompdump`.
-* `.npmrc` can hold a token. It is marked **may hold secrets**, and starts left out of exports.
+* `.npmrc` can hold a token. It is marked **secret**, and starts left out of exports.
 
 ### What May Change
 
@@ -321,7 +321,7 @@ min_age_days = 0
 
 1. **The source folder:** `sourceDir` in chezmoi's config file, or `~/.local/share/chezmoi`, then the folder named in its `.chezmoiroot`, if there is one. The config file is `~/.config/chezmoi/chezmoi.toml` or `chezmoi.json`. A config in another format counts as unknown.
 2. **Each listed file's source file**, by chezmoi's naming: `dot_` for a leading `.`, and the attribute prefixes `private_`, `readonly_`, `executable_`, and `empty_`.
-3. **Whether it differs:** the source file and the file in your home folder are compared byte by byte. The screen says **in sync**, **differs from source**, or **not in chezmoi**.
+3. **Whether it differs:** the source file and the file in your home folder are compared byte by byte. The screen says **saved**, **changed**, or **not saved**.
 4. Source files that end in `.tmpl`, or start with `encrypted_`, `modify_`, `create_`, or `symlink_`, are view only. neet shows the source file, and never asks chezmoi what it would make.
 
 #### When neet may run chezmoi
@@ -330,6 +330,7 @@ min_age_days = 0
   1. The config file is one neet can read, and has no `hooks` section. A hook runs on every chezmoi command, even `chezmoi source-path`.
   2. Every `.chezmoiignore`, `.chezmoiremove`, and `.chezmoiexternal` file in the source folder, and everything in a `.chezmoiexternals` folder, is plain, or only uses `if`, `else`, `end`, `eq`, `ne`, `and`, `or`, `not`, and values that start with `.`. chezmoi renders these on almost every command, even ones that only name a single file, with or without `.tmpl` in their name.
   3. The file is not view only.
+  4. The file is not a link. chezmoi would replace the link with a plain file. For a link, neet writes the source file itself and says which command to run.
 
 | Command | When | Changes |
 | --- | --- | --- |
@@ -341,6 +342,7 @@ min_age_days = 0
 * `a` never adds a link: another tool, such as GNU Stow, may manage it.
 
 * `--force` lets chezmoi replace a file it did not write last, which it otherwise stops to ask about. neet has already shown the diff, checked the file did not change, and backed it up. It touches only the one file named.
+* neet names the file by its path in your home folder, such as `~/.zshrc`, never by where a link leads, since that is the path chezmoi knows.
 * After each command, neet checks the file now matches, and says so if it does not.
 * neet never runs `chezmoi status`, `diff`, `cat`, `managed`, `update`, or `apply` without a file. `status` without a file renders every template and runs `modify_` scripts. neet shows its own diff instead.
 * Templates are never changed or rendered by neet.

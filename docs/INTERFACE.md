@@ -362,54 +362,55 @@
 ## Dotfiles
 
 ```text
- Dotfiles ----------------------------------------------------------- chezmoi . you/dotfiles . 2 to commit . up to date
-+ Files ---------------------------------------------------------------++ .zprofile -----------------------------------+
-|   Name                         Size  Changed        Status           || Path     ~/.zprofile                         |
-|                                                                      || Source   dot_zprofile                        |
-|   Shell                                                              || Size     42 B                                |
-|     .zshrc                     96 B  today          in sync          || Changed  today                               |
-| >   .zprofile                  42 B  today          differs          || Mode     644                                 |
-|   Git                                                                || Check    zsh -n                              |
-|     .gitconfig                 19 B  today          in sync          ||                                              |
-|   SSH                                                                || It differs from its source file in chezmoi.  |
-|     .ssh/config                 7 B  today          view only        |+----------------------------------------------+
-|   Terminal                                                           |+ Preview -------------------------------------+
-|     kitty/kitty.conf           13 B  today          in sync          || eval "$(/opt/homebrew/bin/brew shellenv)"    |
-|     starship.toml              20 B  today          in sync          ||                                              |
-|   Tools                                                              ||                                              |
-|     .npmrc                      2 B  today          may hold secrets ||                                              |
-+------------------------------------------------------- 7 files found +|                                              |
-+ chezmoi -------------------------------------------------------------+|                                              |
-| Source   ~/.local/share/chezmoi                                      ||                                              |
-| May run  apply, re-add, and add, one file at a time                  ||                                              |
-|                                                                      ||                                              |
-|  4 in sync           matches its source file in chezmoi              ||                                              |
-|  1 differs           does not match its source file                  ||                                              |
-|  1 view only         neet will not change it; the details say why    ||                                              |
-|  1 may hold secrets  preview hidden, left out of exports             ||                                              |
-+----------------------------------------------------------------------+|                                              |
-                                                                        +----------------------------------------------+
+ Dotfiles ----------------------------------------------------------------- 4 saved . 1 changed . 1 not saved
++ Files -----------------------------------------------------++ .gitconfig ----------------------------------+
+|   Shell                                                    || Path     ~/.gitconfig                        |
+|     .zshrc           ✓ saved                               || Saved as dot_gitconfig                       |
+|     .zprofile        ✓ saved                               || Changed  today                               |
+|   Git                                                      || Backups  0                                   |
+| >   .gitconfig       ! changed                             ||                                              |
+|   SSH                                                      || ! Changed since it was saved. Enter saves    |
+|     .ssh/config      . view only                           || this version or uses the saved one.          |
+|   Terminal                                                 |+----------------------------------------------+
+|     .tmux.conf       + not saved                           |+ Preview -------------------------------------+
+|     starship.toml    ✓ saved                               || [user]                                       |
+|   Tools                              + .gitconfig ------------------+ = Home Version                      |
+|     .npmrc           ✓ saved . secret| > Save my version        r   |                                     |
++--------------------------------------|   Use the saved version  p   |                                     |
++ Your dotfiles -----------------------|   Show the changes       d   |                                     |
+| Repo     you/dotfiles . main         +------------------------------+                                     |
+| Export   nothing waiting                                   ||                                              |
+| Push     up to date                                        ||                                              |
+| Folder   ~/.local/share/chezmoi                            ||                                              |
++------------------------------------------------------------++----------------------------------------------+
 ```
 
 * What may change, and how, is in [SAFETY.md](SAFETY.md#dotfiles).
-* **Top line:** whether chezmoi is in use, the repository, how many files wait to be committed, and whether it is ahead of or behind the remote, as last fetched. It says so when neet will not run chezmoi.
-* **Files:** the listed files that exist, grouped by shell, Git, SSH, editors, terminal, and tools. `.` shows the missing ones too. Files in `~/.config` are shown without it.
-  1. Size and when it last changed.
-  2. Status: **in sync** in green, **differs** from its source file in yellow, **not in chezmoi**, **view only** in yellow with the reason in the details, and **may hold secrets** in red.
-* **chezmoi**, below the list when there is room: the source folder, what neet may run, and how many files have each status, with what it means.
-* **Right, from 120 columns:** the selected file: its path, where a link leads, its source file in chezmoi, size, when it changed, permissions, its check, and how many backups it has. Below, what its status means. Under that, the start of the file. A file that may hold a token never shows its preview.
-* Below 120 columns, the details sit under the list, and the preview is hidden.
+* "Saved" means saved in your dotfiles: chezmoi keeps a copy of the file, its source file, in a Git repository.
+* **Top line:** how many files are saved, changed, and not saved. It says so when chezmoi is not found.
+* **Files:** the listed files that exist, grouped by shell, Git, SSH, editors, terminal, and tools. `.` shows the missing ones too. Files in `~/.config` are shown without it. Each has a status:
+  1. **✓ saved** in green: it matches its saved copy.
+  2. **! changed** in yellow: it differs from its saved copy.
+  3. **\+ not saved** in blue: chezmoi has no copy of it yet.
+  4. **· view only** in yellow, with the reason in the details, **· left out** when `.chezmoiignore` names it, and **· not on this Mac**.
+  5. **secret** in red after the status: it may hold a token, so its preview is hidden and it starts left out of exports.
+* **Your dotfiles**, below the list down to the bottom, when there is room. At its top: the repository and branch, whether files wait to be exported or pushed, and chezmoi's folder, and why neet will not run chezmoi when it will not. In the middle: **What the marks mean**, for the marks the list shows. At its bottom: **Backups**, how many neet keeps of the listed files, the newest, and where they are. When room is short, Backups goes first, then the legend.
+* **The list** is 45% of the width, between 48 and 64 columns, so its rows are never mostly empty.
+* **Right, from 96 columns,** taking the rest of the width: the selected file: its path, where a link leads, its saved copy, when it changed, and how many backups it has. Below, what its status means and what to do. Under that, the start of the file. A file that may hold a token never shows its preview.
+* Below 96 columns, the details sit under the list, and the preview is hidden.
+* **`Enter`** opens a small menu of only what can be done with the selected file, each with its key. A file that changed offers **Save my version**, **Use the saved version**, and **Show the changes**. One that is saved offers **Edit**, and **Configure** for Git files. One that is not saved also offers **Add to your dotfiles**. The keys also work straight from the list.
 
 | Key | Action |
 | --- | --- |
 | `Up` / `Down` | Move the selection. Group names are skipped. |
 | `g` / `G` | Jump to the first or last file. |
+| `Enter` | Show what can be done with the file. |
 | `e` | Edit a copy in your editor, then review it. See [Edit](#edit). |
-| `r` | When the file differs from its source file: keep this version in chezmoi. |
-| `p` | When the file differs from its source file: put chezmoi's version back. |
-| `a` | When chezmoi does not manage the file: add it. See [Add To chezmoi](#add-to-chezmoi). |
+| `r` | When the file changed: save this version in your dotfiles. See [Save Or Use The Saved Version](#save-or-use-the-saved-version). |
+| `p` | When the file changed: use the saved version. |
+| `a` | When the file is not saved: add it. See [Add To Your Dotfiles](#add-to-your-dotfiles). |
 | `c` | Change the file's settings one at a time, for Git files. See [Configure](#configure). |
-| `d` | Show how the file differs from its source file, or else what changed since its last backup. Any other key goes back. |
+| `d` | Show how the file differs from its saved copy, or else what changed since its last backup. Any other key goes back. |
 | `b` | List its backups, newest first. `Enter` shows what restoring one changes, then `y` restores it. |
 | `x` | Export: review for secrets, commit, then push. See [Export](#export). |
 | `.` | Show or hide the files that are not on this Mac. |
@@ -435,7 +436,7 @@
 ```
 
 * `e` opens a copy of the file in your editor: `$VISUAL`, then `$EDITOR`, then `nano`. neet waits until it closes.
-* With chezmoi, the copy is of the source file, and a file that differs from it must be kept or put back first.
+* With chezmoi, the copy is of the source file, and a file that changed must be saved, or the saved version used, first.
 * When the editor closes with changes, the review shows:
   1. **Writes:** the file, or the source file and then `chezmoi apply` for it. When neet may not run chezmoi, it says to run `chezmoi apply` yourself.
   2. **Backup:** where the old version goes.
@@ -506,21 +507,21 @@
 * Each setting shows its value in the file, or **not set**, and what it does. A value about to change is yellow.
 * `Enter` changes the selected setting: on and off settings go on, off, then not set. Text settings open a box to type in, where `Enter` keeps it, `Esc` cancels, and an empty value means not set.
 * **Changes** lists every change so far. `y` makes them all on the copy with Git, then opens the same review as [Edit](#edit), with the check and the diff. `Esc` drops them all.
-* As with editing, a file that differs from its source file in chezmoi must be kept or put back first.
+* As with editing, a file that changed must be saved, or the saved version used, first.
 
 ### Backups
 
 * `b` lists the file's backups in a box, newest first, each with the time it was saved, in UTC, and its size.
 * `Enter` shows the restore question: the time of the backup, that the file as it is now is backed up first, and the diff from now to the backup. Only `y` goes ahead.
-* With chezmoi, a restored file may then differ from its source file. `r` keeps it there.
+* With chezmoi, a restored file may then differ from its saved copy. `r` saves it there.
 
-### Keep Or Put Back
+### Save Or Use The Saved Version
 
-* `r` and `p` show the same layout as the review: what is kept or replaced, the backup, and the diff. Only `y` goes ahead.
+* `r` and `p` show the same layout as the review: what is saved or replaced, the backup, and the diff. Only `y` goes ahead.
 * `r` makes chezmoi's source file match the file in your home folder, with `chezmoi re-add`, or by writing the source file when neet may not run chezmoi.
 * `p` puts chezmoi's version back with `chezmoi apply`. When neet may not run chezmoi, it says which command to run instead.
 
-### Add To chezmoi
+### Add To Your Dotfiles
 
 * `a` shows the same layout: the source file it adds, such as `dot_tmux.conf`, how, and the whole file as new lines. Only `y` goes ahead.
 * It runs `chezmoi add` for that one file, or writes the source file itself, named as chezmoi would, when neet may not run chezmoi.
