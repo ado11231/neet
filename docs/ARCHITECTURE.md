@@ -130,6 +130,7 @@ selected rules, a picked item, or an app
 | The free space Finder shows | `osascript` asking macOS, part of macOS |
 | Terminal screens | `ratatui` |
 | Reading rules | `serde` and `toml` |
+| Changing one TOML setting and keeping comments and layout | `toml_edit` |
 | Reading simulator runtimes | `xcrun simctl`, part of Xcode, read with `serde_json` |
 | Finding the temporary folder | `getconf`, part of macOS |
 | Temporary folders in tests | `tempfile` |

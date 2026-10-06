@@ -306,9 +306,18 @@ min_age_days = 0
 | Program | Settings | Written with |
 | --- | --- | --- |
 | Git | `user.name`, `user.email`, `init.defaultBranch`, `core.editor`, `pull.rebase`, `push.autoSetupRemote` | `git config --file <copy> -- <key> <value>`, or `--unset-all` to remove one |
+| tmux | `mouse`, `history-limit`, `base-index`, `renumber-windows`, `mode-keys`, `escape-time`, `status-position`, `default-terminal` | neet, line by line |
+| Starship | `add_newline`, `line_break.disabled`, `character.success_symbol`, `character.error_symbol`, `directory.truncation_length`, `cmd_duration.min_time`, `command_timeout`, `scan_timeout` | neet, with a TOML editor that keeps comments and layout |
 
 * Changes are made on the edit copy, then go through the same check, diff, backup, and chezmoi steps as an edit.
-* Values are read with `git config --file <copy> --list`, which reads only that file, not the files it includes. A value with more than one line is refused.
+* Values are checked before anything is written. Numbers must be whole numbers, settings with choices take only those, and a value with more than one line is refused.
+* **Git:** values are read with `git config --file <copy> --list`, which reads only that file, not the files it includes.
+* **tmux:** neet never runs tmux. It reads and changes only plain lines: `set`, `set-option`, `setw`, or `set-window-option`, with `-g` or `-s`, then the option and one value. Lines that append (`-a`), name a target (`-t`), hold more than one command, continue onto the next line, or sit inside `%if` blocks are left alone. The last plain line for an option wins, as in tmux.
+  1. **Change:** only the value on the last line for the option is replaced, so the line keeps its spacing and any comment after it. With no line, one is added at the end, such as `set -g mouse on`, `set -s escape-time 0`, or `setw -g mode-keys vi`.
+  2. **Remove:** every plain line for the option is taken out.
+  3. A value with spaces or other characters tmux reads specially is written in single quotes. A value with a `'` in it is refused, and is changed by editing instead.
+  4. There is no check for tmux files: tmux has no way to read a file without starting a server.
+* **Starship:** `a.b` means the key `b` in the table `[a]`. Changing a value keeps its spacing and comment, and adds a missing table at the end. Removing a value takes out its line, and only when what is left means the same, less that value, so the comments above it stay. A key that holds a table, or a table that is a plain value, is refused, and is changed by editing. The file is checked with the TOML reader, as when editing.
 * More programs are added one at a time. Each is listed here before it ships.
 * Shell settings, when added, only go in a block neet owns, between `# >>> neet >>>` and `# <<< neet <<<`. Lines outside it are never changed.
 
