@@ -114,6 +114,9 @@ pub struct Edit {
     source: Option<Source>,
     /// The file's path from the home folder, for the command to run yourself
     shown: String,
+    /// Its path in the home folder, as chezmoi knows it. `home` holds where
+    /// it really is, which differs for a link.
+    target: PathBuf,
 }
 
 impl Edit {
@@ -127,7 +130,7 @@ impl Edit {
         let source = match &file.managed {
             Some(Managed::Differs(_)) => return Err(differs()),
             Some(Managed::InSync(source)) => {
-                let source = open_source(source, chezmoi)?;
+                let source = open_source(source, chezmoi, file)?;
                 if source.opened.contents() != home.contents() {
                     return Err(
                         "It no longer matches its source file in chezmoi. Open Dotfiles again."
@@ -144,6 +147,7 @@ impl Edit {
             home,
             source,
             shown: format!("~/{}", file.known.path),
+            target: file.path.clone(),
         })
     }
 
@@ -254,7 +258,7 @@ impl Edit {
         Ok(
             match run_chezmoi(
                 &["apply", "--force", "--exclude=scripts,externals"],
-                self.home.path(),
+                &self.target,
             ) {
                 Ok(()) if fs::read(self.home.path()).is_ok_and(|now| now == contents) => {
                     Done::Applied
@@ -311,7 +315,7 @@ pub fn keep_home(
             now,
         )
         .map_err(|error| plain(&error.into()))?;
-    run_chezmoi(&["re-add"], home.path())?;
+    run_chezmoi(&["re-add"], &file.path)?;
     if fs::read(source.opened.path()).is_ok_and(|now| now == home.contents()) {
         Ok(Done::Kept)
     } else {
@@ -347,7 +351,7 @@ pub fn put_back(
         .map_err(|error| plain(&error.into()))?;
     run_chezmoi(
         &["apply", "--force", "--exclude=scripts,externals"],
-        home.path(),
+        &file.path,
     )?;
     if fs::read(home.path()).is_ok_and(|now| now == source.opened.contents()) {
         Ok(Done::Applied)
@@ -497,7 +501,10 @@ fn open_home(file: &Dotfile) -> Result<Opened, String> {
     Opened::open(&file.path).map_err(|error| format!("It could not be opened: {error}."))
 }
 
-fn open_source(path: &Path, chezmoi: Option<&Chezmoi>) -> Result<Source, String> {
+/// chezmoi's source file for `file`. neet may run chezmoi for it only when
+/// chezmoi's config allows, and `file` is not a link: chezmoi would replace a
+/// link with a plain file.
+fn open_source(path: &Path, chezmoi: Option<&Chezmoi>, file: &Dotfile) -> Result<Source, String> {
     let chezmoi = chezmoi.ok_or("chezmoi's folder was not found.")?;
     let opened = Opened::open(path)
         .map_err(|error| format!("Its source file could not be opened: {error}."))?;
@@ -505,7 +512,8 @@ fn open_source(path: &Path, chezmoi: Option<&Chezmoi>) -> Result<Source, String>
     Ok(Source {
         opened,
         name: format!("chezmoi/{}", relative.display()),
-        may_run: chezmoi.may_not_run.is_none(),
+        may_run: chezmoi.may_not_run.is_none()
+            && file.found.as_ref().is_none_or(|found| found.link.is_none()),
     })
 }
 
@@ -514,7 +522,7 @@ fn open_differing(file: &Dotfile, chezmoi: Option<&Chezmoi>) -> Result<(Opened, 
         return Err("It does not differ from a source file in chezmoi.".to_string());
     };
     let home = open_home(file)?;
-    let source = open_source(source, chezmoi)?;
+    let source = open_source(source, chezmoi, file)?;
     Ok((home, source))
 }
 
@@ -824,6 +832,33 @@ mod tests {
         let mut link = dotfile(&home, Some(Managed::No));
         link.found.as_mut().unwrap().link = Some(home.join("elsewhere"));
         assert!(add(&link, Some(&chezmoi)).unwrap_err().contains("link"));
+    }
+
+    #[test]
+    fn never_runs_chezmoi_for_a_link() {
+        let (_dir, home, backups) = setup();
+        // chezmoi's config allows running it, but the file is a link, which
+        // chezmoi would replace with a plain file.
+        let chezmoi = Chezmoi {
+            may_not_run: None,
+            ..chezmoi(&home)
+        };
+        let source = chezmoi.source.join("dot_zshrc");
+        fs::write(&source, "source\n").unwrap();
+        let mut file = dotfile(&home, Some(Managed::Differs(source.clone())));
+        file.found.as_mut().unwrap().link = Some(home.join("dotfiles/zshrc"));
+
+        assert_eq!(
+            keep_home(&file, Some(&chezmoi), &backups, SystemTime::now()),
+            Ok(Done::Kept)
+        );
+        assert_eq!(fs::read_to_string(&source).unwrap(), "old\n");
+        let error = put_back(&file, Some(&chezmoi), &backups, SystemTime::now()).unwrap_err();
+        assert!(error.contains("chezmoi apply ~/.zshrc"), "{error}");
+
+        file.managed = Some(Managed::InSync(source));
+        let edit = Edit::begin(&file, Some(&chezmoi)).unwrap();
+        assert!(!edit.applies());
     }
 
     #[test]

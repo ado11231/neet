@@ -281,11 +281,19 @@ impl Dotfiles {
 
     /// How many backups neet keeps of the listed files, the newest, and where
     fn backup_lines(&self) -> Vec<Line<'static>> {
+        // Backups of each file, and of its source file in chezmoi
         let all: Vec<Backup> = self
             .listing
             .files
             .iter()
-            .filter_map(|file| self.backups.list(file.known.path).ok())
+            .flat_map(|file| {
+                let source = self
+                    .source_name(file)
+                    .map(|source| format!("chezmoi/{source}"));
+                [Some(file.known.path.to_string()), source]
+            })
+            .flatten()
+            .filter_map(|name| self.backups.list(&name).ok())
             .flatten()
             .collect();
         let newest = all.iter().max_by(|a, b| a.saved.cmp(&b.saved));
@@ -633,6 +641,20 @@ impl Dotfiles {
         )
     }
 
+    /// Why neet will not run chezmoi for `file`, if it will not: chezmoi's
+    /// config or templates, or the file being a link, which chezmoi would
+    /// replace with a plain file
+    fn why_not_run(&self, file: &Dotfile) -> Option<String> {
+        let chezmoi = self.listing.chezmoi.as_ref()?;
+        if let Some(reason) = &chezmoi.may_not_run {
+            return Some(reason.clone());
+        }
+        file.found
+            .as_ref()
+            .and_then(|found| found.link.as_ref())
+            .map(|_| "it is a link, which chezmoi would replace with a plain file".to_string())
+    }
+
     /// `Enter`: shows what can be done with the selected file.
     fn open_actions(&mut self) {
         let Some(index) = self.selected() else {
@@ -709,11 +731,7 @@ impl Dotfiles {
             return;
         };
         if fix == Fix::PutBack
-            && let Some(reason) = self
-                .listing
-                .chezmoi
-                .as_ref()
-                .and_then(|chezmoi| chezmoi.may_not_run.as_ref())
+            && let Some(reason) = self.why_not_run(file)
         {
             self.mode = change::done(
                 Err(format!(
@@ -1325,11 +1343,7 @@ impl Dotfiles {
         let file = &self.listing.files[index];
         let shown = format!("~/{}", file.known.path);
         let source = self.source_name(file).unwrap_or_default();
-        let may_run = self
-            .listing
-            .chezmoi
-            .as_ref()
-            .is_some_and(|chezmoi| chezmoi.may_not_run.is_none());
+        let may_run = self.why_not_run(file).is_none();
         let field = |label: &str, value: String| {
             Line::from(vec![
                 Span::raw(format!("{label:<9}")).bold(),

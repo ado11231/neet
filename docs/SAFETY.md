@@ -330,6 +330,7 @@ min_age_days = 0
   1. The config file is one neet can read, and has no `hooks` section. A hook runs on every chezmoi command, even `chezmoi source-path`.
   2. Every `.chezmoiignore`, `.chezmoiremove`, and `.chezmoiexternal` file in the source folder, and everything in a `.chezmoiexternals` folder, is plain, or only uses `if`, `else`, `end`, `eq`, `ne`, `and`, `or`, `not`, and values that start with `.`. chezmoi renders these on almost every command, even ones that only name a single file, with or without `.tmpl` in their name.
   3. The file is not view only.
+  4. The file is not a link. chezmoi would replace the link with a plain file. For a link, neet writes the source file itself and says which command to run.
 
 | Command | When | Changes |
 | --- | --- | --- |
@@ -341,6 +342,7 @@ min_age_days = 0
 * `a` never adds a link: another tool, such as GNU Stow, may manage it.
 
 * `--force` lets chezmoi replace a file it did not write last, which it otherwise stops to ask about. neet has already shown the diff, checked the file did not change, and backed it up. It touches only the one file named.
+* neet names the file by its path in your home folder, such as `~/.zshrc`, never by where a link leads, since that is the path chezmoi knows.
 * After each command, neet checks the file now matches, and says so if it does not.
 * neet never runs `chezmoi status`, `diff`, `cat`, `managed`, `update`, or `apply` without a file. `status` without a file renders every template and runs `modify_` scripts. neet shows its own diff instead.
 * Templates are never changed or rendered by neet.
