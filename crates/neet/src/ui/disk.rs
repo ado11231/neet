@@ -502,7 +502,14 @@ fn about(tree: &Tree, id: NodeId, browser: &Browser, width: usize) -> Vec<Line<'
         }
         NodeKind::Symlink => lines.push(field("Type", Span::raw("a shortcut, not followed"))),
         NodeKind::File | NodeKind::Other => {
-            let (kind, about) = super::large::kind_of(&node.name.to_string_lossy());
+            let name = node.name.to_string_lossy();
+            let (kind, about) = super::large::kind_of(&name);
+            // Quick Clean can prune & reset Docker, so say where to go
+            let about = if name == "Docker.raw" {
+                Some("Docker's disk image. Clear it from Quick Clean, Docker disk image.")
+            } else {
+                about
+            };
             lines.push(field("Type", Span::raw(kind)));
             hint = hint.or(about);
         }
@@ -561,7 +568,7 @@ const MEANINGS: &[(&str, &str)] = &[
     ),
     (
         "Library/Caches",
-        "Files apps can make again. Clean empties these.",
+        "Files apps can make again. Deep Clean empties these.",
     ),
     (
         "Library/Application Support",
@@ -579,7 +586,10 @@ const MEANINGS: &[(&str, &str)] = &[
         "Library/Developer",
         "Xcode builds, simulators, and device support files.",
     ),
-    ("Library/Logs", "Logs apps write. Clean can empty old ones."),
+    (
+        "Library/Logs",
+        "Logs apps write. Deep Clean can empty old ones.",
+    ),
     ("Library/Messages", "Your Messages history and attachments."),
     ("Library/Mail", "Your Mail messages and attachments."),
     (
