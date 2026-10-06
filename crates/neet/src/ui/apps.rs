@@ -471,8 +471,8 @@ fn inner_widths(area: Rect) -> (usize, usize) {
 /// when there is room for both
 fn split_below(area: Rect, rows: usize) -> (Rect, Option<Rect>) {
     let rows = u16::try_from(rows).unwrap_or(u16::MAX);
-    // Border, header, and gap above the rows, and the border below
-    let table = rows.saturating_add(4);
+    // Border and header above the rows, and the border below
+    let table = rows.saturating_add(3);
     if area.height < table.saturating_add(BOXES) {
         return (area, None);
     }
@@ -579,8 +579,7 @@ impl Screen for RemoveApp {
                 Cell::from("Folder"),
                 Cell::from("App ID"),
             ])
-            .style(super::visual::HEADING)
-            .bottom_margin(1);
+            .style(super::visual::HEADING);
         let measuring = if self.measuring.is_some() {
             " · measuring…"
         } else {
@@ -1056,14 +1055,13 @@ impl Screen for AppFiles {
             .collect();
         let header = columns
             .row([
-                Cell::from(""),
+                super::visual::check_header(),
                 Cell::from(Line::from("Size").right_aligned()),
                 Cell::from("Name"),
                 Cell::from("Folder"),
                 Cell::from("Kind"),
             ])
-            .style(super::visual::HEADING)
-            .bottom_margin(1);
+            .style(super::visual::HEADING);
         let table = Table::new(rows, columns.widths())
             .header(header)
             .column_spacing(2)

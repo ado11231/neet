@@ -145,6 +145,12 @@ pub fn hanging(
     lines
 }
 
+/// The header over a column of checkboxes: a check mark, in the
+/// header's blue
+pub fn check_header() -> Cell<'static> {
+    Cell::from(Line::from(" ✓ "))
+}
+
 /// From this width, [`side_by_side`] puts its two stacks next to each other
 pub const SIDE_BY_SIDE: u16 = 100;
 
