@@ -297,11 +297,16 @@
 |        Size            Last changed   Name          Folder           |  | Type     Virtual disk                     |
 |                                                                      |  |                                           |
 | >   11.0 GB  ########  28 days ago    Docker.raw    ~/Library/...    |  | Used by a virtual machine or Docker. Free |
-|      4.3 GB  ###.....  2 months ago   weights.bin   ~/Library/...    |  | it from the app that made it.             |
-|      3.1 GB  ##......  6 months ago   Xcode_16.dmg  ~/Downloads      |  +------------------ Enter shows it in Disk +
+|      4.3 GB  ###.....   2 months ago  weights.bin   ~/Library/...    |  | it from the app that made it.             |
+|      3.1 GB  ##......   6 months ago  Xcode_16.dmg  ~/Downloads      |  +------------------ Enter shows it in Disk +
 |                                                                      |  + Where they are --------------------------+
+|                                                                      |  | By folder                                 |
 |                                                                      |  |   11.0 GB ###### ~/Library/Containers     |
-+------------------------------------------- 3 files . 18.4 GB in all -+  |    3.1 GB ##.... ~/Downloads              |
+|                                                                      |  |    3.1 GB ##.... ~/Downloads              |
+|                                                                      |  |                                           |
+|                                                                      |  | By type                                   |
+|                                                                      |  |   11.0 GB ###### Virtual disk      1 file |
++------------------------------------------- 3 files . 18.4 GB in all -+  |    4.3 GB ##.... Data or model     1 file |
                                                                           +-------------------------------------------+
 ```
 
@@ -309,12 +314,12 @@
 * **Top:** both filters, with every choice listed and the current one green in brackets. Below 100 columns of panel width, show only the active size and age with `s` and `a` to change them. Starts at 100 MB and any age.
 * **Files, largest first:** a table of files from the scan. Folders are not listed.
   1. Its size, and a bar of it against the largest file, both red from 5 GB and yellow from 1 GB.
-  2. When it last changed. Files unchanged for a year or more have a magenta date.
-  3. Its name and folder. A long name is shortened in the middle, so its extension shows. A long folder keeps its start, such as `~/Library`, and its last folders.
+  2. When it last changed, such as ` 3 days ago`. The number is right aligned, so the ones line up with the ones of `39 days ago` and every unit starts in the same place. Files unchanged for a year or more have a magenta date.
+  3. Its name and folder. The name column is only as wide as the longest name, up to 40 columns, and the folder gets the rest. A long name is shortened in the middle, so its extension shows. A long folder keeps its start, such as `~/Library`, and its last folders.
   4. The bottom edge shows how many files match and their total size. Up to 1,000 are listed, and the edge says when only the largest are shown.
   5. When no file matches, the box says so in the middle, with the keys to widen the filters.
-* **Right, from 120 columns:** the selected file, titled with its name: its folder, size, share of the files found, when it changed, its type from the extension, and a plain hint for common types, such as installers, archives, videos, and virtual disks. Below it, **Where they are** adds the files up by folder, largest first. `~/Library` is split one level further, since most large files are there.
-* Below 120 columns, the selected path and age sit below the file table when at least 18 rows are available.
+* **Right, from 120 columns:** the selected file, titled with its name: its folder, size, share of the files found, when it changed, its type from the extension, and a plain hint for common types, such as installers, archives, videos, program code, caches, and virtual disks. Below it, **Where they are** adds the files up **By folder**, largest first, with `~/Library` split one level further, since most large files are there. Under the folders, when there is room, **By type** adds them up by type, with how many files of each. Files of no known type count as **Other**.
+* Below 120 columns, a Selected box sits below the file table when at least 18 rows are available: the file's name, its folder, and when it changed and its type.
 * Until the scan finishes, the screen shows the loading box.
 
 | Key | Action |
@@ -555,7 +560,8 @@
 
 * Drafts for the rest of [Dotfiles](#dotfiles).
 
-| Key | Action |
+| Feature | Layout |
 | --- | --- |
-| `a` | Let chezmoi manage the file. |
+| Start a repository | Without chezmoi, `x` offers to start a Git repository in chezmoi's layout, then add the chosen files to it. |
+| More Configure programs | Settings for more programs than Git, the same way as Git. |
 

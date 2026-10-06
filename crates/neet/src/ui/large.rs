@@ -56,6 +56,10 @@ const FOLDER_BAR: u16 = 6;
 /// Width of the last changed column, such as `11 months ago`
 const AGE_WIDTH: u16 = 13;
 
+/// The name column is at most this wide, and long names are shortened in
+/// the middle.
+const MAX_NAME_WIDTH: u16 = 40;
+
 /// Space between columns
 const GAP: u16 = 2;
 
@@ -220,12 +224,36 @@ impl LargeFiles {
             found.iter().map(|&id| format::size(tree.get(id).own_size)),
         )
         .max(SIZE_WIDTH);
-        let columns = super::visual::Columns::new(
+        let mut columns = super::visual::Columns::new(
             area.width,
             [(sizes, 0), (BAR_WIDTH, 0), (AGE_WIDTH, 0), (18, 2), (18, 3)],
             &[1, 4, 2],
             true,
         );
+        // Names are usually short, so the name column is only as wide as the
+        // longest, and the folders get the rest.
+        let names = format::column_width(
+            "Name",
+            found
+                .iter()
+                .take(MAX_ROWS)
+                .map(|&id| tree.get(id).name.to_string_lossy().into_owned()),
+        )
+        .clamp(18, MAX_NAME_WIDTH);
+        if columns.width(3) > usize::from(names) {
+            columns = super::visual::Columns::new(
+                area.width,
+                [
+                    (sizes, 0),
+                    (BAR_WIDTH, 0),
+                    (AGE_WIDTH, 0),
+                    (names, 0),
+                    (18, 1),
+                ],
+                &[1, 4, 2],
+                true,
+            );
+        }
         let largest = found.first().map_or(0, |&id| tree.get(id).own_size);
         let now = SystemTime::now();
         let rows: Vec<Row> = found
@@ -320,46 +348,127 @@ impl LargeFiles {
         Self::draw_where(frame, places, tree, found);
     }
 
-    /// Where the files found are, by folder, largest first
+    /// Where the files found are, by folder, and what kinds of file they
+    /// are, each largest first. The folders take the room the kinds leave.
     fn draw_where(frame: &mut Frame, area: Rect, tree: &Tree, found: &[NodeId]) {
-        let block = super::visual::block()
-            .title(" Where they are ")
-            .padding(Padding::horizontal(1));
         let groups = by_folder(tree, found);
         if groups.is_empty() {
+            let block = super::visual::block()
+                .title(" Where they are ")
+                .padding(Padding::horizontal(1));
             let inner = block.inner(area);
             frame.render_widget(block, area);
             centered(frame, inner, "Nothing to list.");
             return;
         }
         let width = usize::from(area.width.saturating_sub(4));
-        let rows = usize::from(area.height.saturating_sub(2));
-        let largest = groups.first().map_or(0, |(_, size)| *size);
-        let mut lines: Vec<Line> = groups
-            .iter()
-            .take(rows)
-            .map(|(folder, size)| {
-                Line::from(vec![
-                    format::size_span(*size, format!("{:>9} ", format::size(*size))),
-                    format::size_bar(*size, largest, usize::from(FOLDER_BAR)),
-                    Span::raw(" "),
-                    Span::raw(format::shorten_path(
-                        folder,
-                        width.saturating_sub(11 + usize::from(FOLDER_BAR)),
-                    )),
-                ])
-            })
-            .collect();
-        if groups.len() > lines.len() && !lines.is_empty() {
-            lines.pop();
-            lines.push(Line::from(format!(
-                "{:>9} and {} more",
-                "",
-                format::count(u64::try_from(groups.len() - lines.len()).unwrap_or(u64::MAX))
-            )));
+        let kinds = kind_lines(tree, found, width);
+        let inner = usize::from(area.height.saturating_sub(2));
+        // The heading, then a folder a row. The kinds go below when there
+        // is room for them and at least a few folders.
+        let with_kinds = inner.saturating_sub(kinds.len() + 1) >= 5;
+        let rows = if with_kinds {
+            inner - kinds.len() - 2
+        } else {
+            inner.saturating_sub(1)
+        };
+        let mut sections = vec![folder_lines(&groups, width, rows)];
+        if with_kinds {
+            sections.push(kinds);
         }
-        frame.render_widget(Paragraph::new(lines).block(block), area);
+        super::visual::sections(frame, area, " Where they are ", sections);
     }
+}
+
+/// The heading, and the folders that fit in `rows`, the last row saying how
+/// many more there are
+fn folder_lines(groups: &[(String, u64)], width: usize, rows: usize) -> Vec<Line<'static>> {
+    let largest = groups.first().map_or(0, |(_, size)| *size);
+    let mut lines: Vec<Line<'static>> = groups
+        .iter()
+        .take(rows)
+        .map(|(folder, size)| {
+            Line::from(vec![
+                format::size_span(*size, format!("{:>9} ", format::size(*size))),
+                format::size_bar(*size, largest, usize::from(FOLDER_BAR)),
+                Span::raw(" "),
+                Span::raw(format::shorten_path(
+                    folder,
+                    width.saturating_sub(11 + usize::from(FOLDER_BAR)),
+                )),
+            ])
+        })
+        .collect();
+    if groups.len() > lines.len() && !lines.is_empty() {
+        lines.pop();
+        lines.push(Line::from(format!(
+            "{:>9} and {} more",
+            "",
+            format::count(u64::try_from(groups.len() - lines.len()).unwrap_or(u64::MAX))
+        )));
+    }
+    lines.insert(0, Line::from("By folder").style(super::visual::HEADING));
+    lines
+}
+
+/// The heading, and the files found added up by kind, largest first, with
+/// how many of each
+fn kind_lines(tree: &Tree, found: &[NodeId], width: usize) -> Vec<Line<'static>> {
+    let mut kinds: Vec<(&'static str, u64, u64)> = Vec::new();
+    for &id in found {
+        let node = tree.get(id);
+        let (kind, _) = kind_of(&node.name.to_string_lossy());
+        match kinds.iter_mut().find(|(name, ..)| *name == kind) {
+            Some((_, size, count)) => {
+                *size += node.own_size;
+                *count += 1;
+            }
+            None => kinds.push((kind, node.own_size, 1)),
+        }
+    }
+    kinds.sort_by(|a, b| Reverse(a.1).cmp(&Reverse(b.1)).then_with(|| a.0.cmp(b.0)));
+    let largest = kinds.first().map_or(0, |(_, size, _)| *size);
+    let mut lines = vec![Line::from("By type").style(super::visual::HEADING)];
+    lines.extend(kinds.into_iter().map(|(kind, size, count)| {
+        let files = if count == 1 { "file" } else { "files" };
+        let count = format!("{:>5} {files:<5}", format::count(count));
+        let name = width.saturating_sub(11 + usize::from(FOLDER_BAR) + count.len() + 1);
+        Line::from(vec![
+            format::size_span(size, format!("{:>9} ", format::size(size))),
+            format::size_bar(size, largest, usize::from(FOLDER_BAR)),
+            Span::raw(" "),
+            Span::raw(format!("{:<name$}", format::shorten_middle(kind, name))),
+            Span::raw(" "),
+            Span::raw(count).fg(super::visual::ACCENT),
+        ])
+    }));
+    lines
+}
+
+/// The selected file in three lines, for a screen too narrow for the right
+/// side: its name, its folder, and its age and type
+fn compact_lines(tree: &Tree, id: NodeId, width: usize) -> Vec<Line<'static>> {
+    let node = tree.get(id);
+    let path = display_path(tree, id);
+    let folder = path.rsplit_once('/').map_or("~", |(parent, _)| parent);
+    let name = node.name.to_string_lossy().into_owned();
+    let changed = node
+        .modified
+        .and_then(|time| SystemTime::now().duration_since(time).ok())
+        .map_or_else(|| "unknown".to_string(), format::age);
+    vec![
+        Line::from(format::shorten_middle(&name, width))
+            .fg(super::visual::ACCENT)
+            .bold(),
+        field(
+            "Folder",
+            Span::raw(format::shorten_path(folder, width.saturating_sub(9))),
+        ),
+        field(
+            "Changed",
+            Span::raw(format!("{changed} · {}", kind_of(&name).0)),
+        ),
+    ]
 }
 
 /// A label and its value, lined up with the other labels
@@ -404,8 +513,8 @@ fn by_folder(tree: &Tree, found: &[NodeId]) -> Vec<(String, u64)> {
     groups
 }
 
-/// What kind of file a name is, and a plain hint about it, from its
-/// extension
+/// What kind of file a name is, short enough for a column, and a plain hint
+/// about it, from its extension
 fn kind_of(name: &str) -> (&'static str, Option<&'static str>) {
     let extension = name
         .rsplit_once('.')
@@ -413,8 +522,8 @@ fn kind_of(name: &str) -> (&'static str, Option<&'static str>) {
         .unwrap_or_default();
     match extension.as_str() {
         "dmg" | "pkg" | "iso" => (
-            "Disk image or installer",
-            Some("Rarely needed once the app is installed."),
+            "Installer",
+            Some("A disk image or installer. Rarely needed once the app is installed."),
         ),
         "zip" | "gz" | "tgz" | "xz" | "bz2" | "7z" | "rar" | "tar" | "zst" => (
             "Archive",
@@ -423,16 +532,30 @@ fn kind_of(name: &str) -> (&'static str, Option<&'static str>) {
         "mov" | "mp4" | "m4v" | "mkv" | "avi" | "webm" => {
             ("Video", Some("Personal media. Back up before removal."))
         }
+        "jpg" | "jpeg" | "png" | "heic" | "tiff" | "psd" => {
+            ("Image", Some("Personal media. Back up before removal."))
+        }
+        "mp3" | "m4a" | "wav" | "aiff" | "flac" => {
+            ("Audio", Some("Personal media. Back up before removal."))
+        }
         "raw" | "img" | "vmdk" | "vdi" | "qcow2" | "sparseimage" | "sparsebundle" => (
             "Virtual disk",
             Some("Used by a virtual machine or Docker. Free it from the app that made it."),
         ),
         "bin" | "safetensors" | "gguf" | "pt" | "onnx" | "mlmodel" => (
-            "Data or model file",
+            "Data or model",
             Some("Usually downloaded by an app, which may download it again."),
         ),
+        "dylib" | "so" | "a" | "o" | "exe" | "jar" | "wasm" => (
+            "Program code",
+            Some("Part of an app or a build. Remove it from the app or project instead."),
+        ),
+        "sst" | "ldb" | "pack" | "idx" | "cache" => (
+            "Cache",
+            Some("Data a tool keeps to work faster. The tool can make it again."),
+        ),
         "ipsw" => (
-            "Device firmware",
+            "Firmware",
             Some("Apple software for an iPhone or iPad. It can be downloaded again."),
         ),
         "sqlite" | "db" | "sqlite3" => (
@@ -443,7 +566,10 @@ fn kind_of(name: &str) -> (&'static str, Option<&'static str>) {
             "Log",
             Some("A record an app wrote. Usually safe to remove."),
         ),
-        _ => ("File", None),
+        "pdf" | "key" | "pages" | "numbers" | "docx" | "pptx" | "xlsx" => {
+            ("Document", Some("Your own work. Back up before removal."))
+        }
+        _ => ("Other", None),
     }
 }
 
@@ -462,7 +588,7 @@ fn row(
     let elapsed = node
         .modified
         .and_then(|modified| now.duration_since(modified).ok());
-    let age = Span::raw(elapsed.map_or_else(|| "unknown".to_string(), format::age));
+    let age = Span::raw(elapsed.map_or_else(|| format!("{:>2} unknown", ""), format::age_aligned));
     // Files left alone over a year stand out, since they are the likeliest
     // to be forgotten.
     let age = match elapsed {
@@ -533,17 +659,7 @@ impl Screen for LargeFiles {
                 .table
                 .selected()
                 .and_then(|index| found.get(index))
-                .map(|&id| {
-                    let node = tree.get(id);
-                    let age = node
-                        .modified
-                        .and_then(|time| SystemTime::now().duration_since(time).ok())
-                        .map_or_else(|| "unknown".to_string(), format::age);
-                    vec![
-                        Line::from(display_path(tree, id)).fg(super::visual::ACCENT),
-                        Line::from(format!("Changed: {age}")),
-                    ]
-                })
+                .map(|&id| compact_lines(tree, id, usize::from(compact.width.saturating_sub(4))))
                 .unwrap_or_default();
             frame.render_widget(
                 Paragraph::new(details).wrap(Wrap { trim: false }).block(
@@ -797,6 +913,55 @@ mod tests {
     }
 
     #[test]
+    fn ages_line_up_their_ones_and_units() {
+        let scan = done();
+        let screen = render(&mut LargeFiles::new(), &scan);
+        let rows: Vec<String> = screen
+            .chars()
+            .collect::<Vec<_>>()
+            .chunks(110)
+            .map(|row| row.iter().collect())
+            .collect();
+        let column = |text: &str| {
+            rows.iter()
+                .find_map(|row| row.find(text).map(|at| row[..at].chars().count()))
+                .expect("age should be on screen")
+        };
+
+        // `1 year` and `2 days` start in the ones place, and the units line up.
+        assert_eq!(column(" 1 year ago"), column(" 2 days ago"));
+        assert_eq!(column("year ago"), column("days ago"));
+    }
+
+    #[test]
+    fn a_tall_wide_screen_adds_the_files_up_by_type() {
+        let scan = done();
+        let mut terminal = Terminal::new(TestBackend::new(140, 30)).unwrap();
+        let context = Context {
+            scan: &scan,
+            disk: None,
+            cleanable: None,
+            plan: None,
+        };
+        terminal
+            .draw(|frame| LargeFiles::new().draw(frame, frame.area(), &context))
+            .unwrap();
+        let screen: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(ratatui::buffer::Cell::symbol)
+            .collect();
+
+        assert!(screen.contains("By folder"));
+        assert!(screen.contains("By type"));
+        assert!(screen.contains("Video"));
+        assert!(screen.contains("Archive"));
+        assert!(screen.find("By folder") < screen.find("By type"));
+    }
+
+    #[test]
     fn nothing_matching_says_so_in_the_middle() {
         let scan = done();
         let mut large = LargeFiles::new();
@@ -833,9 +998,10 @@ mod tests {
 
     #[test]
     fn file_kinds_come_from_the_extension() {
-        assert_eq!(kind_of("Xcode.DMG").0, "Disk image or installer");
+        assert_eq!(kind_of("Xcode.DMG").0, "Installer");
+        assert_eq!(kind_of("libtorch_cpu.dylib").0, "Program code");
         assert_eq!(kind_of("Docker.raw").0, "Virtual disk");
-        assert_eq!(kind_of("notes").0, "File");
+        assert_eq!(kind_of("notes").0, "Other");
         assert_eq!(kind_of("notes").1, None);
     }
     #[test]
