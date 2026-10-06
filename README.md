@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/home.svg" alt="The neet Home screen, with the feature menu, disk gauge, and scan progress" width="860">
+  <img src="docs/images/home.svg" alt="The neet Home screen, with the feature menu, the This Mac disk gauge, and scan progress" width="860">
 </p>
 
 ## Install
@@ -45,18 +45,22 @@ neet
 
 | Screen | What It Does |
 | --- | --- |
-| Quick Clean | Start here: see everything taking space that can be cleared, and move project build folders and old installers to the Trash. |
+| Disk | Start here: browse your folders, largest first, and see how full your Mac is. |
+| Quick Clean | See everything taking space that can be cleared, move project build folders and old installers to the Trash, and empty the Trash. |
 | Deep Clean | Go through every cache and log rule, and move what your apps can make again to the Trash. |
 | Remove App | Remove an app along with the files it left in your Library folder. |
 | Large Files | Find your largest and oldest files. |
-| Disk | Browse your folders, largest first. |
+| Dotfiles | See your settings files, such as `~/.zshrc`, edit or configure them with a backup, and save them with chezmoi. |
+
+* Startup items, AI tool files, Settings, and SSH are on the menu, marked `soon`.
 
 ## Notes
 
 * Works on macOS 13 or later, on Apple silicon and Intel.
-* Files go to the Trash, never deleted, so you can put them back. Simulator runtimes and Docker images are the exception: neet asks their own tools to remove them, after a red question that says so.
+* Files go to the Trash, never deleted, so you can put them back. The exceptions each ask a red question that says so first: simulator runtimes and Docker images, which neet asks their own tools to remove, and emptying the Trash itself.
 * You review and confirm everything before it moves.
 * Your personal folders, iCloud files, keychains, and SSH keys are never touched. The one exception is project build folders and installers, which you pick in Quick Clean.
+* Dotfiles keeps a backup of every settings file before it changes one, and shows you the change first.
 * For a full scan, give your terminal Full Disk Access:
   1. Open System Settings, then Privacy & Security, then Full Disk Access.
   2. Turn on your terminal app, such as Terminal, iTerm, or Ghostty.

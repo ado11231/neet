@@ -546,6 +546,89 @@ mod tests {
         assert!(matches!(press(&mut home, KeyCode::Char('6')), Action::None));
     }
 
+    /// Draws Home and writes it as `docs/images/home.svg`, the README's
+    /// image. Run it after changing Home:
+    /// `cargo test -p neet readme_home_image -- --ignored`
+    #[test]
+    #[ignore = "writes the README image"]
+    fn readme_home_image() {
+        use ratatui::style::{Color, Modifier};
+        use std::fmt::Write as _;
+        const WIDTH: u16 = 126;
+        const HEIGHT: u16 = 30;
+        let mut terminal = Terminal::new(TestBackend::new(WIDTH, HEIGHT)).unwrap();
+        let scan = ScanStatus::Running(neet_core::scan::Progress {
+            entries: 412_806,
+            bytes: 38_200_000_000,
+        });
+        let context = Context {
+            scan: &scan,
+            disk: Some(neet_core::disk::DiskSpace {
+                total: 245_100_000_000,
+                available: 83_300_000_000,
+                purgeable: Some(8_100_000_000),
+            }),
+            cleanable: Some(2_300_000_000),
+            plan: None,
+        };
+        terminal
+            .draw(|frame| Home::new().draw(frame, frame.area(), &context))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        // Tokyo Night, the colors the README image has always used
+        let color = |color: Color| match color {
+            Color::Rgb(red, green, blue) => format!("#{red:02x}{green:02x}{blue:02x}"),
+            Color::Yellow | Color::LightYellow => "#e0af68".to_string(),
+            Color::Green | Color::LightGreen => "#9ece6a".to_string(),
+            Color::Red | Color::LightRed => "#f7768e".to_string(),
+            Color::Magenta | Color::LightMagenta => "#bb9af7".to_string(),
+            Color::Cyan | Color::LightCyan => "#7dcfff".to_string(),
+            Color::Blue | Color::LightBlue => "#7aa2f7".to_string(),
+            Color::DarkGray => "#565f89".to_string(),
+            Color::Gray => "#a9b1d6".to_string(),
+            _ => "#c0caf5".to_string(),
+        };
+        let mut svg = format!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\">\n\
+             <rect width=\"100%\" height=\"100%\" rx=\"10\" fill=\"#1a1b26\"/>\n\
+             <g font-family=\"SF Mono, Menlo, Consolas, DejaVu Sans Mono, monospace\" font-size=\"14\">\n",
+            w = 1098,
+            h = 32 + u32::from(HEIGHT) * 18,
+        );
+        for y in 0..HEIGHT {
+            for x in 0..WIDTH {
+                let cell = &buffer[(x, y)];
+                let symbol = cell.symbol();
+                if symbol.trim().is_empty() {
+                    continue;
+                }
+                let text = match symbol {
+                    "&" => "&amp;",
+                    "<" => "&lt;",
+                    ">" => "&gt;",
+                    other => other,
+                };
+                let bold = if cell.modifier.contains(Modifier::BOLD) {
+                    " font-weight=\"bold\""
+                } else {
+                    ""
+                };
+                writeln!(
+                    svg,
+                    "<text x=\"{:.1}\" y=\"{:.1}\" fill=\"{}\"{bold}>{text}</text>",
+                    7.4 + f64::from(x) * 8.6,
+                    30.0 + f64::from(y) * 18.0,
+                    color(cell.fg),
+                )
+                .expect("writing to a String does not fail");
+            }
+        }
+        svg.push_str("</g>\n</svg>\n");
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/images/home.svg");
+        std::fs::write(path, svg).expect("the README image should be written");
+    }
+
     #[test]
     fn wide_terminal_shows_art_and_menu() {
         let screen = render(&mut Home::new(), 120, 30);

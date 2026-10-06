@@ -34,7 +34,7 @@
 | Real sizes | Measures the space each file really takes on disk, and counts a file with several names only once. | Done |
 | Disk gauge | Shows how full the disk is, from the disk's own totals, updated every 5 seconds. Also says how much more free space Finder shows, and why. | Done |
 | Skipped folders | Lists the folders the scan could not read, with the reason, and explains how to turn on Full Disk Access. | Done |
-| Disk browser | Browses folders largest first, with a bar for each item's share of its folder. | Done |
+| Disk browser | Browses folders largest first, with a bar for each item's share of its folder. Beside it: the selected item, whether neet cleans it, what is inside, and how full the whole disk is. First on the Home menu. | Done |
 | Large Files | Lists files above a size you choose, optionally only ones unchanged for a while, and shows them in Disk. | Done |
 | Space breakdown | Explains why the disk's used space is larger than the scan: apps, macOS itself, Time Machine snapshots, and space macOS can free on its own. View only. | Proposed |
 | Treemap | A view where each folder's area shows its size. | Proposed |
@@ -126,7 +126,7 @@
 
 | Feature | What It Does | Status |
 | --- | --- | --- |
-| Home menu | Opens on a menu of every feature. Features not built yet are shown dimmed. | Done |
+| Home menu | Opens on a menu of every feature, Disk first. Features not built yet are marked `soon` and skipped. | Done |
 | Help | `?` lists the keys for the current screen. | Done |
 | Command line | `neet` opens the app. The only options are `--help` and `--version`. | Done |
 | Refuse to run as root | Stops with an explanation if started with `sudo`. | Done |

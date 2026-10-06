@@ -106,6 +106,9 @@
   1. Free space and Finder. Home says how much free space Finder shows, and that it adds space macOS clears on its own, called purgeable space.
   2. A wireless networks file in user logs. It is a copy macOS wrote once for diagnostics. your Mac connects without it, so the rule keeps offering it, and FEATURES explains it.
   3. Moving to the Trash no longer waits forever when Finder does not answer.
+  4. Every built screen got a clarity pass: Quick Clean, Deep Clean, Remove App, Large Files, and Disk use small titled boxes, one label width, plain words, and lists only as tall as their rows.
+  5. A Trash screen lists what is in the Trash and empties it after a red question.
+  6. Home starts on Disk, then the cleanups, with SSH last.
 
 | Item | Done When |
 | --- | --- |
