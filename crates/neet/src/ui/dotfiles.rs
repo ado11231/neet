@@ -324,7 +324,7 @@ impl Dotfiles {
             field(
                 "May run",
                 match &chezmoi.may_not_run {
-                    None => Span::raw("apply and re-add, one file at a time").green(),
+                    None => Span::raw("apply, re-add, and add, one file at a time").green(),
                     Some(reason) => Span::raw(format!("never: {reason}")).yellow(),
                 },
             ),
@@ -524,6 +524,9 @@ impl Dotfiles {
                 notes.push(Line::from("It differs from its source file in chezmoi.").yellow());
             }
             Some(Managed::Ignored) => notes.push(Line::from(".chezmoiignore leaves it out.")),
+            Some(Managed::No) if file.view_only.is_none() => {
+                notes.push(Line::from("chezmoi does not manage it. a adds it."));
+            }
             Some(Managed::No) => notes.push(Line::from("chezmoi does not manage it.")),
             Some(Managed::Built(..)) | None => {}
         }
@@ -695,10 +698,29 @@ impl Dotfiles {
             return;
         };
         let diff = match fix {
-            Fix::Keep => Diff::new(&source, &home),
+            Fix::Keep | Fix::Add => Diff::new(&source, &home),
             Fix::PutBack => Diff::new(&home, &source),
         };
         self.mode = Mode::Ask { fix, index, diff };
+    }
+
+    /// `a`: shows the whole file as new in chezmoi, and asks.
+    fn ask_add(&mut self) {
+        let Some(index) = self.selected() else {
+            return;
+        };
+        let file = &self.listing.files[index];
+        let added = core_change::add_name(file, self.listing.chezmoi.as_ref()).and_then(|_| {
+            fs::read(&file.path).map_err(|error| format!("It could not be read: {error}."))
+        });
+        self.mode = match added {
+            Ok(home) => Mode::Ask {
+                fix: Fix::Add,
+                index,
+                diff: Diff::new(b"", &home),
+            },
+            Err(error) => change::done(Err(error), "", None),
+        };
     }
 
     /// `y` on the question: runs the fix.
@@ -709,6 +731,7 @@ impl Dotfiles {
         let result = match fix {
             Fix::Keep => core_change::keep_home(file, chezmoi, &self.backups, now),
             Fix::PutBack => core_change::put_back(file, chezmoi, &self.backups, now),
+            Fix::Add => core_change::add(file, chezmoi),
         };
         let shown = format!("~/{}", file.known.path);
         let source = self.source_name(file);
@@ -1284,6 +1307,32 @@ impl Dotfiles {
                     Line::from(counts),
                 ],
             ),
+            Fix::Add => {
+                let name = core_change::add_name(file, self.listing.chezmoi.as_ref())
+                    .unwrap_or_else(|error| error);
+                let mut lines = vec![
+                    field("Adds", format!("{name} in chezmoi")),
+                    if may_run {
+                        field("Runs", format!("chezmoi add {shown}"))
+                    } else {
+                        field(
+                            "Writes",
+                            "the source file itself, as chezmoi add would".to_string(),
+                        )
+                    },
+                    field("Keeps", format!("{shown} as it is")),
+                    Line::from(counts),
+                ];
+                if file.may_hold_secrets {
+                    lines.push(
+                        Line::from(
+                            "It may hold a token. Export leaves it out unless you put it in.",
+                        )
+                        .red(),
+                    );
+                }
+                (format!(" Add {} to chezmoi ", file.known.path), lines)
+            }
         }
     }
 }
@@ -1449,6 +1498,7 @@ impl Screen for Dotfiles {
             KeyCode::Char('e') => return self.start_edit(),
             KeyCode::Char('r') => self.ask_fix(Fix::Keep),
             KeyCode::Char('p') => self.ask_fix(Fix::PutBack),
+            KeyCode::Char('a') => self.ask_add(),
             KeyCode::Char('b') => self.open_backups(),
             KeyCode::Char('d') => self.show_diff(),
             KeyCode::Char('c') => self.start_configure(),
@@ -1530,7 +1580,7 @@ impl Screen for Dotfiles {
     fn hints(&self) -> &'static str {
         match &self.mode {
             Mode::Browse => {
-                "↑↓ move · e edit · c configure · d diff · b backups · r keep · p put back · x export · . missing · esc home · ? help"
+                "↑↓ move · e edit · c configure · d diff · b backups · r keep · p put back · a add · x export · . missing · esc home · ? help"
             }
             Mode::Editing { .. } => "Waiting for your editor to close",
             Mode::Review(review) if matches!(review.checked, Checked::Failed(_)) => {
@@ -1538,6 +1588,7 @@ impl Screen for Dotfiles {
             }
             Mode::Review(_) => "y write · e edit again · ↑↓ scroll · esc drop the change",
             Mode::Ask { fix: Fix::Keep, .. } => "y keep this version · ↑↓ scroll · esc go back",
+            Mode::Ask { fix: Fix::Add, .. } => "y add it · ↑↓ scroll · esc go back",
             Mode::Ask { .. } => "y put it back · ↑↓ scroll · esc go back",
             Mode::Backups { .. } => "↑↓ move · enter show the change · esc go back",
             Mode::Restore { .. } => "y restore it · ↑↓ scroll · esc go back",
@@ -1565,6 +1616,7 @@ impl Screen for Dotfiles {
             ),
             ("r", "Keep this version in chezmoi, when it differs"),
             ("p", "Put chezmoi's version back, when it differs"),
+            ("a", "Add it to chezmoi, when chezmoi does not manage it"),
             (
                 "d",
                 "Show how it differs from its source file or last backup",
@@ -1839,6 +1891,42 @@ mod tests {
             fs::read_to_string(source).unwrap(),
             "[user]\n\tname = You\n"
         );
+
+        press(&mut screen, KeyCode::Enter);
+        assert!(render(&mut screen, 140, 30).contains("in sync"));
+    }
+
+    #[test]
+    fn a_adds_a_file_after_showing_it_whole() {
+        let (_dir, mut screen) = screen();
+        press(&mut screen, KeyCode::Char('a'));
+        assert!(render(&mut screen, 120, 30).contains("chezmoi already manages it"));
+        press(&mut screen, KeyCode::Enter);
+
+        press(&mut screen, KeyCode::Down);
+        press(&mut screen, KeyCode::Down);
+        assert!(render(&mut screen, 140, 30).contains("a adds it"));
+        press(&mut screen, KeyCode::Char('a'));
+        let text = render(&mut screen, 120, 30);
+        assert!(
+            text.contains("Add .config/kitty/kitty.conf to chezmoi"),
+            "{text}"
+        );
+        assert!(
+            text.contains("dot_config/kitty/kitty.conf in chezmoi"),
+            "{text}"
+        );
+        assert!(text.contains("+ font_size 14"), "{text}");
+        press(&mut screen, KeyCode::Char('y'));
+        let text = render(&mut screen, 120, 30);
+        assert!(
+            text.contains("chezmoi now manages ~/.config/kitty/kitty.conf"),
+            "{text}"
+        );
+        let source = screen
+            .home
+            .join(".local/share/chezmoi/dot_config/kitty/kitty.conf");
+        assert_eq!(fs::read_to_string(source).unwrap(), "font_size 14\n");
 
         press(&mut screen, KeyCode::Enter);
         assert!(render(&mut screen, 140, 30).contains("in sync"));

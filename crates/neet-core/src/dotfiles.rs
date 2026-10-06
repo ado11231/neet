@@ -699,6 +699,77 @@ fn source_file(source: &Path, target: &str) -> Option<(PathBuf, Option<Built>)> 
     })
 }
 
+/// A source file `chezmoi add` would make
+#[derive(Debug, PartialEq, Eq)]
+struct NewSource {
+    path: PathBuf,
+    /// Folders still to make, each with whether only you may open it
+    folders: Vec<(PathBuf, bool)>,
+}
+
+/// A name in the home folder as chezmoi names it in the source folder:
+/// `dot_` for a leading `.`
+fn source_part(name: &str) -> String {
+    name.strip_prefix('.')
+        .map_or_else(|| name.to_string(), |rest| format!("dot_{rest}"))
+}
+
+/// Where `chezmoi add` puts the source file for `target`, a path from
+/// `home`: inside folders chezmoi already has, then new ones named as chezmoi
+/// names them, with `private_` for folders and files only you can open,
+/// `empty_` for an empty file, and `executable_` for one that runs.
+fn new_source(source: &Path, home: &Path, target: &str) -> Option<NewSource> {
+    let private = |path: &Path| fs::metadata(path).is_ok_and(|metadata| only_yours(&metadata));
+    let parts: Vec<&str> = target.split('/').collect();
+    let (file, folders) = parts.split_last()?;
+    let mut folder = source.to_path_buf();
+    let mut in_home = home.to_path_buf();
+    let mut missing = Vec::new();
+    for part in folders {
+        in_home.push(part);
+        let found = missing
+            .is_empty()
+            .then(|| {
+                fs::read_dir(&folder).ok()?.flatten().find_map(|entry| {
+                    let name = entry.file_name();
+                    (entry.file_type().ok()?.is_dir()
+                        && folder_target(&name.to_string_lossy()).as_deref() == Some(*part))
+                    .then(|| entry.path())
+                })
+            })
+            .flatten();
+        folder = found.unwrap_or_else(|| {
+            let private = private(&in_home);
+            let prefix = if private { "private_" } else { "" };
+            let made = folder.join(format!("{prefix}{}", source_part(part)));
+            missing.push((made.clone(), private));
+            made
+        });
+    }
+    let metadata = fs::metadata(home.join(target)).ok()?;
+    let mut name = String::new();
+    if only_yours(&metadata) {
+        name.push_str("private_");
+    }
+    if metadata.len() == 0 {
+        name.push_str("empty_");
+    }
+    if metadata.permissions().mode() & 0o111 != 0 {
+        name.push_str("executable_");
+    }
+    name.push_str(&source_part(file));
+    Some(NewSource {
+        path: folder.join(name),
+        folders: missing,
+    })
+}
+
+/// Whether only you may open it: no permission bits for anyone else
+fn only_yours(metadata: &fs::Metadata) -> bool {
+    let mode = metadata.permissions().mode() & 0o777;
+    mode & 0o700 == mode
+}
+
 fn managed(source: &Path, target: &str, path: &Path, ignored: &[Pattern]) -> Managed {
     if is_ignored(ignored, target) {
         return Managed::Ignored;
@@ -924,6 +995,67 @@ mod tests {
         );
         assert_eq!(folder_target("exact_dot_vim").as_deref(), Some(".vim"));
         assert_eq!(folder_target(".git"), None);
+    }
+
+    #[test]
+    fn new_source_names_read_back_as_the_files_they_make() {
+        let (_dir, home) = home();
+        let source = home.join("src");
+        fs::create_dir_all(&source).unwrap();
+        for known in FILES {
+            write(&home.join(known.path), "x\n");
+            let NewSource { path, folders } = new_source(&source, &home, known.path).unwrap();
+            let relative = path.strip_prefix(&source).unwrap();
+            let mut parts: Vec<String> = relative
+                .iter()
+                .map(|part| part.to_string_lossy().into_owned())
+                .collect();
+            let name = file_target(&parts.pop().unwrap()).unwrap();
+            let mut target: Vec<String> = parts
+                .iter()
+                .map(|part| folder_target(part).unwrap())
+                .collect();
+            target.push(name.target);
+            assert_eq!(target.join("/"), known.path);
+            assert_eq!(name.built, None, "{}", known.path);
+            assert_eq!(folders.len(), parts.len(), "{}", known.path);
+        }
+    }
+
+    #[test]
+    fn new_source_names_keep_folders_and_attributes() {
+        let (_dir, home) = home();
+        let source = home.join("src");
+        fs::create_dir_all(source.join("private_dot_config/kitty")).unwrap();
+        write(&home.join(".config/kitty/kitty.conf"), "x\n");
+        write(&home.join(".config/ghostty/config"), "");
+        write(&home.join(".npmrc"), "x\n");
+        fs::set_permissions(home.join(".npmrc"), fs::Permissions::from_mode(0o600)).unwrap();
+        fs::set_permissions(
+            home.join(".config/ghostty"),
+            fs::Permissions::from_mode(0o700),
+        )
+        .unwrap();
+
+        assert_eq!(
+            new_source(&source, &home, ".config/kitty/kitty.conf"),
+            Some(NewSource {
+                path: source.join("private_dot_config/kitty/kitty.conf"),
+                folders: Vec::new(),
+            })
+        );
+        assert_eq!(
+            new_source(&source, &home, ".config/ghostty/config"),
+            Some(NewSource {
+                path: source.join("private_dot_config/private_ghostty/empty_config"),
+                folders: vec![(source.join("private_dot_config/private_ghostty"), true)],
+            })
+        );
+        assert_eq!(
+            new_source(&source, &home, ".npmrc").unwrap().path,
+            source.join("private_dot_npmrc")
+        );
+        assert_eq!(new_source(&source, &home, ".bashrc"), None);
     }
 
     #[test]

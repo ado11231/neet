@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use super::{Chezmoi, Dotfile, Managed, Syntax};
+use super::{Chezmoi, Dotfile, Managed, NewSource, Syntax, new_source, source_file};
 use crate::rewrite::{self, Backup, Backups, Opened, WriteError};
 
 /// How long a syntax check may take
@@ -91,6 +91,9 @@ pub enum Done {
     /// The source file was written, but chezmoi failed. Its message, and the
     /// command to run once fixed.
     ApplyFailed { error: String, command: String },
+    /// chezmoi now manages the file, from this source file, such as
+    /// `dot_zshrc`.
+    Added(String),
 }
 
 /// The source file chezmoi keeps for a listed file, opened
@@ -351,6 +354,114 @@ pub fn put_back(
     } else {
         Err("chezmoi finished, but the file does not match its source file yet.".to_string())
     }
+}
+
+/// The source file `a` would add for `file`, from chezmoi's folder, such as
+/// `private_dot_config/kitty/kitty.conf`. chezmoi picks the same name.
+///
+/// # Errors
+///
+/// Returns why the file cannot be added, in plain words.
+pub fn add_name(file: &Dotfile, chezmoi: Option<&Chezmoi>) -> Result<String, String> {
+    let (chezmoi, new) = plan_add(file, chezmoi)?;
+    Ok(relative(&new.path, &chezmoi.source))
+}
+
+/// Lets chezmoi manage `file`, a listed file it has no source file for:
+/// `chezmoi add` for that one file when neet may run chezmoi, or else neet
+/// writes the source file itself, named as chezmoi names it. Nothing is
+/// replaced, so there is nothing to back up.
+///
+/// # Errors
+///
+/// Returns why nothing was added, in plain words.
+pub fn add(file: &Dotfile, chezmoi: Option<&Chezmoi>) -> Result<Done, String> {
+    let (chezmoi, new) = plan_add(file, chezmoi)?;
+    let home =
+        Opened::open(&file.path).map_err(|error| format!("It could not be opened: {error}."))?;
+    if chezmoi.may_not_run.is_none() {
+        run_chezmoi(&["add"], &file.path)?;
+    } else {
+        for (folder, private) in &new.folders {
+            DirBuilder::new()
+                .mode(if *private { 0o700 } else { 0o755 })
+                .create(folder)
+                .map_err(|error| format!("Its folder in chezmoi could not be made: {error}."))?;
+        }
+        create(&new.path, home.contents(), home.mode())
+            .map_err(|error| format!("Its source file could not be written: {error}."))?;
+    }
+    match source_file(&chezmoi.source, file.known.path) {
+        Some((added, _)) if fs::read(&added).is_ok_and(|now| now == home.contents()) => {
+            Ok(Done::Added(relative(&added, &chezmoi.source)))
+        }
+        _ => Err("chezmoi finished, but it has no matching source file yet.".to_string()),
+    }
+}
+
+/// chezmoi, the source file to add for `file`, and the folders to make
+fn plan_add<'a>(
+    file: &Dotfile,
+    chezmoi: Option<&'a Chezmoi>,
+) -> Result<(&'a Chezmoi, NewSource), String> {
+    let chezmoi = chezmoi.ok_or("chezmoi's folder was not found.")?;
+    match &file.managed {
+        Some(Managed::No) => {}
+        Some(Managed::Ignored) => {
+            return Err(".chezmoiignore leaves it out, so it cannot be added.".to_string());
+        }
+        _ => return Err("chezmoi already manages it.".to_string()),
+    }
+    open_home(file)?;
+    if file
+        .found
+        .as_ref()
+        .is_some_and(|found| found.link.is_some())
+    {
+        return Err(
+            "It is a link, so another tool may manage it. Add it to chezmoi yourself if you want."
+                .to_string(),
+        );
+    }
+    if source_file(&chezmoi.source, file.known.path).is_some() {
+        return Err("chezmoi has a source file for it now. Open Dotfiles again.".to_string());
+    }
+    let home = file
+        .path
+        .ancestors()
+        .nth(file.known.path.split('/').count())
+        .ok_or("Its home folder was not found.")?;
+    let new = new_source(&chezmoi.source, home, file.known.path)
+        .ok_or("Its source file could not be named.")?;
+    Ok((chezmoi, new))
+}
+
+/// Writes a new file at `path`, never over one: a copy beside it first,
+/// flushed to disk, then linked in place, so it is whole or not there.
+fn create(path: &Path, contents: &[u8], mode: u32) -> io::Result<()> {
+    let folder = path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "the path has no folder"))?;
+    let copy = folder.join(format!(".neet-add-{}", std::process::id()));
+    let written = (|| {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(mode & 0o666 | 0o600)
+            .open(&copy)?;
+        file.write_all(contents)?;
+        file.sync_all()?;
+        fs::hard_link(&copy, path)
+    })();
+    let _ = fs::remove_file(&copy);
+    written
+}
+
+fn relative(path: &Path, source: &Path) -> String {
+    path.strip_prefix(source)
+        .unwrap_or(path)
+        .display()
+        .to_string()
 }
 
 /// Puts `backup` back over the file in the home folder. The file now is
@@ -643,6 +754,76 @@ mod tests {
 
         let error = put_back(&file, Some(&chezmoi), &backups, SystemTime::now()).unwrap_err();
         assert!(error.contains("chezmoi apply ~/.zshrc"), "{error}");
+    }
+
+    #[test]
+    fn adds_a_file_to_chezmoi_without_running_it() {
+        let (_dir, home, _backups) = setup();
+        let chezmoi = chezmoi(&home);
+        let file = dotfile(&home, Some(Managed::No));
+
+        assert_eq!(add_name(&file, Some(&chezmoi)).unwrap(), "dot_zshrc");
+        assert_eq!(
+            add(&file, Some(&chezmoi)),
+            Ok(Done::Added("dot_zshrc".to_string()))
+        );
+        assert_eq!(
+            fs::read_to_string(chezmoi.source.join("dot_zshrc")).unwrap(),
+            "old\n"
+        );
+        assert_eq!(fs::read_dir(&chezmoi.source).unwrap().count(), 1);
+
+        // It is never written over.
+        let error = add(&file, Some(&chezmoi)).unwrap_err();
+        assert!(error.contains("Open Dotfiles again"), "{error}");
+    }
+
+    #[test]
+    fn adds_a_file_inside_new_folders() {
+        static KITTY: Known = Known {
+            path: ".config/kitty/kitty.conf",
+            group: Group::Terminal,
+            syntax: Syntax::None,
+        };
+        let (_dir, home, _backups) = setup();
+        let chezmoi = chezmoi(&home);
+        fs::create_dir_all(home.join(".config/kitty")).unwrap();
+        fs::write(home.join(".config/kitty/kitty.conf"), "font_size 14\n").unwrap();
+        let file = Dotfile {
+            known: &KITTY,
+            path: home.join(KITTY.path),
+            ..dotfile(&home, Some(Managed::No))
+        };
+
+        assert_eq!(
+            add(&file, Some(&chezmoi)),
+            Ok(Done::Added("dot_config/kitty/kitty.conf".to_string()))
+        );
+    }
+
+    #[test]
+    fn refuses_files_it_should_not_add() {
+        let (_dir, home, _backups) = setup();
+        let chezmoi = chezmoi(&home);
+        let source = chezmoi.source.join("dot_zshrc");
+        fs::write(&source, "old\n").unwrap();
+
+        let managed = dotfile(&home, Some(Managed::InSync(source)));
+        assert!(
+            add(&managed, Some(&chezmoi))
+                .unwrap_err()
+                .contains("already")
+        );
+        let ignored = dotfile(&home, Some(Managed::Ignored));
+        assert!(
+            add(&ignored, Some(&chezmoi))
+                .unwrap_err()
+                .contains(".chezmoiignore")
+        );
+        assert!(add(&dotfile(&home, Some(Managed::No)), None).is_err());
+        let mut link = dotfile(&home, Some(Managed::No));
+        link.found.as_mut().unwrap().link = Some(home.join("elsewhere"));
+        assert!(add(&link, Some(&chezmoi)).unwrap_err().contains("link"));
     }
 
     #[test]

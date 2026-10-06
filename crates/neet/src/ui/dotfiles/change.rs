@@ -24,6 +24,8 @@ pub(super) enum Fix {
     Keep,
     /// `p`: the home folder's file takes chezmoi's version.
     PutBack,
+    /// `a`: chezmoi starts managing a file it has no source file for.
+    Add,
 }
 
 /// What the screen is doing besides listing files
@@ -329,6 +331,18 @@ pub(super) fn done(result: Result<Done, String>, file: &str, source: Option<&str
                 Line::from(format!("Run {command} once it is fixed.")),
             ],
             Color::Red,
+        ),
+        Ok(Done::Added(name)) => (
+            "Added",
+            vec![
+                Line::from(format!("✓ chezmoi now manages {file}"))
+                    .green()
+                    .bold(),
+                Line::from(format!(
+                    "Its source file is {name}. Export it with x when you are ready."
+                )),
+            ],
+            Color::Green,
         ),
         Err(error) => ("Not changed", vec![Line::from(error)], Color::Red),
     };
