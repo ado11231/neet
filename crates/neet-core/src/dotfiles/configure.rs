@@ -7,6 +7,7 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
+mod kitty;
 mod tmux;
 mod toml_file;
 
@@ -19,12 +20,15 @@ pub enum Kind {
     Text,
     /// A whole number, such as `50000`
     Number,
+    /// A number that may have a sign and a decimal point, such as `13.5`
+    Decimal,
     /// One of these, which `Enter` steps through
     Choice(&'static [&'static str]),
 }
 
 const ON_OFF: Kind = Kind::Choice(&["on", "off"]);
 const TRUE_FALSE: Kind = Kind::Choice(&["true", "false"]);
+const YES_NO: Kind = Kind::Choice(&["yes", "no"]);
 
 /// How a program's file is read and written
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,6 +39,9 @@ pub enum Format {
     Tmux,
     /// TOML, where `a.b` is the key `b` in the table `[a]`
     Toml,
+    /// kitty's lines of an option, spaces, and its value, such as
+    /// `font_size 13.0`
+    Kitty,
 }
 
 /// One setting neet can change
@@ -208,6 +215,87 @@ pub const PROGRAMS: &[Program] = &[
             ),
         ],
     },
+    Program {
+        name: "kitty",
+        files: &[".config/kitty/kitty.conf"],
+        format: Format::Kitty,
+        settings: &[
+            setting("font_family", "Font for the terminal.", Kind::Text),
+            setting(
+                "font_size",
+                "Font size in points, such as 13.0.",
+                Kind::Decimal,
+            ),
+            setting(
+                "scrollback_lines",
+                "Lines kept to scroll back through.",
+                Kind::Number,
+            ),
+            setting(
+                "window_padding_width",
+                "Space around the text in points: one to four numbers.",
+                Kind::Text,
+            ),
+            setting(
+                "background_opacity",
+                "How solid the background is, from 0 to 1.",
+                Kind::Decimal,
+            ),
+            setting(
+                "cursor_blink_interval",
+                "Seconds between cursor blinks. 0 stops blinking.",
+                Kind::Decimal,
+            ),
+            setting(
+                "macos_option_as_alt",
+                "Which Option keys act as Alt, for terminal shortcuts.",
+                Kind::Choice(&["no", "left", "right", "both"]),
+            ),
+            setting("enable_audio_bell", "Beep on the terminal bell.", YES_NO),
+        ],
+    },
+    Program {
+        name: "mise",
+        files: &[".config/mise/config.toml"],
+        format: Format::Toml,
+        settings: &[
+            setting(
+                "tools.node",
+                "Node version for every folder, such as 24 or lts.",
+                Kind::Text,
+            ),
+            setting(
+                "tools.python",
+                "Python version for every folder, such as 3.12.",
+                Kind::Text,
+            ),
+            setting(
+                "tools.go",
+                "Go version for every folder, such as latest.",
+                Kind::Text,
+            ),
+            setting(
+                "tools.ruby",
+                "Ruby version for every folder, such as 3.3.",
+                Kind::Text,
+            ),
+            setting(
+                "settings.auto_install",
+                "Install a missing version when a command needs it.",
+                TRUE_FALSE,
+            ),
+            setting(
+                "settings.jobs",
+                "How many tools install at once.",
+                Kind::Number,
+            ),
+            setting(
+                "settings.experimental",
+                "Turn on features mise is still trying out.",
+                TRUE_FALSE,
+            ),
+        ],
+    },
 ];
 
 /// The program whose settings live in `path`, a path from the home folder
@@ -253,9 +341,24 @@ pub fn check(setting: &Setting, value: &str) -> Result<(), String> {
                 .map_err(|_| format!("{} is too large.", setting.key))
         }
         Kind::Number => Err(format!("{} is a whole number, such as 10.", setting.key)),
+        Kind::Decimal if is_decimal(value) => Ok(()),
+        Kind::Decimal => Err(format!("{} is a number, such as 13.5.", setting.key)),
         Kind::Choice(choices) if choices.contains(&value) => Ok(()),
         Kind::Choice(choices) => Err(format!("{} is {}.", setting.key, choices.join(" or "))),
     }
+}
+
+/// Digits, with a `-` before them and one `.` among them at most
+fn is_decimal(value: &str) -> bool {
+    let digits = value.strip_prefix('-').unwrap_or(value);
+    let (whole, fraction) = digits.split_once('.').unwrap_or((digits, "0"));
+    !whole.is_empty()
+        && !fraction.is_empty()
+        && whole.len() <= 12
+        && whole
+            .bytes()
+            .chain(fraction.bytes())
+            .all(|byte| byte.is_ascii_digit())
 }
 
 /// The value of each of `program`'s settings in `file`, in the same order,
@@ -270,6 +373,7 @@ pub fn values(program: &Program, file: &Path) -> Result<Vec<Option<String>>, Str
         Format::Git => git_values(program, file),
         Format::Tmux => Ok(tmux::values(program, &read(file)?)),
         Format::Toml => toml_file::values(program, &read(file)?),
+        Format::Kitty => Ok(kitty::values(program, &read(file)?)),
     }
 }
 
@@ -292,6 +396,7 @@ pub fn set(
         Format::Git => git_set(file, setting, value),
         Format::Tmux => write(file, &tmux::set(&read(file)?, setting, value)?),
         Format::Toml => write(file, &toml_file::set(&read(file)?, setting, value)?),
+        Format::Kitty => write(file, &kitty::set(&read(file)?, setting, value)),
     }
 }
 
@@ -390,6 +495,14 @@ mod tests {
             program_for(".config/starship.toml").map(|p| p.name),
             Some("Starship")
         );
+        assert_eq!(
+            program_for(".config/kitty/kitty.conf").map(|p| p.name),
+            Some("kitty")
+        );
+        assert_eq!(
+            program_for(".config/mise/config.toml").map(|p| p.name),
+            Some("mise")
+        );
         assert_eq!(program_for(".zshrc"), None);
     }
 
@@ -457,6 +570,18 @@ mod tests {
             Err("mouse is on or off.".to_string())
         );
         assert!(check(find("default-terminal"), "a\nb").is_err());
+        let kitty = &PROGRAMS[3];
+        let size = kitty
+            .settings
+            .iter()
+            .find(|s| s.key == "font_size")
+            .unwrap();
+        for good in ["13", "13.5", "-1", "0.25"] {
+            assert!(check(size, good).is_ok(), "{good}");
+        }
+        for bad in ["", "big", "1.", ".5", "1.2.3", "--1", "1e9"] {
+            assert!(check(size, bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

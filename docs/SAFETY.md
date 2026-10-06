@@ -308,6 +308,8 @@ min_age_days = 0
 | Git | `user.name`, `user.email`, `init.defaultBranch`, `core.editor`, `pull.rebase`, `push.autoSetupRemote` | `git config --file <copy> -- <key> <value>`, or `--unset-all` to remove one |
 | tmux | `mouse`, `history-limit`, `base-index`, `renumber-windows`, `mode-keys`, `escape-time`, `status-position`, `default-terminal` | neet, line by line |
 | Starship | `add_newline`, `line_break.disabled`, `character.success_symbol`, `character.error_symbol`, `directory.truncation_length`, `cmd_duration.min_time`, `command_timeout`, `scan_timeout` | neet, with a TOML editor that keeps comments and layout |
+| kitty | `font_family`, `font_size`, `scrollback_lines`, `window_padding_width`, `background_opacity`, `cursor_blink_interval`, `macos_option_as_alt`, `enable_audio_bell` | neet, line by line |
+| mise | `tools.node`, `tools.python`, `tools.go`, `tools.ruby`, `settings.auto_install`, `settings.jobs`, `settings.experimental` | neet, with the same TOML editor as Starship |
 
 * Changes are made on the edit copy, then go through the same check, diff, backup, and chezmoi steps as an edit.
 * Values are checked before anything is written. Numbers must be whole numbers, settings with choices take only those, and a value with more than one line is refused.
@@ -317,7 +319,8 @@ min_age_days = 0
   2. **Remove:** every plain line for the option is taken out.
   3. A value with spaces or other characters tmux reads specially is written in single quotes. A value with a `'` in it is refused, and is changed by editing instead.
   4. There is no check for tmux files: tmux has no way to read a file without starting a server.
-* **Starship:** `a.b` means the key `b` in the table `[a]`. Changing a value keeps its spacing and comment, and adds a missing table at the end. Removing a value takes out its line, and only when what is left means the same, less that value, so the comments above it stay. A key that holds a table, or a table that is a plain value, is refused, and is changed by editing. The file is checked with the TOML reader, as when editing.
+* **kitty:** neet never runs kitty. A line is an option, spaces, and the rest of the line as its value, and lines that start with `#` are comments, as kitty reads them. Files it includes are not read. A change replaces only the value on the last line for the option, keeping the spacing before it. With no line, one is added at the end, such as `background_opacity 0.95`. Removing takes out every line for the option. There is no check for kitty files.
+* **Starship and mise:** `a.b` means the key `b` in the table `[a]`. Changing a value keeps its spacing and comment, and adds a missing table at the end. Removing a value takes out its line, and only when what is left means the same, less that value, so the comments above it stay. A key that holds a table, a list, or an inline table, such as `node = ["20", "22"]` in mise, or a table that is a plain value, is refused, and is changed by editing. The file is checked with the TOML reader, as when editing.
 * More programs are added one at a time. Each is listed here before it ships.
 * Shell settings, when added, only go in a block neet owns, between `# >>> neet >>>` and `# <<< neet <<<`. Lines outside it are never changed.
 

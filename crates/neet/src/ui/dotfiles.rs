@@ -1079,7 +1079,7 @@ impl Dotfiles {
             self.mode = Mode::Note {
                 title: "No settings".to_string(),
                 lines: vec![Line::from(
-                    "Configure knows the settings of Git, tmux, and Starship. Press e to edit this file.",
+                    "Configure knows the settings of Git, tmux, Starship, kitty, and mise. Press e to edit this file.",
                 )],
                 color: visual::ACCENT,
             };
