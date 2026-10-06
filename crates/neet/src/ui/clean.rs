@@ -591,6 +591,98 @@ fn found_lines(rule: &RulePlan, home: &Path, room: usize, width: usize) -> Vec<L
 }
 
 impl Clean {
+    /// The selected rule on a tall screen, in boxes that keep their size
+    /// whichever rule is selected: what it is, as tall as the longest rule's
+    /// text; what it found, with what it left in place below, down to the
+    /// chart; and the chart, at the bottom.
+    fn draw_details_tall(
+        frame: &mut Frame,
+        area: Rect,
+        planned: &Planned,
+        rule: &RulePlan,
+        notes: Vec<Line<'static>>,
+    ) {
+        let home = planned.home.as_path();
+        let width = usize::from(area.width.saturating_sub(4));
+        let tallest = planned
+            .plan
+            .rules
+            .iter()
+            .map(|other| {
+                let mut lines = notes.clone();
+                lines.extend(about(other, home));
+                rows_used(&lines, width)
+            })
+            .max()
+            .unwrap_or(0);
+        let top_height = u16::try_from(tallest + 2)
+            .unwrap_or(u16::MAX)
+            .min(area.height / 3);
+        let [about_area, found_area, chart_area] = Layout::vertical([
+            Constraint::Length(top_height),
+            Constraint::Fill(1),
+            Constraint::Length(area.height * 9 / 20),
+        ])
+        .areas(area);
+        let mut top = notes;
+        top.extend(about(rule, home));
+        frame.render_widget(
+            Paragraph::new(top).wrap(Wrap { trim: false }).block(
+                super::visual::block()
+                    .title(format!(" {} ", rule.rule.name))
+                    .padding(Padding::horizontal(1)),
+            ),
+            about_area,
+        );
+
+        // What was found, and below it what was left in place, each cut
+        // short with a count when there is not room for all of it
+        let inner = usize::from(found_area.height.saturating_sub(2));
+        let mut skipped = skipped_lines(rule, home, width);
+        let mut sections = Vec::new();
+        if skipped.is_empty() {
+            sections.push(found_lines(rule, home, inner, width));
+        } else {
+            let most = (inner / 2).saturating_sub(1).max(1);
+            if skipped.len() > most {
+                let more = skipped.len() - (most - 1).max(1);
+                skipped.truncate((most - 1).max(1));
+                skipped.push(Line::from(format!("{:>9}  and {} more", "", count(more))));
+            }
+            let room = inner.saturating_sub(skipped.len() + 2);
+            sections.push(found_lines(rule, home, room, width));
+            let mut left = vec![
+                Line::from(format!(
+                    "Skipped · {} left in place",
+                    count(rule.skipped.len())
+                ))
+                .style(super::visual::HEADING),
+            ];
+            left.extend(skipped);
+            sections.push(left);
+        }
+        super::visual::sections_in(frame, found_area, Self::found_block(rule), sections);
+        let chart = chart_lines(planned, rule, width);
+        draw_location(frame, chart_area, planned, chart);
+    }
+
+    /// The found box, titled with how much the rule found
+    fn found_block(rule: &RulePlan) -> ratatui::widgets::Block<'static> {
+        let title = if rule.items.is_empty() {
+            " Found ".to_string()
+        } else {
+            format!(
+                " Found · {} · {} ",
+                items(rule.items.len()),
+                format::size(rule.size())
+            )
+        };
+        super::visual::block()
+            .title(Line::from(title).bold())
+            .title_bottom(Line::from(" Trash · restore with Put Back ").right_aligned())
+            .padding(Padding::horizontal(1))
+    }
+
     /// The selected rule in up to three boxes: what it is, what it found,
     /// and what it left in place. `notes` go at the top.
     fn draw_details(
@@ -600,6 +692,10 @@ impl Clean {
         rule: &RulePlan,
         notes: Vec<Line<'static>>,
     ) {
+        if area.height >= TALL_DETAILS {
+            Self::draw_details_tall(frame, area, planned, rule, notes);
+            return;
+        }
         let home = planned.home.as_path();
         let width = usize::from(area.width.saturating_sub(4));
         let mut top = notes;
@@ -640,22 +736,8 @@ impl Clean {
         );
 
         let room = usize::from(found_area.height.saturating_sub(2));
-        let title = if rule.items.is_empty() {
-            " Found ".to_string()
-        } else {
-            format!(
-                " Found · {} · {} ",
-                items(rule.items.len()),
-                format::size(rule.size())
-            )
-        };
         frame.render_widget(
-            Paragraph::new(found_lines(rule, home, room, width)).block(
-                super::visual::block()
-                    .title(Line::from(title).bold())
-                    .title_bottom(Line::from(" Trash · restore with Put Back ").right_aligned())
-                    .padding(Padding::horizontal(1)),
-            ),
+            Paragraph::new(found_lines(rule, home, room, width)).block(Self::found_block(rule)),
             found_area,
         );
 
@@ -694,40 +776,21 @@ fn draw_location(frame: &mut Frame, area: Rect, planned: &Planned, chart: Vec<Li
 }
 
 /// The details' boxes: about, found, skipped, and the chart. The found box
-/// fits its items, and the chart takes what is left when there is room. On
-/// a tall screen the chart keeps the same place whichever rule is selected,
-/// so its sections do not jump as the arrow moves, and the boxes above
-/// share the rest.
+/// fits its items, and the chart takes what is left when there is room.
 fn detail_areas(area: Rect, top: u16, found: u16, skipped: u16, chart: u16) -> [Rect; 4] {
-    let (area, fixed_chart) = if area.height >= TALL_DETAILS {
-        let [above, chart] = Layout::vertical([
-            Constraint::Fill(1),
-            Constraint::Length(area.height * 9 / 20),
-        ])
-        .areas(area);
-        (above, Some(chart))
-    } else {
-        (area, None)
-    };
     let free = area.height.saturating_sub(top).saturating_sub(skipped);
-    let found = if fixed_chart.is_some() {
-        found.min(free)
-    } else if free >= found + chart {
-        found
-    } else {
-        free
-    };
-    let [about, found, skipped, rest] = Layout::vertical([
+    let found = if free >= found + chart { found } else { free };
+    Layout::vertical([
         Constraint::Length(top),
         Constraint::Length(found),
         Constraint::Length(skipped),
         Constraint::Fill(1),
     ])
-    .areas(area);
-    [about, found, skipped, fixed_chart.unwrap_or(rest)]
+    .areas(area)
 }
 
-/// From this many rows, the right side keeps a fixed place for the chart
+/// From this many rows, the details' boxes keep their size whichever rule
+/// is selected
 const TALL_DETAILS: u16 = 34;
 
 /// Every rule that found something, largest first, with a bar against the
@@ -1619,6 +1682,33 @@ mod tests {
         assert!(screen.contains("1 rule problems"));
         assert!(screen.contains("Not loaded:"));
     }
+    #[test]
+    fn a_tall_screen_keeps_the_detail_boxes_in_place() {
+        use crate::ui::visual::tests as view;
+        let scan = crate::ui::scan::ScanStatus::Failed(String::new());
+        let context = Context {
+            scan: &scan,
+            disk: None,
+            cleanable: None,
+            plan: None,
+        };
+        let dir = fake_home();
+        let mut screen = Clean::ready(planned(&dir));
+        // The rows where the found box and the chart start
+        let edges = |screen: &mut Clean| {
+            let text = view::text(&view::render("clean", screen, &context, 160, 46));
+            let rows: Vec<&str> = text.lines().collect();
+            let at = |needle: &str| rows.iter().position(|row| row.contains(needle));
+            (at("┌ Found"), at("┌ Location"))
+        };
+        let first = edges(&mut screen);
+        assert!(first.0.is_some() && first.1.is_some(), "{first:?}");
+        for _ in 0..3 {
+            press(&mut screen, KeyCode::Down);
+            assert_eq!(edges(&mut screen), first);
+        }
+    }
+
     #[test]
     fn layout_stays_readable_across_terminal_sizes() {
         use crate::ui::visual::tests as view;

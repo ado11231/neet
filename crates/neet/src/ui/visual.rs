@@ -36,13 +36,22 @@ pub fn sections(
     frame: &mut ratatui::Frame,
     area: ratatui::layout::Rect,
     title: &str,
+    sections: Vec<Vec<Line<'static>>>,
+) {
+    let block = block()
+        .title(title.to_string())
+        .padding(ratatui::widgets::Padding::horizontal(1));
+    sections_in(frame, area, block, sections);
+}
+
+/// [`sections`] in a box of your own, such as one with a bottom title
+pub fn sections_in(
+    frame: &mut ratatui::Frame,
+    area: ratatui::layout::Rect,
+    block: Block<'_>,
     mut sections: Vec<Vec<Line<'static>>>,
 ) {
     use ratatui::layout::{Flex, Layout, Rect};
-    use ratatui::widgets::Padding;
-    let block = block()
-        .title(title.to_string())
-        .padding(Padding::horizontal(1));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let rows = |lines: &[Line<'static>]| wrapped_rows(lines, inner.width);
