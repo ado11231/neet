@@ -107,24 +107,35 @@
 ## Disk
 
 ```text
-+ ~/Library ------------ 58.2 GB . 312 items . sort: size +  +- Caches -----------------+
-| > ##########..  48%   28.0 GB  Application Support/     |  | ####......  31%  3.1 GB  |
-|   ####........  22%   12.8 GB  Caches/                  |  | ##........  12%  1.2 GB  |
-|   ##..........   9%    5.2 GB  Containers/              |  | ...                      |
-+---------------------------------------------------------+  +--------------------------+
++ ~/Library ------------------- By size . s sorts by name +  + Caches/ ----------------------------------+
+|        Size              %  Name                        |  | Folder    ~/Library                       |
+| >   28.0 GB  ########..  48%  Application Support/      |  | Size      12.8 GB                         |
+|     12.8 GB  ####......  22%  Caches/                   |  | Share     22% of this folder              |
+|      5.2 GB  ##........   9%  Containers/               |  | Items     40,112                          |
++ 312 items . 58.2 GB ------------------------------------+  | Changed   today                           |
++ This folder --------------------------------------------+  | Cleanup   ◆ a folder neet cleans; only ... |
+| Location  ~/Library                                     |  |                                           |
+| Size      58.2 GB                                       |  | Files apps can make again. Clean empties  |
+| Items     312                                           |  | these.                                    |
+| Largest   Application Support/ . 48%                    |  +-------------------------------------------+
++---------------------------------------------------------+  + Inside . by size -------------------------+
++ Steps --------------------------------------------------+  |    3.1 GB  ##########  com.spotify.client/ |
+| 1. Press -> or Enter to open a folder.                  |  |    1.2 GB  ####......  Homebrew/           |
++---------------------------------------------------------+  +-------------------------------------------+
 ```
 
-* **Left, 55% of the width:** the current folder, largest first. A table aligns Size, percent, and Name beneath their headers, with a 12 character bar when space allows. Folders end in `/`, links in `@`.
+* **Left, 55% of the width:** the current folder, largest first, in a table with no gap under its header: Size, a 10 character bar when space allows, percent, and Name. Folders end in `/`, links in `@`. The title shows the folder's path, shortened to fit, with the sort order and what `s` changes it to on the right. The bottom edge shows how many items it holds and its size.
 * Sizes and bars of 5 GB or more are red, and of 1 GB or more yellow, as in Large Files.
-* The title shows the folder's path on the left, and its size, item count, and sort order on the right.
-* **Right:** the selected row, titled with its name in bold moonlight blue. The preview is hidden when the terminal is narrower than 100 columns.
-  1. Its path, and for well known folders, such as `~/Library/Caches` or `.npm`, what they hold in plain words.
-  2. Its size and share of the current folder, its item count, and when it last changed.
-  3. Whether neet cleans it: a green `✓` inside a folder neet cleans, a yellow `◆` for a cleanup folder whose items neet cleans, a red `✗` for a protected folder, and a normal foreground `·` for anywhere else.
-  4. For a folder, what is inside, in the same order and colors as the left.
+* When there is room, the table is only as tall as its rows, with **This folder** (where it is, its size, how many items, and its largest item) and **Steps** below it.
+* **Right,** in small boxes as on the other screens, titled with the selected row's name. Hidden when the terminal is narrower than 100 columns.
+  1. Its folder in blue, its size and share of the current folder, its item count for a folder or its type for a file, and when it last changed. Labels share one width.
+  2. **Cleanup:** whether neet cleans it, in plain words: a green `✓` in a folder neet cleans, a yellow `◆` for a folder neet cleans where only what is inside can go, red for a protected folder neet never removes, and `not a folder neet cleans` anywhere else.
+  3. A plain hint: for well known folders, such as `~/Library/Caches` or `.npm`, what they hold, and for files, what their type usually is, as in Large Files.
+  4. For a folder, **Inside**: what it holds, in the same order, with 10 character bars, up to 12 items and how many more.
+  5. **Steps,** here when they are not on the left.
 * Until the scan finishes, the screen shows the loading box, with how many items and how much space the scan has counted.
 * The selected row is bold, with an arrow in front.
-* Disk only shows what is there. Cleaning happens in Quick Clean and Deep Clean.
+* Disk only shows what is there. Cleaning happens in Quick Clean, Deep Clean, Remove App, and Large Files.
 * The screen shows the scan as it was. An item moved to the Trash stays listed until the next scan.
 
 | Key | Action |
