@@ -165,7 +165,7 @@
 * **Rows,** always in this order, what neet clears first:
   1. Caches and logs: what every Deep Clean rule found.
   2. Project build folders and installers in Downloads, from the scan. neet moves these to the Trash after you pick and review them.
-  3. The Trash, from the scan, which you empty yourself.
+  3. The Trash, from the scan, which you empty yourself. macOS only lets a terminal read `~/.Trash` with Full Disk Access. Without it, the row says `no access` in yellow instead of `none`, and its Summary says how to turn it on.
   4. The Docker disk image, from the scan, and simulators, asked of `xcrun simctl` when there are simulators on the Mac: runtimes, and simulators left without one. neet asks their own tools to remove them, which is permanent.
   5. Temporary files, measured in `/private/var/folders`, which macOS clears. Simulators and temporary files are worked out in the background and show moonlight blue `scanning` until done.
 * **Columns:** the size and a bar of it against the largest row, both red from 5 GB and yellow from 1 GB, how many items, and who clears it: `neet` in green, `neet, permanently` in red, `you` in yellow, or `macOS` in moonlight blue. Temporary files are left to macOS, since deleting them by hand can break running apps.

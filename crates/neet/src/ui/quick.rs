@@ -79,9 +79,14 @@ const SHARE_BAR: usize = 14;
 
 /// What a row shows: found, still looking, or nothing
 enum Status {
-    Found { size: u64, count: Option<usize> },
+    Found {
+        size: u64,
+        count: Option<usize>,
+    },
     Looking,
     Nothing,
+    /// macOS would not let the scan read it, so its size is unknown
+    NoAccess,
 }
 
 fn name(item: Item) -> &'static str {
@@ -341,6 +346,7 @@ impl QuickClean {
                         count: Some(found.count),
                     },
                     _ if waiting => Status::Looking,
+                    _ if kind == Kind::Trash && trash_blocked(context) => Status::NoAccess,
                     _ => Status::Nothing,
                 }
             }
@@ -407,6 +413,11 @@ impl QuickClean {
                         String::new(),
                     ),
                     Status::Nothing => (Span::raw("none"), Span::raw(""), String::new()),
+                    Status::NoAccess => (
+                        Span::raw("no access").yellow(),
+                        Span::raw(""),
+                        String::new(),
+                    ),
                 };
                 columns
                     .row([
@@ -560,6 +571,10 @@ impl QuickClean {
                 vec![Span::raw("scanning").fg(super::visual::ACCENT)],
             )),
             Status::Nothing => lines.push(field("Size", vec![Span::raw("none found")])),
+            Status::NoAccess => {
+                lines.push(field("Size", vec![Span::raw("no access").yellow()]));
+                lines.push(Line::from(NO_ACCESS).yellow());
+            }
         }
         let how = match who(item) {
             Who::Neet => "neet, to the Trash",
@@ -725,6 +740,20 @@ impl QuickClean {
     }
 }
 
+/// How to let neet read the Trash
+const NO_ACCESS: &str = "macOS blocks your terminal from reading the Trash. Turn on Full Disk Access for your terminal app in System Settings, Privacy & Security, then restart it.";
+
+/// Whether macOS refused to let the scan read `~/.Trash`
+fn trash_blocked(context: &Context) -> bool {
+    let ScanStatus::Done { scan, .. } = context.scan else {
+        return false;
+    };
+    let trash = scan.tree.path(scan.tree.root()).join(".Trash");
+    scan.errors
+        .iter()
+        .any(|error| error.permission_denied && error.path.as_deref() == Some(trash.as_path()))
+}
+
 fn quick_columns(statuses: &[Status], width: u16) -> super::visual::Columns<5> {
     let sizes = format::column_width(
         "Size",
@@ -736,7 +765,7 @@ fn quick_columns(statuses: &[Status], width: u16) -> super::visual::Columns<5> {
             format!("~{size}")
         }),
     )
-    .max(8);
+    .max(9);
     let counts = format::column_width(
         "Found",
         statuses.iter().filter_map(|status| match status {
@@ -927,6 +956,29 @@ mod tests {
                 elapsed: std::time::Duration::from_secs(1),
             },
         )
+    }
+
+    #[test]
+    fn a_trash_macos_will_not_let_neet_read_says_so() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("temporary directory should be created");
+        let home = fs::canonicalize(dir.path()).expect("home should resolve");
+        let trash = home.join(".Trash");
+        fs::create_dir_all(&trash).expect("folder should be made");
+        fs::write(trash.join("old.zip"), vec![7u8; 2_000_000]).expect("file should be written");
+        fs::set_permissions(&trash, fs::Permissions::from_mode(0o000)).expect("locked");
+        let scanned = scan::scan(&home, |_| {});
+        fs::set_permissions(&trash, fs::Permissions::from_mode(0o755)).expect("unlocked");
+        let scan = ScanStatus::Done {
+            scan: scanned.expect("scan should finish"),
+            elapsed: std::time::Duration::from_secs(1),
+        };
+
+        // Unknown, rather than none
+        let screen = render(&mut quick(), &scan);
+        assert!(screen.contains("no access"), "{screen}");
+        let (_dir, readable) = done();
+        assert!(!render(&mut quick(), &readable).contains("no access"));
     }
 
     fn quick() -> QuickClean {
