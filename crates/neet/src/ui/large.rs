@@ -562,7 +562,7 @@ fn by_folder(tree: &Tree, found: &[NodeId]) -> Vec<(String, u64)> {
 
 /// What kind of file a name is, short enough for a column, and a plain hint
 /// about it, from its extension
-fn kind_of(name: &str) -> (&'static str, Option<&'static str>) {
+pub(super) fn kind_of(name: &str) -> (&'static str, Option<&'static str>) {
     let extension = name
         .rsplit_once('.')
         .map(|(_, extension)| extension.to_ascii_lowercase())
