@@ -177,7 +177,7 @@
 
 * One table of everything taking space that can be cleared, so you can start with the biggest wins.
 * **Rows,** always in this order, what neet clears first:
-  1. Caches & logs: what every Deep Clean rule found.
+  1. Caches & logs: what every Deep Clean rule found. Found counts the items in those rules, leaving out skipped paths.
   2. Project build folders and installers in Downloads, from the scan. neet moves these to the Trash after you pick and review them.
   3. The Trash, from the scan, which you empty yourself. macOS only lets a terminal read `~/.Trash` with Full Disk Access. Without it, the row says `no access` in yellow instead of `none`, and its Summary says how to turn it on.
   4. The Docker disk image, from the scan, and simulators, asked of `xcrun simctl` when there are simulators on the Mac: runtimes, and simulators left without one. neet asks their own tools to remove them, which is permanent.
@@ -186,7 +186,7 @@
 * The bottom edge adds up what neet can clear and what you can free yourself.
 * **The boxes run the full height.** Each side is a stack of small boxes, one for each section, titled with the section's name, such as **About** or **Overview**. The boxes share the height evenly, so a tall screen has no empty space below them. Boxes that do not fit are left out, the last first. From 45 rows, the table's rows stand a row apart.
 * **Below the table,** titled with the selected row: **Steps**, its numbered steps; **About**; **Location**, its folders in blue; **Impact**, what changes, and **Undo**: Put Back in green, or none in red for what is deleted for good; and **Summary**: its size and item count, a bar of its share of everything found, and who clears it, in the table's color. On a short screen, Where it is and After it is cleared are left out first.
-* **Space,** on the right: **Largest items**, as many as fit: rules for Caches & logs, folders and installers by path, and the largest item for the Trash and Docker, or why there is no list. **Overview**: every row that found something, largest first, with a bar in the color of who clears it. **After cleanup**: a gauge of the disk with the space the cleanup frees in green, then free space now, what neet can clear in green, what you clear by hand in yellow when there is any, and free space after. Space is hidden below 130 columns, and After cleanup moves to the bottom of the box under the table.
+* **Space,** on the right: **Largest items**, as many as fit: rules for Caches & logs, folders and installers by path, items inside the Trash, and the Docker disk image, or why there is no list. Trash items are largest first, with Finder's `.DS_Store` file left out. **Overview**: every row that found something, largest first, with a bar in the color of who clears it. **After cleanup**: a gauge of the disk with the space the cleanup frees in green, then free space now, what neet can clear in green, what you clear by hand in yellow when there is any, and free space after. Space is hidden below 130 columns, and After cleanup moves to the bottom of the box under the table.
 * Build folders and installers that are empty, or already gone since the scan, are left out.
 * Below 120 columns, the selected path and age sit below the file table when at least 18 rows are available.
 * Until the scan finishes, the screen shows the loading box.
@@ -617,4 +617,3 @@
 | --- | --- |
 | Start a repository | Without chezmoi, `x` offers to start a Git repository in chezmoi's layout, then add the chosen files to it. |
 | More Configure programs | Settings for more programs, such as Ghostty, the same way as kitty. Shell settings only in a block neet owns. |
-
