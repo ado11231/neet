@@ -1168,14 +1168,13 @@ fn rules_table(
         .collect();
     let header = columns
         .row([
-            Cell::from(""),
+            super::visual::check_header(),
             Cell::from("Rule"),
             Cell::from("Risk"),
             Cell::from(Line::from("Items").right_aligned()),
             Cell::from(Line::from("Size").right_aligned()),
         ])
-        .style(super::visual::HEADING)
-        .bottom_margin(1);
+        .style(super::visual::HEADING);
     Table::new(rows, columns.widths())
         .header(header)
         .column_spacing(2)
@@ -1232,8 +1231,8 @@ impl Screen for Clean {
             State::Ready(planned) => planned,
         };
 
-        // Border, header, gap, then one row per rule
-        let list_height = u16::try_from(planned.plan.rules.len() + 4).unwrap_or(u16::MAX);
+        // Two borders, the header, then one row per rule
+        let list_height = u16::try_from(planned.plan.rules.len() + 3).unwrap_or(u16::MAX);
         let (list_area, detail_area, summary) = if area.width >= MIN_SIDE_WIDTH {
             let [left, detail] =
                 Layout::horizontal([Constraint::Percentage(55), Constraint::Fill(1)]).areas(area);

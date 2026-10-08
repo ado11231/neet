@@ -1067,7 +1067,7 @@ impl DockerSpace {
         let rest = if volumes.is_empty() {
             rest
         } else {
-            let height = u16::try_from(volumes.len() + 4)
+            let height = u16::try_from(volumes.len() + 3)
                 .unwrap_or(u16::MAX)
                 .min(rest.height / 2);
             let [list, rest] =
@@ -1391,12 +1391,11 @@ fn volume_table(
         .header(
             columns
                 .row([
-                    Cell::from(""),
+                    super::visual::check_header(),
                     Cell::from(Line::from("Size").right_aligned()),
                     Cell::from("Volume"),
                 ])
-                .style(super::visual::HEADING)
-                .bottom_margin(1),
+                .style(super::visual::HEADING),
         )
         .column_spacing(2)
         .block(

@@ -30,6 +30,7 @@
 * While a screen waits for slow work, such as the scan, it shows a small box in the middle: what neet is doing, a spinner, how far it has got, and what shows when it is done.
 
 * Numeric headers and values share a right edge. Names and paths align left. Column widths account for the border, padding, and selection arrow; numeric widths grow to fit formatted values.
+* Tables with checkboxes have a blue `✓` over that column and no blank row under the header. Their height includes only the borders, header, and rows.
 * At narrow widths, decorative bars disappear first, followed by secondary metadata. Names, sizes, checkboxes, and risk labels stay visible. Selected details retain hidden metadata. Names and paths shorten by terminal cells without splitting Unicode graphemes.
 * While a loading box shows, the footer of keys is left out, since they do nothing until it is done.
 * Dialogs and loading boxes use the same word wrapping for measurement and rendering. Review, results, and skipped paths scroll through wrapped lines.
