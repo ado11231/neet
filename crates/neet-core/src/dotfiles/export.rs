@@ -1,17 +1,25 @@
 //! Export: a review for secrets, then a commit and a push of chezmoi's
-//! source files. See Export in `docs/SAFETY.md`.
+//! source files. Without chezmoi's folder, it starts one as a new Git
+//! repository, in chezmoi's layout. See Export in `docs/SAFETY.md`.
 //!
 //! The review is not a promise that nothing secret remains.
 
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use super::{Chezmoi, Listing, Managed};
+use super::{Chezmoi, Listing, Managed, NewSource, ViewOnly};
 use crate::rewrite::Opened;
 
 /// How long a Git command may take. Pushing can be slow.
 const GIT_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// How long `gh repo create` may take, with its push
+const GH_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// The name of the GitHub repository Export offers to create
+pub const GITHUB_NAME: &str = "dotfiles";
 
 /// Something in a file that looks secret
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,7 +142,19 @@ pub struct Plan {
     /// The repository's top folder
     pub top: PathBuf,
     pub pending: Vec<Pending>,
+    /// For a new repository, the dotfiles themselves; otherwise their
+    /// source files
     reviewed: Vec<(String, Opened)>,
+    /// For a new repository, where each pending file goes
+    new: Option<Vec<NewSource>>,
+}
+
+impl Plan {
+    /// Whether the repository is still to be started
+    #[must_use]
+    pub fn is_new(&self) -> bool {
+        self.new.is_some()
+    }
 }
 
 fn git(folder: &Path, args: &[&str]) -> Result<crate::run::Captured, String> {
@@ -142,9 +162,12 @@ fn git(folder: &Path, args: &[&str]) -> Result<crate::run::Captured, String> {
     command
         .arg("-C")
         .arg(folder)
-        .args(["-c", "core.fsmonitor=false"])
-        .args(args)
-        .env("GIT_TERMINAL_PROMPT", "0");
+        .args(["-c", "core.fsmonitor=false"]);
+    // A new repository has no name for its commits of its own, and the
+    // machine running the tests may have none either.
+    #[cfg(test)]
+    command.args(["-c", "user.name=t", "-c", "user.email=t@t"]);
+    command.args(args).env("GIT_TERMINAL_PROMPT", "0");
     match crate::run::capture(&mut command, GIT_TIMEOUT) {
         Ok(Some(captured)) => Ok(captured),
         Ok(None) => Err(format!(
@@ -232,7 +255,220 @@ pub fn plan(listing: &Listing) -> Result<Plan, String> {
         top,
         pending,
         reviewed,
+        new: None,
     })
+}
+
+/// Whether `folder` is missing, or an empty folder that is not a link
+fn is_free(folder: &Path) -> Result<(), String> {
+    let shown = folder.display();
+    match std::fs::symlink_metadata(folder) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("{shown} could not be read: {error}.")),
+        Ok(metadata) if !metadata.is_dir() => {
+            Err(format!("{shown} is there, and is not a folder."))
+        }
+        Ok(_) => match std::fs::read_dir(folder).map(|mut entries| entries.next().is_none()) {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(format!("{shown} already has files in it.")),
+            Err(error) => Err(format!("{shown} could not be read: {error}.")),
+        },
+    }
+}
+
+/// Every listed dotfile that exists, reviewed for secrets, to start
+/// chezmoi's folder at `folder` as a new repository. Nothing is written.
+///
+/// # Errors
+///
+/// Returns why a repository cannot be started there.
+pub fn start_plan(home: &Path, listing: &Listing, folder: &Path) -> Result<Plan, String> {
+    if listing.chezmoi.is_some() {
+        return Err("chezmoi's folder is already there.".to_string());
+    }
+    is_free(folder)?;
+    let mut pending = Vec::new();
+    let mut reviewed = Vec::new();
+    let mut new = Vec::new();
+    for file in &listing.files {
+        if file.found.is_none()
+            || matches!(
+                file.view_only,
+                Some(
+                    ViewOnly::BrokenLink
+                        | ViewOnly::LinkLeadsOut
+                        | ViewOnly::Protected
+                        | ViewOnly::NotAFile
+                )
+            )
+        {
+            continue;
+        }
+        let Some(source) = super::new_source(folder, home, file.known.path) else {
+            continue;
+        };
+        let path = source
+            .path
+            .strip_prefix(folder)
+            .map_err(|_| "A new source path is outside the folder.".to_string())?
+            .display()
+            .to_string();
+        let opened = Opened::open(&file.path).map_err(|_| {
+            format!(
+                "~/{} could not be read for the secret review.",
+                file.known.path
+            )
+        })?;
+        let findings = scan(&String::from_utf8_lossy(opened.contents()));
+        reviewed.push((path.clone(), opened));
+        new.push(source);
+        pending.push(Pending {
+            file: file.known.path,
+            path,
+            findings,
+            may_hold_secrets: file.may_hold_secrets,
+        });
+    }
+    if pending.is_empty() {
+        return Err("None of the listed dotfiles are in your home folder yet.".to_string());
+    }
+    Ok(Plan {
+        top: folder.to_path_buf(),
+        pending,
+        reviewed,
+        new: Some(new),
+    })
+}
+
+/// The README a new repository starts with
+fn readme(files: &[&str]) -> String {
+    let mut text = String::from(
+        "# Dotfiles\n\nSettings files, kept in [chezmoi](https://www.chezmoi.io)'s layout. \
+         Set up another Mac from this repository with:\n\n```sh\nchezmoi init --apply <this repository's address>\n```\n\n## Files\n\n",
+    );
+    for file in files {
+        let _ = writeln!(text, "- `~/{file}`");
+    }
+    text
+}
+
+/// Makes `path` with `mode`, failing if it is already there
+fn create(path: &Path, contents: &[u8], mode: u32) -> Result<(), String> {
+    use std::io::Write as _;
+    use std::os::unix::fs::OpenOptionsExt as _;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(mode)
+        .open(path)
+        .map_err(|error| format!("{} could not be made: {error}.", path.display()))?;
+    file.write_all(contents)
+        .and_then(|()| file.sync_all())
+        .map_err(|error| format!("{} could not be written: {error}.", path.display()))
+}
+
+fn make_folder(path: &Path, private: bool) -> Result<(), String> {
+    use std::os::unix::fs::DirBuilderExt as _;
+    if path.is_dir() {
+        return Ok(());
+    }
+    std::fs::DirBuilder::new()
+        .mode(if private { 0o700 } else { 0o755 })
+        .create(path)
+        .map_err(|error| format!("{} could not be made: {error}.", path.display()))
+}
+
+/// Starts the new repository: writes the chosen files as they were
+/// reviewed, a README, and a `.chezmoiignore` that leaves the README out,
+/// then runs `git init` and commits them.
+fn start(plan: &Plan, new: &[NewSource], paths: &[&str], message: &str) -> Result<(), String> {
+    let who = git(Path::new("/"), &["var", "GIT_AUTHOR_IDENT"])?;
+    if !who.success {
+        return Err(
+            "Git does not know your name and email yet. Set user.name and user.email with c on .gitconfig, then export again."
+                .to_string(),
+        );
+    }
+    let top = &plan.top;
+    is_free(top)?;
+    let mut chosen = Vec::new();
+    for path in paths {
+        let index = plan
+            .reviewed
+            .iter()
+            .position(|(name, _)| name == path)
+            .ok_or("A selected file was not reviewed. Open Export again.")?;
+        let opened = &plan.reviewed[index].1;
+        if !opened.is_unchanged().unwrap_or(false) {
+            return Err(format!(
+                "~/{} changed since the secret review. Open Export again.",
+                plan.pending[index].file
+            ));
+        }
+        chosen.push(index);
+    }
+    if let Some(parent) = top.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("{} could not be made: {error}.", parent.display()))?;
+    }
+    make_folder(top, true)?;
+    for &index in &chosen {
+        let source = &new[index];
+        for (folder, private) in &source.folders {
+            make_folder(folder, *private)?;
+        }
+        let opened = &plan.reviewed[index].1;
+        create(&source.path, opened.contents(), opened.mode() & 0o777)?;
+    }
+    let files: Vec<&str> = chosen.iter().map(|&i| plan.pending[i].file).collect();
+    create(&top.join("README.md"), readme(&files).as_bytes(), 0o644)?;
+    create(&top.join(".chezmoiignore"), b"README.md\n", 0o644)?;
+    git_ok(top, &["init", "--quiet", "--initial-branch=main"])?;
+    let mut add = vec!["add", "--", "README.md", ".chezmoiignore"];
+    add.extend(paths);
+    git_ok(top, &add)?;
+    git_ok(top, &["commit", "--quiet", "-m", message])?;
+    Ok(())
+}
+
+/// Creates a private GitHub repository named [`GITHUB_NAME`] with `gh`,
+/// as the remote `origin`, and pushes to it. Returns its address.
+///
+/// # Errors
+///
+/// Returns why, such as `gh` not being logged in or the name being taken.
+pub fn create_github(top: &Path) -> Result<String, String> {
+    if !git_ok(top, &["remote"])?.trim().is_empty() {
+        return Err("The repository already has a remote. Push to it instead.".to_string());
+    }
+    let mut command = Command::new("gh");
+    command
+        .args(["repo", "create", GITHUB_NAME, "--private", "--source"])
+        .arg(top)
+        .args(["--remote", "origin", "--push"])
+        .current_dir(top)
+        .env("GH_PROMPT_DISABLED", "1")
+        .env("GIT_TERMINAL_PROMPT", "0");
+    let captured = match crate::run::capture(&mut command, GH_TIMEOUT) {
+        Ok(Some(captured)) => captured,
+        Ok(None) => {
+            return Err(format!(
+                "gh did not finish within {} seconds.",
+                GH_TIMEOUT.as_secs()
+            ));
+        }
+        Err(error) => return Err(format!("gh could not run: {error}.")),
+    };
+    if !captured.success {
+        return Err(format!("gh repo create failed: {}", captured.stderr.trim()));
+    }
+    Ok(captured
+        .stdout
+        .lines()
+        .find(|line| line.starts_with("https://"))
+        .unwrap_or_default()
+        .trim()
+        .to_string())
 }
 
 /// Commits `paths`, from the repository's top folder, with `message`, and
@@ -247,6 +483,9 @@ pub fn commit(plan: &Plan, paths: &[&str], message: &str) -> Result<(), String> 
     }
     if message.trim().is_empty() || message.contains('\0') {
         return Err("The commit needs a message.".to_string());
+    }
+    if let Some(new) = &plan.new {
+        return start(plan, new, paths, message);
     }
     for path in paths {
         let opened = plan
@@ -449,6 +688,100 @@ alias sk-=ls
             ]
         );
         assert_eq!(plan.pending[0].findings[0].line, 2);
+    }
+
+    #[test]
+    fn starts_a_repository_in_chezmoi_layout_with_only_the_chosen_files() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = tempfile::tempdir().unwrap();
+        let home = fs::canonicalize(dir.path()).unwrap().join("home");
+        fs::create_dir_all(home.join(".ssh")).unwrap();
+        fs::set_permissions(home.join(".ssh"), fs::Permissions::from_mode(0o700)).unwrap();
+        fs::write(home.join(".zshrc"), "export A=1\n").unwrap();
+        fs::write(home.join(".ssh/config"), "Host x\n").unwrap();
+        fs::set_permissions(home.join(".ssh/config"), fs::Permissions::from_mode(0o600)).unwrap();
+        fs::write(
+            home.join(".npmrc"),
+            "//r/:_authToken=npm_abcdefabcdefabcdef\n",
+        )
+        .unwrap();
+        fs::write(dir.path().join("outside"), "x\n").unwrap();
+        std::os::unix::fs::symlink(dir.path().join("outside"), home.join(".vimrc")).unwrap();
+        let folder = home.join(".local/share/chezmoi");
+        let listing = super::super::list(&home);
+        assert!(listing.chezmoi.is_none());
+
+        let plan = start_plan(&home, &listing, &folder).unwrap();
+        assert!(plan.is_new());
+        assert!(!folder.exists(), "the plan writes nothing");
+        let files: Vec<(&str, &str, usize)> = plan
+            .pending
+            .iter()
+            .map(|p| (p.file, p.path.as_str(), p.findings.len()))
+            .collect();
+        assert_eq!(
+            files,
+            [
+                (".zshrc", "dot_zshrc", 0),
+                (".ssh/config", "private_dot_ssh/private_config", 0),
+                (".npmrc", "dot_npmrc", 1),
+            ]
+        );
+
+        commit(
+            &plan,
+            &["dot_zshrc", "private_dot_ssh/private_config"],
+            "Start dotfiles",
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(folder.join("dot_zshrc")).unwrap(),
+            "export A=1\n"
+        );
+        let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&folder), 0o700);
+        assert_eq!(mode(&folder.join("private_dot_ssh")), 0o700);
+        assert_eq!(mode(&folder.join("private_dot_ssh/private_config")), 0o600);
+        assert!(!folder.join("dot_npmrc").exists());
+        assert_eq!(
+            fs::read_to_string(folder.join(".chezmoiignore")).unwrap(),
+            "README.md\n"
+        );
+        assert!(
+            fs::read_to_string(folder.join("README.md"))
+                .unwrap()
+                .contains("- `~/.ssh/config`")
+        );
+        let shown = Command::new("git")
+            .arg("-C")
+            .arg(&folder)
+            .args(["show", "--name-only", "--format=%s"])
+            .output()
+            .unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&shown.stdout),
+            "Start dotfiles\n\n.chezmoiignore\nREADME.md\ndot_zshrc\nprivate_dot_ssh/private_config\n"
+        );
+
+        // The folder now holds files, so starting again is refused, and so
+        // is a plan made before the folder was filled.
+        assert!(start_plan(&home, &listing, &folder).is_err());
+        assert!(commit(&plan, &["dot_zshrc"], "Again").is_err());
+        // chezmoi's folder is found now, so the screen treats it as chezmoi's.
+        assert!(super::super::list(&home).chezmoi.is_some());
+    }
+
+    #[test]
+    fn a_new_repository_refuses_a_file_changed_after_the_review() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = fs::canonicalize(dir.path()).unwrap();
+        fs::write(home.join(".zshrc"), "export A=1\n").unwrap();
+        let folder = home.join("dots");
+        let plan = start_plan(&home, &super::super::list(&home), &folder).unwrap();
+        fs::write(home.join(".zshrc"), "export A=2\n").unwrap();
+        let error = commit(&plan, &["dot_zshrc"], "Start").unwrap_err();
+        assert!(error.contains("changed since the secret review"), "{error}");
+        assert!(!folder.exists());
     }
 
     #[test]

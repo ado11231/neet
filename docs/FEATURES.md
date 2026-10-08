@@ -118,7 +118,7 @@
 | Diff | Shows how a file differs from its source file in chezmoi, or what changed since its last backup. | Done |
 | Configure | Changes a program's settings one at a time, then reviews them like an edit. Git, tmux, Starship, kitty, Ghostty, mise, and zsh, in a block neet owns at the end of `.zshrc`; more programs to come. | Done |
 | Export | Reviews chezmoi's changed source files for secrets, refuses changes made after review, commits the ones you pick, and pushes to the reviewed branch when you press `y`. | Done |
-| Start a repository | Without chezmoi, writes your dotfiles into a new repository in chezmoi's layout, ready for GitHub. | Proposed |
+| Start a repository | Without chezmoi, writes the dotfiles you pick into a new repository in chezmoi's folder and layout, commits them, and offers to make a private GitHub repository with `gh`. | Done |
 
 * What may change, and how, is in [SAFETY.md](SAFETY.md#dotfiles). neet runs chezmoi only when its templates and hooks cannot run a program.
 

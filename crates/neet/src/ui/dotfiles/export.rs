@@ -1,5 +1,6 @@
 //! Export: the review for secrets, the files to commit, the message, and
-//! then the push question.
+//! then the push question. Without chezmoi's folder, the same review starts
+//! a new repository, then asks about GitHub.
 
 use neet_core::dotfiles::export::{self, Pending, Plan};
 use ratatui::Frame;
@@ -27,7 +28,8 @@ pub(in crate::ui) struct Export {
     pub typing: Option<String>,
     /// Why the last commit was refused
     pub error: Option<String>,
-    /// The remote branch a push goes to, such as `origin/main`
+    /// The remote branch a push goes to, such as `origin/main`, or for a
+    /// new repository, its folder
     pub target: String,
 }
 
@@ -39,7 +41,7 @@ impl Export {
             .iter()
             .map(|pending| pending.findings.is_empty() && !pending.may_hold_secrets)
             .collect();
-        let message = message(&plan.pending, &chosen);
+        let message = message(&plan, &chosen);
         Self {
             plan,
             chosen,
@@ -85,10 +87,10 @@ impl Export {
             KeyCode::Up | KeyCode::Char('k') => self.selected = self.selected.saturating_sub(1),
             KeyCode::Down | KeyCode::Char('j') => self.selected = (self.selected + 1).min(last),
             KeyCode::Char(' ') => {
-                let was_default = self.message == message(&self.plan.pending, &self.chosen);
+                let was_default = self.message == message(&self.plan, &self.chosen);
                 self.chosen[self.selected] = !self.chosen[self.selected];
                 if was_default {
-                    self.message = message(&self.plan.pending, &self.chosen);
+                    self.message = message(&self.plan, &self.chosen);
                 }
                 self.error = None;
             }
@@ -124,10 +126,16 @@ impl Export {
             } else {
                 Span::raw("nothing found").green()
             };
+            // A new repository names the dotfiles; otherwise their source files.
+            let name = if self.plan.is_new() {
+                format!("~/{}", pending.file)
+            } else {
+                pending.path.clone()
+            };
             let mut line = Line::from(vec![
                 Span::raw(if index == self.selected { "▸ " } else { "  " }),
                 mark,
-                Span::raw(format!("{:<28}", pending.path)),
+                Span::raw(format!("{name:<28}")),
                 status,
             ]);
             if index == self.selected {
@@ -155,6 +163,14 @@ impl Export {
         let (file_lines, selected_line) = self.file_lines(area.width.saturating_sub(4));
         let mut lines = Vec::new();
         let count = self.paths().len();
+        if self.plan.is_new() {
+            lines.push(Line::from(vec![
+                Span::raw(format!("{:<9}", "Start")).bold(),
+                Span::raw(format!(
+                    "a Git repository in {remote}, in chezmoi's layout, with a README"
+                )),
+            ]));
+        }
         lines.push(Line::from(vec![
             Span::raw(format!("{:<9}", "Commit")).bold(),
             Span::raw(format!(
@@ -163,10 +179,17 @@ impl Export {
                 self.message
             )),
         ]));
-        lines.push(Line::from(vec![
-            Span::raw(format!("{:<9}", "Push")).bold(),
-            Span::raw(format!("to {remote}, after a question")),
-        ]));
+        lines.push(if self.plan.is_new() {
+            Line::from(vec![
+                Span::raw(format!("{:<9}", "GitHub")).bold(),
+                Span::raw("a private repository, after a question"),
+            ])
+        } else {
+            Line::from(vec![
+                Span::raw(format!("{:<9}", "Push")).bold(),
+                Span::raw(format!("to {remote}, after a question")),
+            ])
+        });
         lines.push(Line::default());
         lines.push(Line::from(
             "This is a review, not a promise that nothing secret remains.",
@@ -178,14 +201,15 @@ impl Export {
         let summary_height =
             (visual::wrapped_rows(&lines, width) + 2).min(area.height.saturating_sub(6));
         let typing = if self.typing.is_some() { 3 } else { 0 };
-        let [body, summary, box_area] = Layout::vertical([
-            Constraint::Min(3),
+        let total = visual::wrapped_rows(&file_lines, width);
+        let [body, summary, box_area, _] = Layout::vertical([
+            Constraint::Max(total + 2),
             Constraint::Length(summary_height),
             Constraint::Length(typing),
+            Constraint::Fill(1),
         ])
         .areas(area);
         let rows = body.height.saturating_sub(2);
-        let total = visual::wrapped_rows(&file_lines, width);
         let scroll = if total <= rows {
             0
         } else {
@@ -197,7 +221,11 @@ impl Export {
                 .scroll((scroll, 0))
                 .block(
                     visual::block()
-                        .title(" Export ")
+                        .title(if self.plan.is_new() {
+                            " Start your dotfiles "
+                        } else {
+                            " Export "
+                        })
                         .padding(Padding::horizontal(1)),
                 ),
             body,
@@ -227,8 +255,13 @@ impl Export {
     }
 }
 
-/// A message naming the chosen files, such as `Update zshrc and gitconfig`
-fn message(pending: &[Pending], chosen: &[bool]) -> String {
+/// A message naming the chosen files, such as `Update zshrc and gitconfig`,
+/// or `Start dotfiles` for a new repository
+fn message(plan: &Plan, chosen: &[bool]) -> String {
+    if plan.is_new() {
+        return "Start dotfiles".to_string();
+    }
+    let pending: &[Pending] = &plan.pending;
     let names: Vec<&str> = pending
         .iter()
         .zip(chosen)
@@ -263,6 +296,28 @@ pub(in crate::ui) fn push_lines(target: &str, ahead: Option<usize>) -> Vec<Line<
         Line::from(vec![
             Span::raw("y").fg(visual::ACCENT).bold(),
             Span::raw(" push · "),
+            Span::raw("esc").fg(visual::ACCENT).bold(),
+            Span::raw(" not now"),
+        ]),
+    ]
+}
+
+/// The lines of the question about making a GitHub repository
+pub(in crate::ui) fn github_lines(folder: &str) -> Vec<Line<'static>> {
+    vec![
+        Line::from(format!(
+            "Make a private GitHub repository named {} and push {folder} to it?",
+            export::GITHUB_NAME
+        ))
+        .bold(),
+        Line::default(),
+        Line::from(
+            "gh makes it under the account it is logged in to, and adds it as the remote origin. If you already have a repository by that name, nothing is made.",
+        ),
+        Line::default(),
+        Line::from(vec![
+            Span::raw("y").fg(visual::ACCENT).bold(),
+            Span::raw(" create · "),
             Span::raw("esc").fg(visual::ACCENT).bold(),
             Span::raw(" not now"),
         ]),
