@@ -127,9 +127,8 @@
 
 | Feature | What It Does | Status |
 | --- | --- | --- |
-| List | Lists programs that start on their own: your launch agents, launch agents and daemons installed for every user, apps that open at login, and items allowed in the background. Each shows its program, whether it runs now, whether it is turned off, and who signed it. macOS's own items are only counted. | Proposed |
-| Incomplete label | When `sfltool` cannot be read without admin rights, the list says that login and background items are missing. | Proposed |
-| Open Login Items | For apps that open at login and background items, opens System Settings, where macOS turns them off and on. | Proposed |
+| List | Lists programs that start on their own, without admin rights: your launch agents, launch agents and daemons installed for every user, and helpers apps asked macOS to run in the background. Each shows its program, whether it runs now, whether it is turned off, and who signed it. macOS's own items are only counted. | Proposed |
+| Open at login | macOS shows apps that open at login only to an admin, so they are not listed. `o` opens System Settings, where they are. | Proposed |
 | Turn off and back on | Only your own launch agents, with `launchctl disable` and `enable`, and the state before saved so it can be undone. | Proposed |
 
 * What is read, and what may change, is in [SAFETY.md](SAFETY.md#startup-items). Items installed for every user, and Apple's, stay view only.
