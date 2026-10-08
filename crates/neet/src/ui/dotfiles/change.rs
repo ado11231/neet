@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 
 use neet_core::dotfiles::change::{self, Checked, Done, Edit};
-use neet_core::rewrite::Backup;
+use neet_core::rewrite::{Backup, Opened};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Stylize};
@@ -47,6 +47,7 @@ pub(super) enum Mode {
         fix: Fix,
         index: usize,
         diff: Diff,
+        reviewed: Reviewed,
     },
     /// The selected file's backups, newest first
     Backups {
@@ -59,6 +60,7 @@ pub(super) enum Mode {
         index: usize,
         backup: Backup,
         diff: Diff,
+        reviewed: Reviewed,
     },
     /// `d`: how the file differs from its source file or its last backup
     Show {
@@ -74,7 +76,7 @@ pub(super) enum Mode {
     /// After a commit: whether to push, and where
     Push {
         top: PathBuf,
-        target: String,
+        target: neet_core::dotfiles::export::PushTarget,
         ahead: Option<usize>,
     },
     /// What happened, until a key is pressed
@@ -83,6 +85,35 @@ pub(super) enum Mode {
         lines: Vec<Line<'static>>,
         color: Color,
     },
+}
+
+/// Files held unchanged while their diff is on screen
+pub(super) struct Reviewed {
+    pub home: Opened,
+    pub other: Option<Opened>,
+}
+
+impl Reviewed {
+    pub fn open(home: &std::path::Path, other: Option<&std::path::Path>) -> Result<Self, String> {
+        let read =
+            |path| Opened::open(path).map_err(|error| format!("It could not be read: {error}."));
+        Ok(Self {
+            home: read(home)?,
+            other: other.map(read).transpose()?,
+        })
+    }
+
+    pub fn check(&self) -> Result<(), String> {
+        if !self.home.is_unchanged().unwrap_or(false)
+            || self
+                .other
+                .as_ref()
+                .is_some_and(|other| !other.is_unchanged().unwrap_or(false))
+        {
+            return Err("A file changed since the review. Open it again.".to_string());
+        }
+        Ok(())
+    }
 }
 
 /// An edit waiting for `y`

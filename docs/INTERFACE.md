@@ -535,6 +535,7 @@
 ```
 
 * `x` looks at the repository chezmoi's folder is in. It lists the source files of listed dotfiles that have changes not yet committed. Each one shows what the review for secrets found, and the selected file shows each finding's line, kind, and first four characters.
+* Export scrolls to keep the selected file visible. The commit summary and message field have their own space below the list.
 * Files with findings, and files that may hold a token, start left out. `Space` puts a file in or takes it out.
 * **Commit** shows how many files go in, and the message. It names the files, such as `Update zshrc and gitconfig`, until you change it with `m`.
 * `y` commits only those files. Then a box asks whether to push, and names the remote branch. Only `y` pushes. A push is never forced, and if the remote has commits you do not, nothing is pushed and the note says to pull first.

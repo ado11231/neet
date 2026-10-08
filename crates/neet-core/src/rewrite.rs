@@ -17,6 +17,7 @@ pub const MAX_BYTES: u64 = 1024 * 1024;
 /// still the same
 #[derive(Debug, Clone)]
 pub struct Opened {
+    original: PathBuf,
     /// Where it really is. For a link, where the link leads, so the link
     /// itself stays.
     path: PathBuf,
@@ -35,6 +36,7 @@ impl Opened {
     /// Returns an error if it cannot be read, is not a plain file, or is
     /// larger than [`MAX_BYTES`].
     pub fn open(path: &Path) -> io::Result<Self> {
+        let original = path.to_path_buf();
         let path = fs::canonicalize(path)?;
         let metadata = fs::metadata(&path)?;
         if !metadata.is_file() {
@@ -51,6 +53,7 @@ impl Opened {
         }
         let contents = fs::read(&path)?;
         Ok(Self {
+            original,
             device: metadata.dev(),
             inode: metadata.ino(),
             modified: metadata.modified().ok(),
@@ -85,10 +88,14 @@ impl Opened {
     ///
     /// Returns an error if the file can no longer be read.
     pub fn is_unchanged(&self) -> io::Result<bool> {
+        if fs::canonicalize(&self.original)? != self.path {
+            return Ok(false);
+        }
         let metadata = fs::symlink_metadata(&self.path)?;
         if !metadata.is_file()
             || metadata.dev() != self.device
             || metadata.ino() != self.inode
+            || metadata.permissions().mode() & 0o7777 != self.mode
             || metadata.modified().ok() != self.modified
             || metadata.len() != u64::try_from(self.contents.len()).unwrap_or(u64::MAX)
         {
@@ -388,6 +395,28 @@ mod tests {
         fs::set_permissions(&file, fs::Permissions::from_mode(0o640)).unwrap();
         let backups = Backups::at(root.join("state/backups"));
         (dir, file, backups)
+    }
+
+    #[test]
+    fn refuses_a_retargeted_link_and_changed_permissions() {
+        let (_dir, path, backups) = setup();
+        let parent = path.parent().unwrap();
+        let other = parent.join("other");
+        fs::write(&other, "other\n").unwrap();
+        let link = parent.join("link");
+        symlink(&path, &link).unwrap();
+        let opened = Opened::open(&link).unwrap();
+        fs::remove_file(&link).unwrap();
+        symlink(&other, &link).unwrap();
+        assert!(matches!(
+            write(&opened, b"new", &backups, ".zshrc", at(1)),
+            Err(WriteError::Changed)
+        ));
+        assert_eq!(fs::read_to_string(&path).unwrap(), "old\n");
+        assert_eq!(fs::read_to_string(&other).unwrap(), "other\n");
+        let opened = Opened::open(&path).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        assert!(!opened.is_unchanged().unwrap());
     }
 
     #[test]

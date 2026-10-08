@@ -327,17 +327,14 @@ fn view_only(
     if known.path == ".ssh/config" {
         return Some(ViewOnly::SshConfig);
     }
-    let own = fs::symlink_metadata(path).ok()?;
-    if own.file_type().is_symlink() {
-        let Ok(target) = fs::canonicalize(path) else {
-            return Some(ViewOnly::BrokenLink);
-        };
-        if !target.starts_with(real_home) {
-            return Some(ViewOnly::LinkLeadsOut);
-        }
-        if roots.is_none_or(|roots| roots.protects(&target)) {
-            return Some(ViewOnly::Protected);
-        }
+    let Ok(target) = fs::canonicalize(path) else {
+        return Some(ViewOnly::BrokenLink);
+    };
+    if !target.starts_with(real_home) {
+        return Some(ViewOnly::LinkLeadsOut);
+    }
+    if roots.is_none_or(|roots| roots.protects(&target)) {
+        return Some(ViewOnly::Protected);
     }
     if !fs::metadata(path).is_ok_and(|metadata| metadata.is_file()) {
         return Some(ViewOnly::NotAFile);
@@ -1245,6 +1242,18 @@ mod tests {
             file(&listing, ".inputrc").view_only,
             Some(ViewOnly::NotAFile)
         );
+    }
+
+    #[test]
+    fn links_in_parent_folders_cannot_escape_the_home_folder() {
+        let (_dir, home) = home();
+        let outside = tempfile::tempdir().unwrap();
+        write(&outside.path().join("kitty/kitty.conf"), "font_size 12\n");
+        std::os::unix::fs::symlink(outside.path(), home.join(".config")).unwrap();
+        let listing = list(&home);
+        let kitty = file(&listing, ".config/kitty/kitty.conf");
+        assert_eq!(kitty.view_only, Some(ViewOnly::LinkLeadsOut));
+        assert!(change::Edit::begin(kitty, listing.chezmoi.as_ref()).is_err());
     }
 
     #[test]

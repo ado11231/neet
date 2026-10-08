@@ -41,6 +41,8 @@ neet/
 └── .github/                   CI, releases, and Dependabot
 ```
 
+* `crates/neet-core/tests/dotfiles_chezmoi.rs` checks the Dotfiles round trip with the installed chezmoi, a temporary home folder, and a local Git remote. Run it with `cargo test -p neet-core --test dotfiles_chezmoi -- --ignored`. It never changes your real dotfiles.
+
 ### The Library
 
 | File | Purpose |

@@ -8,6 +8,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use super::{Chezmoi, Listing, Managed};
+use crate::rewrite::Opened;
 
 /// How long a Git command may take. Pushing can be slow.
 const GIT_TIMEOUT: Duration = Duration::from_secs(60);
@@ -128,11 +129,12 @@ pub struct Pending {
 
 /// The repository chezmoi's source folder is in, and the files that wait
 /// to be committed
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Plan {
     /// The repository's top folder
     pub top: PathBuf,
     pub pending: Vec<Pending>,
+    reviewed: Vec<(String, Opened)>,
 }
 
 fn git(folder: &Path, args: &[&str]) -> Result<crate::run::Captured, String> {
@@ -185,17 +187,28 @@ pub fn plan(listing: &Listing) -> Result<Plan, String> {
         &top,
         &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
     )?;
-    let changed: Vec<String> = status
-        .split('\0')
-        .filter(|entry| entry.len() > 3)
-        .map(|entry| entry[3..].to_string())
-        .collect();
+    let mut changed = Vec::new();
+    let mut entries = status.split('\0');
+    while let Some(entry) = entries.next() {
+        if let Some(path) = entry.get(3..) {
+            changed.push(path.to_string());
+            // Renames and copies have a second, unprefixed path.
+            if entry[..2].contains(['R', 'C']) {
+                entries.next();
+            }
+        }
+    }
     let mut pending = Vec::new();
+    let mut reviewed = Vec::new();
     for file in &listing.files {
         let Some(source) = file.managed.as_ref().and_then(Managed::source) else {
             continue;
         };
-        let source = std::fs::canonicalize(source).unwrap_or_else(|_| source.to_path_buf());
+        let real_source = std::fs::canonicalize(source)
+            .map_err(|_| "A source file could not be read for the secret review.")?;
+        if real_source != source {
+            return Err("A source path contains a link. Review it outside neet.".to_string());
+        }
         let Ok(relative) = source.strip_prefix(&top) else {
             continue;
         };
@@ -203,17 +216,23 @@ pub fn plan(listing: &Listing) -> Result<Plan, String> {
         if !changed.contains(&path) {
             continue;
         }
-        let text = std::fs::read(&source)
-            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-            .unwrap_or_default();
+        let opened = Opened::open(source)
+            .map_err(|_| format!("{path} could not be read for the secret review."))?;
+        let text = String::from_utf8_lossy(opened.contents());
+        let findings = scan(&text);
+        reviewed.push((path.clone(), opened));
         pending.push(Pending {
             file: file.known.path,
             path,
-            findings: scan(&text),
+            findings,
             may_hold_secrets: file.may_hold_secrets,
         });
     }
-    Ok(Plan { top, pending })
+    Ok(Plan {
+        top,
+        pending,
+        reviewed,
+    })
 }
 
 /// Commits `paths`, from the repository's top folder, with `message`, and
@@ -222,13 +241,27 @@ pub fn plan(listing: &Listing) -> Result<Plan, String> {
 /// # Errors
 ///
 /// Returns Git's message when it refuses.
-pub fn commit(top: &Path, paths: &[&str], message: &str) -> Result<(), String> {
+pub fn commit(plan: &Plan, paths: &[&str], message: &str) -> Result<(), String> {
     if paths.is_empty() {
         return Err("Nothing is selected to commit.".to_string());
     }
     if message.trim().is_empty() || message.contains('\0') {
         return Err("The commit needs a message.".to_string());
     }
+    for path in paths {
+        let opened = plan
+            .reviewed
+            .iter()
+            .find(|(name, _)| name == path)
+            .map(|(_, opened)| opened)
+            .ok_or("A selected file was not reviewed. Open Export again.")?;
+        if !opened.is_unchanged().unwrap_or(false) {
+            return Err(format!(
+                "{path} changed since the secret review. Open Export again."
+            ));
+        }
+    }
+    let top = &plan.top;
     let mut add = vec!["add", "--"];
     add.extend(paths);
     git_ok(top, &add)?;
@@ -238,24 +271,51 @@ pub fn commit(top: &Path, paths: &[&str], message: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// The remote and branch a push goes to, such as `origin/main`
+/// The exact destination and commit shown before a push
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PushTarget {
+    pub label: String,
+    remote: String,
+    branch: String,
+    url: String,
+    head: String,
+}
+
+/// The remote branch tracked by the current branch, with its push address.
 ///
 /// # Errors
 ///
-/// Returns why there is nowhere to push.
-pub fn push_target(top: &Path) -> Result<String, String> {
-    git_ok(
+/// Returns why there is no single remote branch to push to.
+pub fn push_target(top: &Path) -> Result<PushTarget, String> {
+    let branch = git_ok(top, &["symbolic-ref", "--quiet", "HEAD"])?;
+    let upstream = git_ok(
         top,
         &[
-            "rev-parse",
-            "--abbrev-ref",
-            "--symbolic-full-name",
-            "@{upstream}",
+            "for-each-ref",
+            "--format=%(upstream:short)%00%(upstream:remotename)%00%(upstream:remoteref)",
+            branch.trim(),
         ],
-    )
-    .map(|target| target.trim().to_string())
-    .map_err(|_| {
-        "The branch does not track a remote branch, so there is nowhere to push.".to_string()
+    )?;
+    let parts: Vec<&str> = upstream.trim().split('\0').collect();
+    let [label, remote, branch] = parts.as_slice() else {
+        return Err("The branch does not track a remote branch.".to_string());
+    };
+    if remote.is_empty() || *remote == "." || !branch.starts_with("refs/heads/") {
+        return Err(
+            "The branch does not track a remote branch, so there is nowhere to push.".to_string(),
+        );
+    }
+    let urls = git_ok(top, &["remote", "get-url", "--push", "--all", remote])?;
+    let urls: Vec<&str> = urls.lines().collect();
+    let [url] = urls.as_slice() else {
+        return Err("The remote has several push addresses. Push it yourself.".to_string());
+    };
+    Ok(PushTarget {
+        label: (*label).to_string(),
+        remote: (*remote).to_string(),
+        branch: (*branch).to_string(),
+        url: (*url).to_string(),
+        head: git_ok(top, &["rev-parse", "HEAD"])?.trim().to_string(),
     })
 }
 
@@ -265,9 +325,23 @@ pub fn push_target(top: &Path) -> Result<String, String> {
 /// # Errors
 ///
 /// Returns why nothing was pushed, in plain words.
-pub fn push(top: &Path) -> Result<(), String> {
-    push_target(top)?;
-    let captured = git(top, &["push", "--quiet"])?;
+pub fn push(top: &Path, target: &PushTarget) -> Result<(), String> {
+    if push_target(top)? != *target {
+        return Err("The branch or push destination changed. Open Export again.".to_string());
+    }
+    // An explicit address and ref ignore pushDefault, mirror, and extra refspecs.
+    let reference = format!("{}:{}", target.head, target.branch);
+    let captured = git(
+        top,
+        &[
+            "push",
+            "--quiet",
+            "--no-follow-tags",
+            "--",
+            &target.url,
+            &reference,
+        ],
+    )?;
     if captured.success {
         return Ok(());
     }
@@ -379,7 +453,7 @@ alias sk-=ls
 
     #[test]
     fn commits_only_the_chosen_files_and_pushes_without_force() {
-        let (dir, _home, repo) = setup();
+        let (dir, home, repo) = setup();
         let remote = dir.path().join("remote.git");
         git(
             dir.path(),
@@ -404,7 +478,12 @@ alias sk-=ls
         // Commits need a name; the test repository gets one.
         git(&repo, &["config", "user.name", "t"]);
         git(&repo, &["config", "user.email", "t@t"]);
-        commit(&repo, &["mac/dot_zshrc"], "Update zshrc").unwrap();
+        commit(
+            &plan(&super::super::list(&home)).unwrap(),
+            &["mac/dot_zshrc"],
+            "Update zshrc",
+        )
+        .unwrap();
 
         let shown = Command::new("git")
             .arg("-C")
@@ -417,8 +496,30 @@ alias sk-=ls
         assert!(shown.contains("mac/dot_zshrc"));
         assert!(!shown.contains("other"));
 
-        assert_eq!(push_target(&repo).unwrap(), "origin/main");
-        push(&repo).unwrap();
+        assert_eq!(push_target(&repo).unwrap().label, "origin/main");
+        git(&repo, &["config", "remote.pushDefault", "elsewhere"]);
+        git(&repo, &["config", "branch.main.pushRemote", "elsewhere"]);
+        git(
+            &repo,
+            &["config", "remote.origin.push", "+refs/heads/*:refs/heads/*"],
+        );
+        git(&repo, &["config", "remote.origin.mirror", "true"]);
+        git(&repo, &["branch", "private-work"]);
+        push(&repo, &push_target(&repo).unwrap()).unwrap();
+        let refs = git_ok(&remote, &["for-each-ref", "--format=%(refname)"]).unwrap();
+        assert_eq!(refs.trim(), "refs/heads/main");
+
+        let reviewed = push_target(&repo).unwrap();
+        git(
+            &repo,
+            &["config", "remote.origin.pushurl", "/changed-destination"],
+        );
+        assert!(
+            push(&repo, &reviewed)
+                .unwrap_err()
+                .contains("destination changed")
+        );
+        git(&repo, &["config", "--unset", "remote.origin.pushurl"]);
 
         // Someone else pushes; this one must not force over it.
         let other = dir.path().join("other-clone");
@@ -438,16 +539,57 @@ alias sk-=ls
         git(&other, &["commit", "-q", "-m", "elsewhere"]);
         git(&other, &["push", "-q"]);
         fs::write(repo.join("mac/dot_zshrc"), "export A=3\n").unwrap();
-        commit(&repo, &["mac/dot_zshrc"], "Again").unwrap();
-        let error = push(&repo).unwrap_err();
+        commit(
+            &plan(&super::super::list(&home)).unwrap(),
+            &["mac/dot_zshrc"],
+            "Again",
+        )
+        .unwrap();
+        let error = push(&repo, &push_target(&repo).unwrap()).unwrap_err();
         assert!(error.contains("Pull first"), "{error}");
     }
 
     #[test]
+    fn refuses_changes_after_the_secret_review_and_unreviewed_paths() {
+        let (_dir, home, repo) = setup();
+        let source = repo.join("mac/dot_zshrc");
+        fs::write(&source, "export A=2\n").unwrap();
+        let reviewed = plan(&super::super::list(&home)).unwrap();
+        fs::write(&source, "export TOKEN=secret\n").unwrap();
+        let error = commit(&reviewed, &["mac/dot_zshrc"], "Update").unwrap_err();
+        assert!(error.contains("changed since the secret review"), "{error}");
+        assert!(commit(&reviewed, &["."], "Update").is_err());
+        assert_eq!(
+            git_ok(&repo, &["diff", "--cached", "--name-only"]).unwrap(),
+            ""
+        );
+    }
+
+    #[test]
+    fn renamed_unicode_paths_do_not_break_the_review() {
+        let (_dir, home, repo) = setup();
+        fs::write(repo.join("古い"), "old\n").unwrap();
+        git(&repo, &["add", "."]);
+        git(&repo, &["commit", "-q", "-m", "Add a file"]);
+        git(&repo, &["mv", "古い", "new"]);
+        fs::write(repo.join("mac/dot_zshrc"), "export A=2\n").unwrap();
+        let reviewed = plan(&super::super::list(&home)).unwrap();
+        assert_eq!(reviewed.pending.len(), 1);
+        assert_eq!(reviewed.pending[0].file, ".zshrc");
+    }
+
+    #[test]
     fn refuses_empty_commits_and_messages() {
-        let (_dir, _home, repo) = setup();
-        assert!(commit(&repo, &[], "x").is_err());
-        assert!(commit(&repo, &["mac/dot_zshrc"], "  ").is_err());
+        let (_dir, home, repo) = setup();
+        assert!(commit(&plan(&super::super::list(&home)).unwrap(), &[], "x").is_err());
+        assert!(
+            commit(
+                &plan(&super::super::list(&home)).unwrap(),
+                &["mac/dot_zshrc"],
+                "  "
+            )
+            .is_err()
+        );
         assert!(push_target(&repo).is_err());
     }
 }

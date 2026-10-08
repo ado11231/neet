@@ -271,14 +271,14 @@ min_age_days = 0
   2. A file that is a link leading outside your home folder, or into a [protected folder](#protected-folders).
   3. A file neet cannot write as you. neet never uses `sudo` here.
   4. With chezmoi: templates, encrypted files, and files chezmoi builds from scripts or changes in place.
-* A file that is a link inside your home folder is changed where the link leads. The link itself stays.
+* A file that is a link inside your home folder is changed where the link leads. The link itself stays. Links in parent folders pass the same check. A source path in chezmoi that contains a link is refused.
 
 ### How A Change Runs
 
 1. You make the change: edit a copy in your editor, or set a value in Configure. Your editor is `$VISUAL`, then `$EDITOR`, then `nano`.
 2. neet checks the new text, when it knows how. See [Checks](#checks).
 3. It shows the diff, and asks. Only `y` goes ahead.
-4. It checks the file did not change since you opened it: the same identity on disk, the same last change time, and the same contents. If it changed, nothing is written.
+4. It checks the file did not change since you opened it: the same identity on disk, the same last change time, permissions, link target, and contents. Save, Put Back, Add, Restore, and Export also keep the files they reviewed and refuse a change made while their question is open. If a file changed, nothing is written.
 5. It saves a [backup](#backups).
 6. It writes a new copy beside the file, with the same permissions, flushes it to disk, and swaps it in. A crash leaves the old file or the new one, never half of one.
 7. With chezmoi, it writes the source file, then runs `chezmoi apply` for that one file, when it [may run chezmoi](#when-neet-may-run-chezmoi).
@@ -297,6 +297,7 @@ min_age_days = 0
 | Everything else | None. The screen says there is no check. |
 
 * `ssh -G` is not used for `.ssh/config`: it runs `Match exec` commands while it reads.
+* Save, Put Back, and Restore also check the text they are about to save or restore.
 * A failed check is shown with its message. You can go back to your editor, or drop the change. A file that fails its check is never written.
 
 ### Backups
@@ -365,6 +366,7 @@ min_age_days = 0
 
 * `--force` lets chezmoi replace a file it did not write last, which it otherwise stops to ask about. neet has already shown the diff, checked the file did not change, and backed it up. It touches only the one file named.
 * neet names the file by its path in your home folder, such as `~/.zshrc`, never by where a link leads, since that is the path chezmoi knows.
+* Before each command, neet reads chezmoi's settings again and refuses a changed source path, a hook, an unsafe template, or a file that is now view only.
 * After each command, neet checks the file now matches, and says so if it does not.
 * neet never runs `chezmoi status`, `diff`, `cat`, `managed`, `update`, or `apply` without a file. `status` without a file renders every template and runs `modify_` scripts. neet shows its own diff instead.
 * Templates are never changed or rendered by neet.
@@ -379,9 +381,9 @@ min_age_days = 0
   3. Settings named like secrets, such as `password`, `token`, `secret`, and `_authToken`, with a value.
 * Each match is listed with its file and line, its value hidden except the first four characters. You can leave the file out, or edit it, before anything is written.
 * This is a review, not a promise that nothing secret remains.
-* **With chezmoi:** neet offers only the source files of listed dotfiles that Git shows as changed, each with what the review found. You pick which go in. neet adds them with `git add -- <files>`, and commits only those with `git commit -m <message> -- <files>`, even if other changes are staged. You see the message first. Your repository's own Git hooks run as usual.
+* **With chezmoi:** neet offers only the source files of listed dotfiles that Git shows as changed, each with what the review found. You pick which go in. neet adds them with `git add -- <files>`, and commits only those with `git commit -m <message> -- <files>`, even if other changes are staged. Unreadable files stop the review. The selected files must still match the reviewed copies before anything is staged. You see the message first. Your repository's own Git hooks run as usual.
 * **Without chezmoi:** neet writes a new folder you pick, in chezmoi's layout, with a README listing the files, then runs `git init` and commits. The folder must not exist, or be empty, and may not be in `~/Library`, a cloud folder, or a protected folder. Anyone can set up a new Mac from it with `chezmoi init --apply <repository>`.
-* **Pushing** only happens after a box that names the remote and branch, and only `y` goes ahead. Then neet runs `git push`. With no remote, it can create a private repository with `gh repo create --private --source <folder> --push`, after the same kind of box.
+* **Pushing** only happens after a box that names the remote and branch, and only `y` goes ahead. Then neet runs `git push` with the reviewed commit, remote address, and branch named explicitly. Other push settings cannot add branches or tags. A changed commit or destination stops the push. With no remote, it can create a private repository with `gh repo create --private --source <folder> --push`, after the same kind of box.
 * neet never force pushes, pulls, merges, or rebases. It pushes only to the remote branch the branch already tracks. If the remote has commits you do not, Git refuses the push, and neet says to pull first.
 * Git runs with fsmonitor turned off and with no password prompt, so it never waits for typing or starts another program on its own.
 
