@@ -1105,7 +1105,7 @@ impl Dotfiles {
             self.mode = Mode::Note {
                 title: "No settings".to_string(),
                 lines: vec![Line::from(
-                    "Configure knows the settings of Git, tmux, Starship, kitty, and mise. Press e to edit this file.",
+                    "Configure knows the settings of Git, tmux, Starship, kitty, Ghostty, and mise. Press e to edit this file.",
                 )],
                 color: visual::ACCENT,
             };
@@ -2394,6 +2394,44 @@ mod tests {
         assert_eq!(
             fs::read_to_string(screen.home.join(".gitconfig")).unwrap(),
             "# mine\n[user]\n\tname = You\n"
+        );
+    }
+
+    #[test]
+    fn configure_changes_a_ghostty_value_and_keeps_its_quotes() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = fs::canonicalize(dir.path()).unwrap();
+        let file = home.join(".config/ghostty/config.ghostty");
+        write(&file, "theme = \"nord\"\n");
+        let listing = dotfiles::list(&home);
+        let mut screen = Dotfiles::from_listing(home, listing);
+        press(&mut screen, KeyCode::Char('c'));
+        let text = render(&mut screen, 120, 30);
+        assert!(
+            text.contains("Ghostty settings · ~/.config/ghostty/config.ghostty"),
+            "{text}"
+        );
+        assert!(text.contains("nord"), "{text}");
+
+        press(&mut screen, KeyCode::Enter);
+        for _ in 0..4 {
+            press(&mut screen, KeyCode::Backspace);
+        }
+        typed(&mut screen, "Catppuccin Mocha");
+        press(&mut screen, KeyCode::Enter);
+        press(&mut screen, KeyCode::Down);
+        press(&mut screen, KeyCode::Enter);
+        typed(&mut screen, "14");
+        press(&mut screen, KeyCode::Enter);
+
+        press(&mut screen, KeyCode::Char('y'));
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains("+ theme = \"Catppuccin Mocha\""), "{text}");
+        assert!(text.contains("+ font-size = 14"), "{text}");
+        press(&mut screen, KeyCode::Char('y'));
+        assert_eq!(
+            fs::read_to_string(&file).unwrap(),
+            "theme = \"Catppuccin Mocha\"\nfont-size = 14\n"
         );
     }
 

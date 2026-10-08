@@ -7,6 +7,7 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
+mod ghostty;
 mod kitty;
 mod tmux;
 mod toml_file;
@@ -42,6 +43,9 @@ pub enum Format {
     /// kitty's lines of an option, spaces, and its value, such as
     /// `font_size 13.0`
     Kitty,
+    /// Ghostty's lines of a key, `=`, and its value, such as
+    /// `font-size = 13`
+    Ghostty,
 }
 
 /// One setting neet can change
@@ -296,6 +300,63 @@ pub const PROGRAMS: &[Program] = &[
             ),
         ],
     },
+    Program {
+        name: "Ghostty",
+        files: &[".config/ghostty/config", ".config/ghostty/config.ghostty"],
+        format: Format::Ghostty,
+        settings: &[
+            setting(
+                "theme",
+                "Color theme, such as Catppuccin Mocha.",
+                Kind::Text,
+            ),
+            setting(
+                "font-size",
+                "Font size in points, such as 13.",
+                Kind::Decimal,
+            ),
+            setting(
+                "background-opacity",
+                "How solid the background is, from 0 to 1.",
+                Kind::Decimal,
+            ),
+            setting(
+                "window-padding-x",
+                "Space left and right of the text, such as 4 or 4,8.",
+                Kind::Text,
+            ),
+            setting(
+                "window-padding-y",
+                "Space above and below the text, such as 4 or 4,8.",
+                Kind::Text,
+            ),
+            setting(
+                "cursor-style",
+                "Shape of the cursor.",
+                Kind::Choice(&["block", "bar", "underline", "block_hollow"]),
+            ),
+            setting(
+                "scrollback-limit",
+                "Bytes of output kept to scroll back through.",
+                Kind::Number,
+            ),
+            setting(
+                "macos-option-as-alt",
+                "Which Option keys act as Alt, for terminal shortcuts.",
+                Kind::Choice(&["false", "true", "left", "right"]),
+            ),
+            setting(
+                "mouse-hide-while-typing",
+                "Hide the mouse pointer while you type.",
+                TRUE_FALSE,
+            ),
+            setting(
+                "copy-on-select",
+                "Copy text when you select it.",
+                Kind::Choice(&["true", "false", "clipboard"]),
+            ),
+        ],
+    },
 ];
 
 /// The program whose settings live in `path`, a path from the home folder
@@ -374,6 +435,7 @@ pub fn values(program: &Program, file: &Path) -> Result<Vec<Option<String>>, Str
         Format::Tmux => Ok(tmux::values(program, &read(file)?)),
         Format::Toml => toml_file::values(program, &read(file)?),
         Format::Kitty => Ok(kitty::values(program, &read(file)?)),
+        Format::Ghostty => Ok(ghostty::values(program, &read(file)?)),
     }
 }
 
@@ -397,6 +459,7 @@ pub fn set(
         Format::Tmux => write(file, &tmux::set(&read(file)?, setting, value)?),
         Format::Toml => write(file, &toml_file::set(&read(file)?, setting, value)?),
         Format::Kitty => write(file, &kitty::set(&read(file)?, setting, value)),
+        Format::Ghostty => write(file, &ghostty::set(&read(file)?, setting, value)?),
     }
 }
 
