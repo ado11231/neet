@@ -132,3 +132,5 @@
 | Treemap and preferences | The treemap shows the scan without changing files, and preferences keep your choices. |
 
 * Dotfiles checks: action and export reviews reject changed files, backups, and links. Pushes name the reviewed commit and tracked branch. Unicode renames and export scrolling have regression tests. Ghostty, the shell block, repository creation, and testing against live personal files remain.
+
+* The opt in Dotfiles test passed with chezmoi 2.72.2 on macOS: edit and apply, save, put back, add, Configure, backup and restore, a link, and export to a local remote. It also refuses hooks added after an edit starts.
