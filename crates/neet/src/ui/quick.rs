@@ -678,7 +678,7 @@ impl QuickClean {
     ) -> Result<Vec<Line<'static>>, Line<'static>> {
         let item = self.selected();
         let width = usize::from(width.saturating_sub(4));
-        let entries: Vec<(u64, String)> = match item {
+        let mut entries: Vec<(u64, String)> = match item {
             Item::Rules => context
                 .plan
                 .and_then(|estimate| estimate.planned.as_ref())
@@ -699,6 +699,19 @@ impl QuickClean {
                     let home = scan.tree.path(scan.tree.root());
                     let ids: Vec<NodeId> = if clutter::neet_removes(kind) {
                         self.removable(kind).to_vec()
+                    } else if kind == Kind::Trash {
+                        self.finding(kind)
+                            .and_then(|found| found.node)
+                            .map(|trash| {
+                                scan.tree
+                                    .get(trash)
+                                    .children
+                                    .iter()
+                                    .copied()
+                                    .filter(|&id| scan.tree.get(id).name != ".DS_Store")
+                                    .collect()
+                            })
+                            .unwrap_or_default()
                     } else {
                         self.finding(kind)
                             .and_then(|found| found.node)
@@ -725,6 +738,7 @@ impl QuickClean {
                 _ => "Nothing to list.",
             }));
         }
+        entries.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
         let mut lines: Vec<Line> = entries
             .iter()
             .take(rows.max(1))
