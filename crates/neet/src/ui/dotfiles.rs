@@ -1398,8 +1398,13 @@ impl Dotfiles {
             .ok()
             .and_then(|list| list.into_iter().next());
         let Some(backup) = latest else {
+            let why = match &file.managed {
+                Some(Managed::InSync(_)) => "matches its saved copy",
+                Some(Managed::Built(..)) => "is built by chezmoi",
+                _ => "is not in your dotfiles",
+            };
             self.mode = note(format!(
-                "{shown} matches its source file or is not in chezmoi, and has no backups yet."
+                "{shown} {why}, and has no backups yet, so there is nothing to compare it with."
             ));
             return;
         };
@@ -2562,6 +2567,23 @@ mod tests {
         let text = render(&mut screen, 120, 30);
         assert!(text.contains("✓ saved"), "{text}");
         assert!(screen.listing.chezmoi.is_some());
+    }
+
+    #[test]
+    fn configure_rows_start_under_the_header_and_wrap_what_they_do() {
+        let (_dir, mut screen) = screen();
+        while screen.listing.files[screen.selected().unwrap()].known.path
+            != ".config/kitty/kitty.conf"
+        {
+            press(&mut screen, KeyCode::Down);
+        }
+        press(&mut screen, KeyCode::Char('c'));
+        let text = render(&mut screen, 80, 30);
+        let lines: Vec<&str> = text.lines().collect();
+        let header = lines.iter().position(|l| l.contains("Setting")).unwrap();
+        assert!(lines[header + 1].contains("font_family"), "{text}");
+        assert!(text.contains("blinking."), "{text}");
+        assert!(text.contains("font_size              14"), "{text}");
     }
 
     #[test]

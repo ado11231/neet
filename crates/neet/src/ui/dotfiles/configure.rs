@@ -9,9 +9,10 @@ use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Stylize;
-use ratatui::text::{Line, Span};
+use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Cell, Clear, Padding, Paragraph, Row, Table, TableState, Wrap};
 
+use super::super::format;
 use super::super::visual::{self, Columns};
 
 /// What a setting changes to
@@ -203,8 +204,12 @@ impl Configure {
         if let Some(error) = &self.error {
             below.push(Line::from(error.clone()).red());
         }
-        let rows = u16::try_from(self.program.settings.len()).unwrap_or(u16::MAX);
-        let table_height = (rows + 4).min(area.height.saturating_sub(4));
+        let columns = self.columns(area.width);
+        let rows: u16 = (0..self.program.settings.len())
+            .map(|index| u16::try_from(self.about(index, &columns).len()).unwrap_or(1))
+            .sum();
+        // The borders and the header
+        let table_height = (rows + 3).min(area.height.saturating_sub(4));
         let below_height = visual::wrapped_rows(&below, area.width.saturating_sub(4)) + 2;
         let typing_height = if self.typing.is_some() { 3 } else { 0 };
         let [table, typing, changes, _] = Layout::vertical([
@@ -240,10 +245,8 @@ impl Configure {
         );
     }
 
-    fn draw_table(&self, frame: &mut Frame, area: Rect, shown: &str) {
-        let values: Vec<String> = (0..self.program.settings.len())
-            .map(|index| self.value(index).unwrap_or("not set").to_string())
-            .collect();
+    /// Settings and values as wide as they need, and About gets the rest
+    fn columns(&self, width: u16) -> Columns<3> {
         let keys = self
             .program
             .settings
@@ -251,19 +254,61 @@ impl Configure {
             .map(|setting| setting.key.len())
             .max()
             .unwrap_or(0);
-        let columns = Columns::new(
-            area.width,
-            [(u16::try_from(keys).unwrap_or(20), 0), (16, 1), (24, 2)],
+        let values = (0..self.program.settings.len())
+            .map(|index| format::display_width(self.value(index).unwrap_or("not set")))
+            .chain([format::display_width("Value")])
+            .max()
+            .unwrap_or(0)
+            .min(32);
+        Columns::new(
+            width,
+            [
+                (u16::try_from(keys).unwrap_or(20), 0),
+                (u16::try_from(values).unwrap_or(16), 0),
+                (24, 1),
+            ],
             &[2],
             true,
-        );
+        )
+    }
+
+    /// The setting's About, wrapped to its column, one line at least
+    fn about(&self, index: usize, columns: &Columns<3>) -> Vec<String> {
+        let about = self.program.settings[index].about;
+        let width = columns.width(2);
+        if width == 0 {
+            return vec![String::new()];
+        }
+        let mut lines: Vec<String> = Vec::new();
+        for word in about.split_whitespace() {
+            match lines.last_mut() {
+                Some(line)
+                    if format::display_width(line) + 1 + format::display_width(word) <= width =>
+                {
+                    line.push(' ');
+                    line.push_str(word);
+                }
+                _ => lines.push(word.to_string()),
+            }
+        }
+        if lines.is_empty() {
+            lines.push(String::new());
+        }
+        lines
+    }
+
+    fn draw_table(&self, frame: &mut Frame, area: Rect, shown: &str) {
+        let values: Vec<String> = (0..self.program.settings.len())
+            .map(|index| self.value(index).unwrap_or("not set").to_string())
+            .collect();
+        let columns = self.columns(area.width);
         let rows: Vec<Row> = self
             .program
             .settings
             .iter()
             .enumerate()
             .map(|(index, setting)| {
-                let value = super::super::format::shorten_middle(&values[index], columns.width(1));
+                let value = format::shorten_middle(&values[index], columns.width(1));
                 let value = if self.changes[index].is_some() {
                     Span::raw(value).yellow().bold()
                 } else if self.values[index].is_none() {
@@ -271,11 +316,15 @@ impl Configure {
                 } else {
                     Span::raw(value).fg(visual::ACCENT)
                 };
-                columns.row([
-                    Cell::from(setting.key),
-                    Cell::from(value),
-                    Cell::from(setting.about),
-                ])
+                let about = self.about(index, &columns);
+                let height = u16::try_from(about.len()).unwrap_or(1);
+                columns
+                    .row([
+                        Cell::from(setting.key),
+                        Cell::from(value),
+                        Cell::from(Text::raw(about.join("\n"))),
+                    ])
+                    .height(height)
             })
             .collect();
         let header = columns
@@ -284,8 +333,7 @@ impl Configure {
                 Cell::from("Value"),
                 Cell::from("About"),
             ])
-            .style(visual::HEADING)
-            .bottom_margin(1);
+            .style(visual::HEADING);
         let table = Table::new(rows, columns.widths())
             .header(header)
             .column_spacing(2)

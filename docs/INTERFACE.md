@@ -557,14 +557,13 @@
 
 ```text
 + Git settings . ~/.gitconfig ------------------------------------------------------------------+
-|   Setting               Value                 About                                           |
-|                                                                                                |
-|   user.name             You                   Name on your commits.                           |
-|   user.email            you@example.com       Email on your commits.                          |
-|   init.defaultBranch    not set               Branch name for new repositories.               |
-|   core.editor           not set               Editor for commit messages.                     |
-| > pull.rebase           true                  Rebase instead of merge when pulling.           |
-|   push.autoSetupRemote  not set               Push a new branch without naming the remote.    |
+|   Setting               Value            About                                                 |
+|   user.name             You              Name on your commits.                                 |
+|   user.email            you@example.com  Email on your commits.                                |
+|   init.defaultBranch    not set          Branch name for new repositories.                     |
+|   core.editor           not set          Editor for commit messages.                           |
+| > pull.rebase           true             Rebase instead of merge when pulling.                 |
+|   push.autoSetupRemote  not set          Push a new branch without naming the remote.          |
 +------------------------------------------------------------------------------------------------+
 + Changes ---------------------------------------------------------------------------------------+
 | user.email  you@example.com                                                                    |
@@ -573,7 +572,7 @@
 ```
 
 * `c` opens the settings Configure knows for the file's program: Git, for `.gitconfig` and `.config/git/config`; tmux, for `.tmux.conf` and `.config/tmux/tmux.conf`; Starship, for `.config/starship.toml`; kitty, for `.config/kitty/kitty.conf`; Ghostty, for `.config/ghostty/config` and `.config/ghostty/config.ghostty`; mise, for `.config/mise/config.toml`; and zsh, for `.zshrc`, where neet writes only between its `# >>> neet >>>` marker lines, and the screen says so. Other files say to use `e`. The settings for each are listed in [SAFETY.md](SAFETY.md#configure).
-* Each setting shows its value in the file, or **not set**, and what it does. A value about to change is yellow.
+* Each setting shows its value in the file, or **not set**, and what it does. A value about to change is yellow. Rows start right under the header. The Setting and Value columns are as wide as their longest entry, and About takes the rest, wrapping onto a second line when it does not fit.
 * `Enter` changes the selected setting. Settings with a few choices, such as on and off, or vi and emacs, step through each, then not set. Text and number settings, such as a font size of `13.5`, open a box to type in, where `Enter` keeps it, `Esc` cancels, and an empty value means not set. A value the setting does not take, such as a word for a number, stays in the box with the reason in red.
 * **Changes** lists every change so far. `y` makes them all on the copy, then opens the same review as [Edit](#edit), with the check and the diff. `Esc` drops them all.
 * As with editing, a file that changed must be saved, or the saved version used, first.
