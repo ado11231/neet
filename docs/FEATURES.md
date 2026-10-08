@@ -127,8 +127,8 @@
 
 | Feature | What It Does | Status |
 | --- | --- | --- |
-| List | Lists programs that start on their own, without admin rights: your launch agents, launch agents and daemons installed for every user, and helpers apps asked macOS to run in the background. Each shows its program, whether it runs now, whether it is turned off, and who signed it. macOS's own items are only counted. | Proposed |
-| Open at login | macOS shows apps that open at login only to an admin, so they are not listed. `o` opens System Settings, where they are. | Proposed |
+| List | Lists programs that start on their own, without admin rights: your launch agents, launch agents and daemons installed for every user, and helpers apps asked macOS to run in the background. Each shows its program, whether it runs now, whether it is turned off, and who signed it. macOS's own items are only counted. | Done |
+| Open at login | macOS shows apps that open at login only to an admin, so they are not listed. `o` opens System Settings, where they are. | Done |
 | Turn off and back on | Only your own launch agents, with `launchctl disable` and `enable`, and the state before saved so it can be undone. | Proposed |
 
 * What is read, and what may change, is in [SAFETY.md](SAFETY.md#startup-items). Items installed for every user, and Apple's, stay view only.

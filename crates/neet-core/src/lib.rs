@@ -11,6 +11,7 @@ mod run;
 pub mod safety;
 pub mod scan;
 pub mod size;
+pub mod startup;
 pub mod tools;
 pub mod trash;
 pub mod tree;

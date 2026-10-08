@@ -50,9 +50,10 @@ neet
 | Deep Clean | Go through every cache and log rule, and move what your apps can make again to the Trash. |
 | Remove App | Remove an app along with the files it left in your Library folder. |
 | Large Files | Find your largest and oldest files. |
+| Startup | See the programs that start on their own, whether each runs, and who made it. |
 | Dotfiles | See your settings files, such as `~/.zshrc`, edit or configure them with a backup, save them with chezmoi, and export them to a private GitHub repository after a review for secrets. |
 
-* Startup items, AI tool files, Settings, and SSH are on the menu, marked `soon`.
+* AI tool files, Settings, and SSH are on the menu, marked `soon`.
 
 ## Notes
 

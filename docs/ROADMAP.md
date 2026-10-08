@@ -122,7 +122,7 @@
 
 | Feature | Done When |
 | --- | --- |
-| Startup items | Finding, turning off, and turning back on each kind is checked on every supported macOS version. An incomplete list is labeled. Research done on macOS 26.5 (#90): the answers are in SAFETY.md and FEATURES.md, and the first screen is view only. |
+| Startup items | Finding, turning off, and turning back on each kind is checked on every supported macOS version. An incomplete list is labeled. Research done on macOS 26.5 (#90): the answers are in SAFETY.md and FEATURES.md. The view only screen is built and checked on macOS 26.5; turning off waits for its own issue. |
 | Dotfiles | **Done.** Changes stay within the list in SAFETY.md. Backup, restore, check, configure, and export tests pass. With chezmoi, edits reach the source file, and nothing is pushed without `y`. |
 | SSH | Changes stay within `~/.ssh`, and known hosts and permissions can be undone. |
 | Shell PATH | Changes stay within the shell files, and can be undone from their backups. |

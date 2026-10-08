@@ -1,0 +1,735 @@
+//! Startup: programs that start on their own, grouped by kind, with whether
+//! each runs, is turned off, and who signed it. View only.
+
+use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, Receiver};
+use std::thread;
+use std::time::Instant;
+
+use neet_core::startup::{self, Item, Kind, Listing, Runs, Signed};
+use ratatui::Frame;
+use ratatui::crossterm::event::{KeyCode, KeyEvent};
+use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::style::Stylize;
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, Cell, Padding, Paragraph, Row, Table, TableState, Wrap};
+
+use super::app::{Action, Context, Screen};
+use super::format;
+use super::loading::Loading;
+use super::visual::{self, Columns};
+
+/// From this width the selected item shows on the right.
+const MIN_SIDE_WIDTH: u16 = 96;
+
+/// The list's width beside the details
+const LIST_WIDTH: (u16, u16) = (48, 70);
+
+/// Width of the status column, such as `○ waiting · !`
+const STATUS_WIDTH: u16 = 15;
+
+/// Where System Settings lists apps that open at login
+const LOGIN_ITEMS: &str = "x-apple.systempreferences:com.apple.LoginItems-Settings.extension";
+
+/// One row of the list
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Entry {
+    Kind(Kind),
+    /// An index into the listing's items
+    Item(usize),
+}
+
+enum State {
+    Looking(Instant, Receiver<Listing>),
+    Ready(Listing),
+}
+
+/// Lists programs that start on their own. Changes nothing.
+pub struct Startup {
+    home: PathBuf,
+    state: State,
+    table: TableState,
+}
+
+impl Startup {
+    pub fn new() -> Self {
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_default();
+        let mut screen = Self {
+            home,
+            state: State::Ready(Listing::default()),
+            table: TableState::default(),
+        };
+        screen.look();
+        screen
+    }
+
+    #[cfg(test)]
+    fn from_listing(home: PathBuf, listing: Listing) -> Self {
+        let mut screen = Self {
+            home,
+            state: State::Ready(listing),
+            table: TableState::default(),
+        };
+        screen.select_first();
+        screen
+    }
+
+    /// Reads every item on its own thread, since codesign takes a moment.
+    fn look(&mut self) {
+        let (sender, receiver) = mpsc::channel();
+        let home = self.home.clone();
+        thread::spawn(move || {
+            // The receiver is gone only when the screen was closed.
+            let _ = sender.send(startup::list_mine(&home));
+        });
+        self.state = State::Looking(Instant::now(), receiver);
+    }
+
+    fn poll(&mut self) {
+        if let State::Looking(_, receiver) = &self.state
+            && let Ok(listing) = receiver.try_recv()
+        {
+            self.state = State::Ready(listing);
+            self.select_first();
+        }
+    }
+
+    fn listing(&self) -> Option<&Listing> {
+        match &self.state {
+            State::Ready(listing) => Some(listing),
+            State::Looking(..) => None,
+        }
+    }
+
+    /// Each kind that has an item, then its items
+    fn rows(&self) -> Vec<Entry> {
+        let Some(listing) = self.listing() else {
+            return Vec::new();
+        };
+        let mut rows = Vec::new();
+        for kind in Kind::ALL {
+            let mut first = true;
+            for (index, item) in listing.items.iter().enumerate() {
+                if item.kind != kind {
+                    continue;
+                }
+                if first {
+                    rows.push(Entry::Kind(kind));
+                    first = false;
+                }
+                rows.push(Entry::Item(index));
+            }
+        }
+        rows
+    }
+
+    fn selected(&self) -> Option<&Item> {
+        match self.rows().get(self.table.selected()?) {
+            Some(Entry::Item(index)) => self.listing()?.items.get(*index),
+            _ => None,
+        }
+    }
+
+    fn select_first(&mut self) {
+        let first = self
+            .rows()
+            .iter()
+            .position(|row| matches!(row, Entry::Item(_)));
+        self.table.select(first);
+    }
+
+    /// Moves to the next item up or down, past kind names
+    fn step(&mut self, down: bool) {
+        let rows = self.rows();
+        let Some(current) = self.table.selected() else {
+            return;
+        };
+        let next = if down {
+            (current + 1..rows.len()).find(|&index| matches!(rows[index], Entry::Item(_)))
+        } else {
+            (0..current)
+                .rev()
+                .find(|&index| matches!(rows[index], Entry::Item(_)))
+        };
+        if let Some(next) = next {
+            self.table.select(Some(next));
+        }
+    }
+
+    fn jump(&mut self, last: bool) {
+        let rows = self.rows();
+        let found = if last {
+            rows.iter().rposition(|row| matches!(row, Entry::Item(_)))
+        } else {
+            rows.iter().position(|row| matches!(row, Entry::Item(_)))
+        };
+        if found.is_some() {
+            self.table.select(found);
+        }
+    }
+
+    /// A path from the home folder as `~/...`
+    fn tilde(&self, path: &Path) -> String {
+        if self.home.as_os_str().is_empty() {
+            return path.display().to_string();
+        }
+        path.strip_prefix(&self.home).map_or_else(
+            |_| path.display().to_string(),
+            |rest| format!("~/{}", rest.display()),
+        )
+    }
+
+    /// The line at the top: how many items, running, and turned off
+    fn draw_top(&self, frame: &mut Frame, area: Rect) {
+        let mut spans = vec![Span::raw(" ")];
+        if let Some(listing) = self.listing() {
+            let items = &listing.items;
+            let running = items
+                .iter()
+                .filter(|item| matches!(item.runs, Runs::Running(_)))
+                .count();
+            let off = items.iter().filter(|item| item.off).count();
+            spans.push(Span::raw(format!(
+                "{} {}",
+                items.len(),
+                if items.len() == 1 { "item" } else { "items" }
+            )));
+            spans.push(Span::raw(" · "));
+            spans.push(Span::raw(format!("{running} running")).green());
+            if off > 0 {
+                spans.push(Span::raw(" · "));
+                spans.push(Span::raw(format!("{off} turned off")).yellow());
+            }
+        }
+        spans.push(Span::raw(" "));
+        frame.render_widget(
+            Block::new()
+                .borders(Borders::TOP)
+                .title(" Startup ")
+                .title_style(visual::HEADING)
+                .title(Line::from(spans).right_aligned()),
+            area,
+        );
+    }
+
+    fn draw_table(&mut self, frame: &mut Frame, area: Rect) {
+        let rows = self.rows();
+        let block = visual::block()
+            .title(" Programs ")
+            .padding(Padding::horizontal(1));
+        let Some(listing) = self.listing() else {
+            return;
+        };
+        if rows.is_empty() {
+            let inner = block.inner(area);
+            frame.render_widget(block, area);
+            frame.render_widget(
+                Paragraph::new("Nothing starts on its own, other than macOS itself.")
+                    .centered()
+                    .wrap(Wrap { trim: true }),
+                inner,
+            );
+            return;
+        }
+        let longest = listing
+            .items
+            .iter()
+            .map(|item| format::display_width(&item.name))
+            .max()
+            .unwrap_or(0);
+        let name_width = u16::try_from(longest + 4).unwrap_or(u16::MAX).max(14);
+        let columns = Columns::new(area.width, [(name_width, 0), (STATUS_WIDTH, 1)], &[], true);
+        let table_rows: Vec<Row> = rows
+            .iter()
+            .map(|row| match *row {
+                Entry::Kind(kind) => columns.row([
+                    Cell::from(Span::styled(kind.title(), visual::HEADING)),
+                    Cell::from(""),
+                ]),
+                Entry::Item(index) => {
+                    let item = &listing.items[index];
+                    let name =
+                        format::shorten_middle(&item.name, columns.width(0).saturating_sub(2));
+                    columns.row([Cell::from(format!("  {name}")), Cell::from(status(item))])
+                }
+            })
+            .collect();
+        let table = Table::new(table_rows, columns.widths())
+            .column_spacing(2)
+            .block(block)
+            .highlight_symbol("▸ ")
+            .row_highlight_style(visual::SELECTED);
+        frame.render_stateful_widget(table, area, &mut self.table);
+    }
+
+    /// The selected item's lines, with paths shortened to fit `width`
+    fn details(&self, item: &Item, width: usize) -> Vec<Line<'static>> {
+        let room = width.saturating_sub(9);
+        let path = |path: &Path| Span::raw(format::shorten_path(&self.tilde(path), room));
+        let mut lines = vec![field("Kind", Span::raw(kind_one(item.kind)))];
+        if let Some(app) = &item.app {
+            lines.push(field("App", Span::raw(app.clone())));
+        }
+        if let Some(label) = &item.label
+            && *label != item.name
+        {
+            lines.push(field("Label", Span::raw(label.clone())));
+        }
+        if let Some(program) = &item.program {
+            lines.push(field("Program", path(program)));
+        }
+        let file_label = if item.file.extension().is_some_and(|ext| ext == "plist") {
+            "Plist"
+        } else {
+            "Helper"
+        };
+        lines.push(field(file_label, path(&item.file)));
+        lines.push(field("Signed", signed(&item.signed)));
+        lines.push(field(
+            "Starts",
+            Span::raw(match (item.at_start, item.kind) {
+                (true, Kind::Daemon) => "when the Mac starts",
+                (true, _) => "when you log in",
+                (false, _) => "only when a program asks for it",
+            }),
+        ));
+        lines.push(field("Now", now(item)));
+        lines.push(Line::default());
+        if let Some(problem) = &item.problem {
+            lines.push(Line::from(format!("! {problem}")).yellow());
+        }
+        lines.push(Line::from(view_only(item.kind)));
+        lines
+    }
+
+    fn draw_details(&self, frame: &mut Frame, area: Rect, item: &Item) {
+        let lines = self.details(item, usize::from(area.width.saturating_sub(4)));
+        frame.render_widget(
+            Paragraph::new(lines).wrap(Wrap { trim: true }).block(
+                visual::block()
+                    .title(Line::from(format!(" {} ", item.name)).bold())
+                    .padding(Padding::horizontal(1)),
+            ),
+            area,
+        );
+    }
+
+    /// Apps that open at login, and what macOS keeps to itself
+    fn about(&self) -> Vec<Line<'static>> {
+        let mut login = vec![
+            Line::from("Open at login").style(visual::HEADING),
+            Line::from(
+                "macOS shows apps that open at login only to an admin, so they are not listed here.",
+            ),
+            Line::from(vec![
+                Span::raw("o").fg(visual::ACCENT).bold(),
+                Span::raw(" opens them in System Settings, where you can turn them off."),
+            ]),
+        ];
+        if let Some(listing) = self.listing() {
+            if let Some(incomplete) = &listing.incomplete {
+                login.push(Line::from(incomplete.clone()).yellow());
+            }
+            if listing.from_macos > 0 {
+                login.push(Line::from(format!(
+                    "{} more belong to macOS, and are not listed.",
+                    listing.from_macos
+                )));
+            }
+        }
+        login
+    }
+
+    /// How many of each kind, and how many of those run
+    fn counts(&self) -> Vec<Line<'static>> {
+        let mut lines = vec![Line::from("By kind").style(visual::HEADING)];
+        let Some(listing) = self.listing() else {
+            return lines;
+        };
+        for kind in Kind::ALL {
+            let items: Vec<&Item> = listing.items.iter().filter(|i| i.kind == kind).collect();
+            if items.is_empty() {
+                continue;
+            }
+            let running = items
+                .iter()
+                .filter(|item| matches!(item.runs, Runs::Running(_)))
+                .count();
+            let mut spans = vec![
+                Span::raw(format!("{:<30}", kind.title())).bold(),
+                Span::raw(format!("{:>3}", items.len())),
+            ];
+            if running > 0 {
+                spans.push(Span::raw(" · "));
+                spans.push(Span::raw(format!("{running} running")).green());
+            }
+            lines.push(Line::from(spans));
+        }
+        lines
+    }
+
+    /// What the marks in the list mean
+    fn legend() -> Vec<Line<'static>> {
+        vec![
+            Line::from("Legend").style(visual::HEADING),
+            legend_line(Span::raw("● running").green(), "running now"),
+            legend_line(
+                Span::raw("○ waiting").fg(visual::ACCENT),
+                "starts when it is needed",
+            ),
+            legend_line(Span::raw("· not loaded"), "not running"),
+            legend_line(Span::raw("off").yellow(), "turned off"),
+            legend_line(Span::raw("!").yellow(), "something is wrong with it"),
+        ]
+    }
+
+    /// The list sized to its rows, with the legend below it when there is
+    /// room
+    fn draw_list(&mut self, frame: &mut Frame, area: Rect) {
+        let rows = u16::try_from(self.rows().len()).unwrap_or(u16::MAX).max(3);
+        let table_height = rows.saturating_add(2);
+        let legend = Self::legend();
+        let legend_height = u16::try_from(legend.len()).unwrap_or(u16::MAX) + 2;
+        if area.height < table_height + legend_height {
+            self.draw_table(frame, area);
+            return;
+        }
+        let [table, below] =
+            Layout::vertical([Constraint::Length(table_height), Constraint::Fill(1)]).areas(area);
+        self.draw_table(frame, table);
+        visual::sections(frame, below, "", vec![legend]);
+    }
+
+    fn draw_body(&mut self, frame: &mut Frame, body: Rect) {
+        let selected = self.selected().cloned();
+        if body.width >= MIN_SIDE_WIDTH {
+            let width = (body.width * 45 / 100).clamp(LIST_WIDTH.0, LIST_WIDTH.1);
+            let [list, side] =
+                Layout::horizontal([Constraint::Length(width), Constraint::Fill(1)]).areas(body);
+            self.draw_list(frame, list);
+            let about = vec![self.about(), self.counts()];
+            match selected {
+                Some(item) => {
+                    let lines = self.details(&item, usize::from(side.width.saturating_sub(4)));
+                    let height = (visual::wrapped_rows(&lines, side.width.saturating_sub(4)) + 2)
+                        .min(side.height);
+                    let [details, below] =
+                        Layout::vertical([Constraint::Length(height), Constraint::Fill(1)])
+                            .areas(side);
+                    self.draw_details(frame, details, &item);
+                    visual::sections(frame, below, "", about);
+                }
+                None => visual::sections(frame, side, "", about),
+            }
+            return;
+        }
+        match selected {
+            Some(item) if body.height >= 20 => {
+                let width = body.width.saturating_sub(4);
+                let lines = self.details(&item, usize::from(width));
+                let height = (visual::wrapped_rows(&lines, width) + 2).min(body.height / 2);
+                let [list, below] =
+                    Layout::vertical([Constraint::Fill(1), Constraint::Length(height)]).areas(body);
+                self.draw_table(frame, list);
+                self.draw_details(frame, below, &item);
+            }
+            _ => self.draw_table(frame, body),
+        }
+    }
+
+    /// Opens Login Items in System Settings.
+    fn open_login_items() {
+        // System Settings opens on its own; neet does not wait for it.
+        let _ = std::process::Command::new("/usr/bin/open")
+            .arg(LOGIN_ITEMS)
+            .spawn();
+    }
+
+    /// Shows the selected item's plist or helper in Finder.
+    fn show_in_finder(&self) {
+        if let Some(item) = self.selected() {
+            let _ = std::process::Command::new("/usr/bin/open")
+                .arg("-R")
+                .arg(&item.file)
+                .spawn();
+        }
+    }
+}
+
+/// One of this kind, in a few words
+fn kind_one(kind: Kind) -> &'static str {
+    match kind {
+        Kind::Background => "a helper inside an app",
+        Kind::YourAgent => "your launch agent",
+        Kind::AgentForAll => "a launch agent for every user",
+        Kind::Daemon => "a launch daemon, run by the system",
+    }
+}
+
+/// Why the item cannot be changed here
+fn view_only(kind: Kind) -> &'static str {
+    match kind {
+        Kind::Background => {
+            "View only. Press o to turn it off in System Settings, under Allow in the Background."
+        }
+        Kind::YourAgent => "View only for now. Turning it off comes in a later version.",
+        Kind::AgentForAll | Kind::Daemon => {
+            "View only. An admin set it up for every user, sometimes to manage this Mac."
+        }
+    }
+}
+
+fn status(item: &Item) -> Line<'static> {
+    let mut spans = vec![if item.off {
+        Span::raw("off").yellow()
+    } else {
+        match item.runs {
+            Runs::Running(_) => Span::raw("● running").green(),
+            Runs::Waiting => Span::raw("○ waiting").fg(visual::ACCENT),
+            Runs::No => Span::raw("· not loaded"),
+            Runs::Unknown => Span::raw("? not known"),
+        }
+    }];
+    if item.problem.is_some() {
+        spans.push(Span::raw(" !").yellow().bold());
+    }
+    Line::from(spans)
+}
+
+fn now(item: &Item) -> Span<'static> {
+    let runs = match item.runs {
+        Runs::Running(0) => "running".to_string(),
+        Runs::Running(pid) => format!("running, process {pid}"),
+        Runs::Waiting => "waiting, and starts when it is needed".to_string(),
+        Runs::No => "not running".to_string(),
+        Runs::Unknown => "not known".to_string(),
+    };
+    if item.off {
+        Span::raw(format!("turned off · {runs}")).yellow()
+    } else if matches!(item.runs, Runs::Running(_)) {
+        Span::raw(runs).green()
+    } else {
+        Span::raw(runs)
+    }
+}
+
+fn signed(signed: &Signed) -> Span<'static> {
+    match signed {
+        Signed::Apple => Span::raw("Apple"),
+        Signed::By(name) => Span::raw(name.clone()),
+        Signed::AppStore(team) if team.is_empty() => Span::raw("an App Store app"),
+        Signed::AppStore(team) => Span::raw(format!("an App Store app, team {team}")),
+        Signed::Unsigned => Span::raw("not signed").yellow(),
+        Signed::Unknown => Span::raw("not known"),
+    }
+}
+
+fn field(label: &str, value: Span<'static>) -> Line<'static> {
+    Line::from(vec![Span::raw(format!("{label:<9}")).bold(), value])
+}
+
+fn legend_line(mark: Span<'static>, meaning: &'static str) -> Line<'static> {
+    let width = format::display_width(&mark.content);
+    Line::from(vec![
+        mark,
+        Span::raw(" ".repeat(14usize.saturating_sub(width))),
+        Span::raw(meaning),
+    ])
+}
+
+impl Screen for Startup {
+    fn draw(&mut self, frame: &mut Frame, area: Rect, _context: &Context) {
+        self.poll();
+        if let State::Looking(started, _) = &self.state {
+            Loading {
+                title: "Startup",
+                doing: "Looking for startup programs",
+                progress: format!("{}s", started.elapsed().as_secs()),
+                note: "Nothing is changed while neet looks.",
+            }
+            .draw(frame, area);
+            return;
+        }
+        let [top, body] =
+            Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(area);
+        self.draw_top(frame, top);
+        self.draw_body(frame, body);
+    }
+
+    fn handle_key(&mut self, key: KeyEvent, _context: &Context) -> Action {
+        if self.listing().is_none() {
+            return Action::None;
+        }
+        match key.code {
+            KeyCode::Up | KeyCode::Char('k') => self.step(false),
+            KeyCode::Down | KeyCode::Char('j') => self.step(true),
+            KeyCode::Char('g') | KeyCode::Home => self.jump(false),
+            KeyCode::Char('G') | KeyCode::End => self.jump(true),
+            KeyCode::Char('o') => Self::open_login_items(),
+            KeyCode::Char('f') => self.show_in_finder(),
+            KeyCode::Char('r') => self.look(),
+            _ => {}
+        }
+        Action::None
+    }
+
+    fn hints(&self) -> &'static str {
+        "↑↓ move · o login items · f show in Finder · r look again · esc home · ? help"
+    }
+
+    fn help(&self) -> &'static [(&'static str, &'static str)] {
+        &[
+            ("↑↓", "Move between programs"),
+            ("g G", "First or last program"),
+            ("o", "Open Login Items in System Settings"),
+            ("f", "Show the selected plist or helper in Finder"),
+            ("r", "Look again"),
+        ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::scan::ScanStatus;
+    use crate::ui::visual::tests as view;
+
+    fn item(kind: Kind, name: &str, runs: Runs) -> Item {
+        Item {
+            kind,
+            name: name.to_string(),
+            label: Some(name.to_string()),
+            file: PathBuf::from(format!("/home/Library/LaunchAgents/{name}.plist")),
+            program: Some(PathBuf::from("/usr/local/bin/x")),
+            runs,
+            off: false,
+            at_start: true,
+            signed: Signed::By("Google LLC".to_string()),
+            app: None,
+            problem: None,
+        }
+    }
+
+    fn sample() -> Listing {
+        let mut empty = item(Kind::YourAgent, "com.google.keystone.agent", Runs::No);
+        empty.problem = Some("Its plist is empty, so it does nothing.".to_string());
+        empty.signed = Signed::Unknown;
+        let mut helper = item(Kind::Background, "DockerHelper", Runs::Running(44));
+        helper.app = Some("Docker".to_string());
+        helper.label = Some("com.docker.helper".to_string());
+        helper.file =
+            PathBuf::from("/Applications/Docker.app/Contents/Library/LoginItems/DockerHelper.app");
+        let mut off = item(Kind::AgentForAll, "com.vmware.deem", Runs::No);
+        off.off = true;
+        Listing {
+            items: vec![
+                helper,
+                item(
+                    Kind::YourAgent,
+                    "com.google.GoogleUpdater.wake",
+                    Runs::Waiting,
+                ),
+                empty,
+                off,
+                item(Kind::Daemon, "com.docker.vmnetd", Runs::Running(529)),
+            ],
+            incomplete: None,
+            from_macos: 3,
+        }
+    }
+
+    fn render(screen: &mut Startup, width: u16, height: u16) -> String {
+        let scan = ScanStatus::Failed(String::new());
+        let context = Context {
+            scan: &scan,
+            disk: None,
+            cleanable: None,
+            plan: None,
+        };
+        view::text(&view::render("startup", screen, &context, width, height))
+    }
+
+    fn press(screen: &mut Startup, code: KeyCode) {
+        let scan = ScanStatus::Failed(String::new());
+        let context = Context {
+            scan: &scan,
+            disk: None,
+            cleanable: None,
+            plan: None,
+        };
+        screen.handle_key(
+            KeyEvent::new(code, ratatui::crossterm::event::KeyModifiers::NONE),
+            &context,
+        );
+    }
+
+    #[test]
+    fn lists_items_by_kind_with_their_status() {
+        let mut screen = Startup::from_listing(PathBuf::from("/home"), sample());
+        let text = render(&mut screen, 140, 40);
+        assert!(
+            text.contains("5 items · 2 running · 1 turned off"),
+            "{text}"
+        );
+        for kind in Kind::ALL {
+            assert!(text.contains(kind.title()), "{}\n{text}", kind.title());
+        }
+        assert!(text.find("Allowed in the background") < text.find("Your launch agents"));
+        assert!(text.contains("● running"));
+        assert!(text.contains("○ waiting"));
+        assert!(text.contains("· not loaded !"), "{text}");
+        assert!(text.contains("off"));
+        assert!(text.contains("3 more belong to macOS"));
+        assert!(text.contains("o opens them in System Settings"));
+        assert!(
+            text.contains("Launch daemons                  1 · 1 running"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn shows_the_selected_item_and_why_it_is_view_only() {
+        let mut screen = Startup::from_listing(PathBuf::from("/home"), sample());
+        let text = render(&mut screen, 140, 40);
+        assert!(text.contains("App      Docker"), "{text}");
+        assert!(text.contains("Label    com.docker.helper"));
+        assert!(text.contains("Helper   /Applications/"), "{text}");
+        assert!(text.contains("DockerHelper.app"), "{text}");
+        assert!(text.contains("Signed   Google LLC"));
+        assert!(text.contains("running, process 44"));
+        assert!(text.contains("Press o to turn it off in System Settings"));
+
+        press(&mut screen, KeyCode::Down);
+        press(&mut screen, KeyCode::Down);
+        let text = render(&mut screen, 140, 40);
+        assert!(
+            text.contains("Plist    ~/Library/LaunchAgents/com.google.keystone.agent.plist"),
+            "{text}"
+        );
+        assert!(text.contains("! Its plist is empty"), "{text}");
+        assert!(text.contains("Turning it off comes in a later version"));
+
+        press(&mut screen, KeyCode::Char('G'));
+        let text = render(&mut screen, 140, 40);
+        assert!(text.contains("when the Mac starts"), "{text}");
+        assert!(text.contains("An admin set it up for every user"));
+    }
+
+    #[test]
+    fn fits_a_narrow_screen() {
+        let mut screen = Startup::from_listing(PathBuf::from("/home"), sample());
+        let text = render(&mut screen, 80, 30);
+        assert!(text.contains("DockerHelper"), "{text}");
+        assert!(text.contains("Signed"), "{text}");
+    }
+
+    #[test]
+    fn says_when_nothing_starts() {
+        let mut screen = Startup::from_listing(PathBuf::from("/home"), Listing::default());
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains("Nothing starts on its own"), "{text}");
+        assert!(text.contains("Open at login"), "{text}");
+    }
+}
