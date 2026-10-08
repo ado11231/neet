@@ -372,7 +372,8 @@ pub fn preview(path: &Path) -> io::Result<String> {
 }
 
 /// Whether a program by this name is in a folder on `PATH`
-fn is_installed(program: &str) -> bool {
+#[must_use]
+pub fn is_installed(program: &str) -> bool {
     std::env::var_os("PATH").is_some_and(|path| {
         std::env::split_paths(&path).any(|folder| {
             fs::metadata(folder.join(program))
@@ -454,15 +455,26 @@ fn read_config(folder: &Path) -> Config {
 
 /// chezmoi's source folder and whether neet may run chezmoi, from its config
 /// in `config_folder`, or `None` when there is no source folder.
-fn find_chezmoi(home: &Path, config_folder: &Path, installed: bool) -> Option<Chezmoi> {
-    let config = read_config(config_folder);
-    let folder = match &config.source_dir {
+/// Where chezmoi keeps its source folder: `sourceDir` from its config, or
+/// `~/.local/share/chezmoi`
+#[must_use]
+pub fn chezmoi_folder(home: &Path) -> PathBuf {
+    source_folder(home, &read_config(&config_folder(home)))
+}
+
+fn source_folder(home: &Path, config: &Config) -> PathBuf {
+    match &config.source_dir {
         Some(dir) => match dir.strip_prefix("~/") {
             Some(rest) => home.join(rest),
             None => home.join(dir),
         },
         None => home.join(".local/share/chezmoi"),
-    };
+    }
+}
+
+fn find_chezmoi(home: &Path, config_folder: &Path, installed: bool) -> Option<Chezmoi> {
+    let config = read_config(config_folder);
+    let folder = source_folder(home, &config);
     if !folder.is_dir() {
         return None;
     }
@@ -702,11 +714,11 @@ fn source_file(source: &Path, target: &str) -> Option<(PathBuf, Option<Built>)> 
 }
 
 /// A source file `chezmoi add` would make
-#[derive(Debug, PartialEq, Eq)]
-struct NewSource {
-    path: PathBuf,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NewSource {
+    pub(crate) path: PathBuf,
     /// Folders still to make, each with whether only you may open it
-    folders: Vec<(PathBuf, bool)>,
+    pub(crate) folders: Vec<(PathBuf, bool)>,
 }
 
 /// A name in the home folder as chezmoi names it in the source folder:
@@ -720,7 +732,7 @@ fn source_part(name: &str) -> String {
 /// `home`: inside folders chezmoi already has, then new ones named as chezmoi
 /// names them, with `private_` for folders and files only you can open,
 /// `empty_` for an empty file, and `executable_` for one that runs.
-fn new_source(source: &Path, home: &Path, target: &str) -> Option<NewSource> {
+pub(crate) fn new_source(source: &Path, home: &Path, target: &str) -> Option<NewSource> {
     let private = |path: &Path| fs::metadata(path).is_ok_and(|metadata| only_yours(&metadata));
     let parts: Vec<&str> = target.split('/').collect();
     let (file, folders) = parts.split_last()?;
