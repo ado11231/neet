@@ -16,8 +16,9 @@
 8. [Trash](#trash)
 9. [Large Files](#large-files)
 10. [Remove App](#remove-app)
-11. [Dotfiles](#dotfiles)
-12. [Planned Screens](#planned-screens)
+11. [Startup](#startup)
+12. [Dotfiles](#dotfiles)
+13. [Planned Screens](#planned-screens)
 
 ## Every Screen
 
@@ -50,7 +51,7 @@
       .     .      *        .            | > 1 Disk                            |
   *        .           .        *        |   2 Quick Clean                     |
        .        Art        .             |   ...                               |
-   .       *          .          .       |   6 Startup       soon              |
+   .       *          .          .       |   8 AI Tools      soon              |
        .        .        *       .       |     Quit                            |
   +        .        .        .           +-------------------------------------+
      .        *         .       *        + Disk -------------------------------+
@@ -425,6 +426,42 @@
 
 * An app that is open cannot be opened here. The note says to quit it first.
 
+## Startup
+
+```text
+ Startup ------------------------------------------------------------ 15 items . 6 running
++ Programs -------------------------------++ DockerHelper ----------------------------------+
+|   Allowed in the background             || Kind     a helper inside an app               |
+| >   DockerHelper        o waiting       || App      Docker                               |
+|     com.ollama.ollama   o waiting       || Label    com.docker.helper                    |
+|   Your launch agents                    || Helper   /Applications/.../DockerHelper.app   |
+|     com.google.Goog...  o waiting       || Signed   Docker Inc                           |
+|     com.google.keyst... . not loaded !  || Starts   when you log in                      |
+|   Launch daemons                        || Now      waiting, and starts when it is needed|
+|     com.docker.vmnetd   * running       ||                                               |
++-----------------------------------------+| View only. Press o to turn it off in System   |
++ Legend ---------------------------------+| Settings, under Allow in the Background.      |
+| * running     running now               |+-----------------------------------------------+
+| o waiting     starts when it is needed  |+ Open at login --------------------------------+
+| . not loaded  not running               || macOS shows apps that open at login only to   |
+| off           turned off                || an admin, so they are not listed here.        |
+| !             something is wrong        || o opens them in System Settings.              |
++-----------------------------------------++-----------------------------------------------+
+```
+
+* View only. Startup opens with a loading box while it reads, about a second, then lists every program that starts on its own, grouped by kind: **Allowed in the background** (helpers inside apps that the app asked macOS to run), **Your launch agents**, **Launch agents for every user**, and **Launch daemons**. What it reads, and what it never runs, is in [SAFETY.md](SAFETY.md#startup-items).
+* Each row shows the name and whether it runs: **● running** in green, **○ waiting** in blue for one launchd starts when needed, **· not loaded**, or **off** in yellow when it is turned off. A yellow **!** means something is wrong with it, such as an empty plist or a missing program.
+* The top line counts the items, how many run, and how many are turned off.
+* The box beside the list shows the selected item: its kind, app, label, program, plist or helper, who signed it, when it starts, and what it is doing now, then any problem, then why it is view only.
+* Below it, **Open at login** says those apps are not listed, since macOS shows them only to an admin, and how many items belong to macOS and are only counted. **By kind** counts each kind, and how many of each run.
+* Under 96 columns, the selected item shows under the list.
+
+| Key | Action |
+| --- | --- |
+| `o` | Open Login Items & Extensions in System Settings. |
+| `f` | Show the selected plist or helper in Finder. |
+| `r` | Look again. |
+
 ## Dotfiles
 
 ```text
@@ -604,7 +641,7 @@
 | --- | --- | --- |
 | Space Breakdown | A list of parts that add up to the disk's used space: the scan, skipped folders, apps, macOS, snapshots, purgeable space, and anything unexplained. Opened with `b` on Home. | `Enter` opens a folder in Disk. |
 | Projects | A list of build folders in code projects, with project, last change, folder, and size. Folders that cannot be cleaned show the reason. | `Space` selects, `s` sorts, `Enter` reviews. |
-| Startup | Sections for login items, background items, launch agents, and launch daemons. Each row shows the program, whether it runs, and whether it is signed. | Turn off, turn back on. |
+| Startup: turn off | Your own launch agents get `t` to turn off and on, after a question, with the state before saved so it can be undone. | `t` turns off or back on. |
 | SSH | Sections for hosts, keys, agent keys, known hosts, and permission problems. | Fix permissions, add or remove agent keys, remove known hosts. |
 | PATH | Each folder in search order, with how many programs it holds, where it was added, and any problem. A preview shows the programs it holds. | `w` finds which copy of a program runs. `K` / `J` move a folder. `a` adds, `x` removes, `Enter` saves with a backup. |
 | AI Tools | Sections for tools, settings, instruction files, skills, and project skills. View only. | `Enter` opens a file. |

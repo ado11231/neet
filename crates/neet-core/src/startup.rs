@@ -315,6 +315,12 @@ pub fn list(home: &Path, uid: u32) -> Listing {
     listing(&read(home, uid), &signed)
 }
 
+/// Lists startup items for `home` and the user neet runs as
+#[must_use]
+pub fn list_mine(home: &Path) -> Listing {
+    list(home, rustix::process::getuid().as_raw())
+}
+
 /// What a launchd plist says
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Launchd {

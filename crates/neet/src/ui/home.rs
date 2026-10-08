@@ -16,6 +16,7 @@ use super::large::LargeFiles;
 use super::quick::QuickClean;
 use super::scan::ScanStatus;
 use super::skipped::Skipped;
+use super::startup::Startup;
 use neet_core::disk::DiskSpace;
 
 /// Below this width the art is hidden and the menu fills the screen.
@@ -81,8 +82,8 @@ const ENTRIES: &[Entry] = &[
     },
     Entry {
         label: "Startup",
-        about: "Manage startup programs.",
-        target: Target::Soon,
+        about: "See the programs that start on their own, and whether they run.",
+        target: Target::Screen(|| Box::new(Startup::new())),
     },
     Entry {
         label: "Dotfiles",
@@ -524,6 +525,8 @@ mod tests {
         press(&mut home, KeyCode::Down);
         assert_eq!(ENTRIES[home.selected()].label, "Large Files");
         press(&mut home, KeyCode::Down);
+        assert_eq!(ENTRIES[home.selected()].label, "Startup");
+        press(&mut home, KeyCode::Down);
         assert_eq!(ENTRIES[home.selected()].label, "Dotfiles");
         press(&mut home, KeyCode::Down);
         assert_eq!(ENTRIES[home.selected()].label, "Quit");
@@ -543,7 +546,11 @@ mod tests {
             press(&mut home, KeyCode::Char('1')),
             Action::Open(_)
         ));
-        assert!(matches!(press(&mut home, KeyCode::Char('6')), Action::None));
+        assert!(matches!(
+            press(&mut home, KeyCode::Char('6')),
+            Action::Open(_)
+        ));
+        assert!(matches!(press(&mut home, KeyCode::Char('8')), Action::None));
     }
 
     /// Draws Home and writes it as `docs/images/home.svg`, the README's

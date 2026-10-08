@@ -15,6 +15,7 @@ mod quick;
 mod review;
 mod scan;
 mod skipped;
+mod startup;
 mod tools;
 mod visual;
 
