@@ -263,13 +263,12 @@ impl Pick {
             .collect();
         let header = columns
             .row([
-                Cell::from(""),
+                super::visual::check_header(),
                 Cell::from(Line::from("Size").right_aligned()),
                 Cell::from("Path"),
                 Cell::from("Changed"),
             ])
-            .style(super::visual::HEADING)
-            .bottom_margin(1);
+            .style(super::visual::HEADING);
         let table = Table::new(rows, columns.widths())
             .header(header)
             .column_spacing(2)
@@ -488,9 +487,9 @@ impl Screen for Pick {
         // The table, only as tall as its rows, then a box about the selected
         // item below, when there is room for both
         let rows = u16::try_from(planned.plan.rules.len()).unwrap_or(u16::MAX);
-        let (area, below) = if area.height >= rows + 4 + 8 {
+        let (area, below) = if area.height >= rows + 3 + 8 {
             let [table, below] = Layout::vertical([
-                Constraint::Length((rows + 4).min(area.height - 8)),
+                Constraint::Length((rows + 3).min(area.height - 8)),
                 Constraint::Fill(1),
             ])
             .areas(area);
