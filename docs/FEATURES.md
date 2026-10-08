@@ -11,11 +11,12 @@
 3. [Cleanup](#cleanup)
 4. [Apps](#apps)
 5. [Dotfiles](#dotfiles)
-6. [The Program](#the-program)
-7. [Planned Features](#planned-features)
-8. [Open Questions](#open-questions)
-9. [Never Planned](#never-planned)
-10. [Terms](#terms)
+6. [Startup](#startup)
+7. [The Program](#the-program)
+8. [Planned Features](#planned-features)
+9. [Open Questions](#open-questions)
+10. [Never Planned](#never-planned)
+11. [Terms](#terms)
 
 ## Status
 
@@ -122,6 +123,16 @@
 
 * What may change, and how, is in [SAFETY.md](SAFETY.md#dotfiles). neet runs chezmoi only when its templates and hooks cannot run a program.
 
+## Startup
+
+| Feature | What It Does | Status |
+| --- | --- | --- |
+| List | Lists programs that start on their own, without admin rights: your launch agents, launch agents and daemons installed for every user, and helpers apps asked macOS to run in the background. Each shows its program, whether it runs now, whether it is turned off, and who signed it. macOS's own items are only counted. | Proposed |
+| Open at login | macOS shows apps that open at login only to an admin, so they are not listed. `o` opens System Settings, where they are. | Proposed |
+| Turn off and back on | Only your own launch agents, with `launchctl disable` and `enable`, and the state before saved so it can be undone. | Proposed |
+
+* What is read, and what may change, is in [SAFETY.md](SAFETY.md#startup-items). Items installed for every user, and Apple's, stay view only.
+
 ## The Program
 
 | Feature | What It Does | Status |
@@ -139,7 +150,6 @@
 
 | Area | What It Would Do |
 | --- | --- |
-| Startup items | List programs that start on their own, including ones with no icon, and turn them off in a way you can undo. Items that belong to macOS are view only. |
 | SSH | Show hosts, key details, and agent keys, fix file permissions that are too open, and remove old known hosts. Never shows a private key. |
 | Shell PATH | Show the folders your shell searches for programs, in order, flag problems, show which copy of a program runs, and reorder them with a backup. |
 | AI tool files | Show the settings, instruction files, and skills that Claude Code and Codex keep on your Mac. View only. |
@@ -157,7 +167,6 @@
 | --- | --- |
 | Mail downloads | Mail keeps attachments in its own folder. Can that folder be cleaned without losing your only copy of an attachment? |
 | System logs | Can they be cleaned without admin rights? |
-| Startup items | How is each kind found, turned off, and turned back on, on every supported macOS version? |
 | Power and display | Which settings exist on each Mac, and does switching back a refresh rate always work? |
 | Space breakdown | Which numbers does macOS report reliably for volumes, snapshots, and purgeable space? |
 | Project build folders | Many projects live in Documents or Desktop, which neet never touches. Can a narrow check allow only ignored build folders there? |

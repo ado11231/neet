@@ -18,8 +18,9 @@
 10. [Tools neet Runs](#tools-neet-runs)
 11. [Emptying The Trash](#emptying-the-trash)
 12. [Dotfiles](#dotfiles)
-13. [Planned Features](#planned-features)
-14. [Tests](#tests)
+13. [Startup Items](#startup-items)
+14. [Planned Features](#planned-features)
+15. [Tests](#tests)
 
 ## The Promises
 
@@ -396,6 +397,37 @@ min_age_days = 0
 * neet never force pushes, pulls, merges, or rebases. It pushes only to the remote branch the branch already tracks. If the remote has commits you do not, Git refuses the push, and neet says to pull first.
 * Git runs with fsmonitor turned off and with no password prompt, so it never waits for typing or starts another program on its own.
 
+## Startup Items
+
+* Startup lists programs that start on their own. The first screen is view only: it reads, and changes nothing.
+
+### What Is Read
+
+| Kind | Where | Read with |
+| --- | --- | --- |
+| Your launch agents | `~/Library/LaunchAgents/*.plist` | neet reads the plist itself. |
+| Launch agents for every user | `/Library/LaunchAgents/*.plist` | neet reads the plist itself. |
+| Launch daemons | `/Library/LaunchDaemons/*.plist` | neet reads the plist itself. |
+| Allowed in the background | Helpers inside apps in `/Applications` and `~/Applications`: `Contents/Library/LoginItems`, `LaunchAgents`, and `LaunchDaemons` | neet reads them itself, and lists only those launchd knows, which the app asked macOS to run. |
+| Whether each is turned off, and runs | launchd | `launchctl list`, `launchctl print-disabled gui/<uid>` and `system`, and `launchctl print system/<label>` |
+| Who made it, and whether it is signed | The program file | `codesign --display`, which only reads it |
+
+* Never read: `/System/Library`, and macOS's own items, which are only counted. Never the `.btm` database, which only root can read.
+* Never run: `sfltool dumpbtm`, which asks for an admin password, and `osascript`, which asks for Automation permission. Nothing neet runs here may show a prompt.
+* So apps that open at login are not listed. The screen says so, and `o` opens System Settings › General › Login Items & Extensions, where macOS lists them and turns them off.
+* neet never runs a listed program, never loads or starts an item, and never uses `sudo` to read.
+* When `launchctl` cannot be read, the list says it is incomplete, and each item shows that whether it runs is not known.
+* A plist that cannot be read, or is empty, is still listed, and says so.
+
+### What May Change
+
+* Nothing yet. Turning items off ships in its own change, and is written here before it is built.
+* Planned, and only for your own launch agents in `~/Library/LaunchAgents`: off with `launchctl disable gui/<uid>/<label>`, then `launchctl bootout`; back on with `launchctl enable`, then `launchctl bootstrap gui/<uid> <plist>`. The state before is saved in `~/.local/state/neet/`. The plist is never changed, moved, or removed.
+* View only, always:
+  1. Items in `/Library/LaunchAgents` and `/Library/LaunchDaemons`. An admin installed them for every user, sometimes for device management.
+  2. Background items inside apps, and apps that open at login. `o` opens System Settings, where macOS turns them off and on.
+  3. Items signed by Apple, and everything in `/System/Library`.
+
 ## Planned Features
 
 * Later features change files or settings in place, not through the Trash. Each has a fixed list of what it may change.
@@ -406,7 +438,7 @@ min_age_days = 0
 | SSH permissions | `~/.ssh` and the files directly inside it. | Change permissions |
 | SSH known hosts | `~/.ssh/known_hosts` | `ssh-keygen -R` |
 | SSH agent | Nothing on disk. | `ssh-add` |
-| Startup items | Whether an item runs. Never its file. Never items in `/System/Library`. | `launchctl`, with `sudo` when needed |
+| Startup items | Whether one of your own launch agents runs. Never its file. See [Startup Items](#startup-items). | `launchctl`, never `sudo` |
 | Power settings | Low and High Power Mode, graphics switching, and three wake settings. | `sudo pmset` |
 | Refresh rate | The mode of a connected display. It switches back after 15 seconds unless you keep it. | CoreGraphics |
 
@@ -437,7 +469,8 @@ min_age_days = 0
   11. App removal refusing Apple's apps, links, apps in subfolders, open apps, files outside the table, and partial names.
   12. Build folders and installers: accepted in Documents, Desktop, and Downloads, and refused when nested, in `~/Library` or a hidden folder, inside `.git` or `~/.ssh`, a link, a lone `target`, or a file that is not an installer.
   13. Tool commands: only runtime IDs reach `simctl`, and what `simctl` and `docker` print is read as data.
-  14. Dotfiles, once built: files outside the list, never listed files, links that lead out, a file changed after it was opened, a failed check, a crash in the middle of a write, restoring every backup, and secrets found before an export.
+  14. Dotfiles: files outside the list, never listed files, links that lead out, a file changed after it was opened, a failed check, a crash in the middle of a write, restoring every backup, and secrets found before an export.
+  15. Startup: plists that are empty, unreadable, or links; `launchctl` output that cannot be read marks the list incomplete; helpers inside apps count only when launchd knows them; nothing in `/System/Library` is read.
 * Before release, a harmless test item is moved to the Trash by hand and restored with Put Back. This passed on macOS 26.5.
 * Removing an app owned by root was tried the same way, and Put Back restored it.
 * Planned features add their own tests, for changes outside their lists, links that lead out, and undoing each change.
