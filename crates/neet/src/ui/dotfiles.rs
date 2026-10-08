@@ -1105,7 +1105,7 @@ impl Dotfiles {
             self.mode = Mode::Note {
                 title: "No settings".to_string(),
                 lines: vec![Line::from(
-                    "Configure knows the settings of Git, tmux, Starship, kitty, Ghostty, and mise. Press e to edit this file.",
+                    "Configure knows the settings of Git, tmux, Starship, kitty, Ghostty, mise, and zsh in .zshrc. Press e to edit this file.",
                 )],
                 color: visual::ACCENT,
             };
@@ -2114,7 +2114,8 @@ mod tests {
         let (_dir, mut screen) = screen();
         press(&mut screen, KeyCode::Enter);
         let text = render(&mut screen, 120, 30);
-        assert!(text.contains("Edit  e"), "{text}");
+        assert!(text.contains("▸ Edit"), "{text}");
+        assert!(text.contains("Configure zsh settings  c"), "{text}");
         assert!(!text.contains("Save my version"));
         press(&mut screen, KeyCode::Esc);
         screen.back();
@@ -2436,6 +2437,40 @@ mod tests {
     }
 
     #[test]
+    fn configure_writes_zsh_settings_only_in_the_neet_block() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = fs::canonicalize(dir.path()).unwrap();
+        let mine = "# mine\nexport EDITOR=vim\n";
+        write(&home.join(".zshrc"), mine);
+        let listing = dotfiles::list(&home);
+        let mut screen = Dotfiles::from_listing(home, listing);
+        press(&mut screen, KeyCode::Char('c'));
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains("zsh settings · ~/.zshrc"), "{text}");
+        assert!(text.contains("# >>> neet >>> lines"), "{text}");
+
+        press(&mut screen, KeyCode::Enter);
+        typed(&mut screen, "nano");
+        press(&mut screen, KeyCode::Enter);
+        for _ in 0..4 {
+            press(&mut screen, KeyCode::Down);
+        }
+        press(&mut screen, KeyCode::Enter);
+
+        press(&mut screen, KeyCode::Char('y'));
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains("+ export EDITOR='nano'"), "{text}");
+        assert!(text.contains("+ setopt auto_cd"), "{text}");
+        press(&mut screen, KeyCode::Char('y'));
+        assert_eq!(
+            fs::read_to_string(screen.home.join(".zshrc")).unwrap(),
+            format!(
+                "{mine}\n# >>> neet >>>\n# Set by neet's Configure. neet changes only the lines between these markers.\nexport EDITOR='nano'\nsetopt auto_cd\n# <<< neet <<<\n"
+            )
+        );
+    }
+
+    #[test]
     fn configure_steps_through_choices_and_refuses_a_bad_number() {
         let dir = tempfile::tempdir().unwrap();
         let home = fs::canonicalize(dir.path()).unwrap();
@@ -2483,8 +2518,15 @@ mod tests {
     #[test]
     fn configure_says_which_programs_it_knows() {
         let (_dir, mut screen) = screen();
+        while screen.listing.files[screen.selected().unwrap()].known.path != ".npmrc" {
+            press(&mut screen, KeyCode::Down);
+        }
         press(&mut screen, KeyCode::Char('c'));
-        assert!(render(&mut screen, 120, 30).contains("Configure knows the settings of Git, tmux"));
+        let text = render(&mut screen, 120, 30);
+        assert!(
+            text.contains("Configure knows the settings of Git, tmux"),
+            "{text}"
+        );
     }
 
     fn git(dir: &Path, args: &[&str]) -> String {

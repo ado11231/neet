@@ -464,7 +464,7 @@
 * **The list** is 45% of the width, between 48 and 64 columns, so its rows are never mostly empty.
 * **Right, from 96 columns,** taking the rest of the width: the selected file: its path, where a link leads, its saved copy, when it changed, and how many backups it has. Below, what its status means and what to do. Under that, the start of the file. A file that may hold a token never shows its preview.
 * Below 96 columns, the details sit under the list, and the preview is hidden.
-* **`Enter`** opens a small menu of only what can be done with the selected file, each with its key. A file that changed offers **Save my version**, **Use the saved version**, and **Show the changes**. One that is saved offers **Edit**, and **Configure** for Git, tmux, Starship, kitty, Ghostty, and mise files. One that is not saved also offers **Add to your dotfiles**. The keys also work straight from the list.
+* **`Enter`** opens a small menu of only what can be done with the selected file, each with its key. A file that changed offers **Save my version**, **Use the saved version**, and **Show the changes**. One that is saved offers **Edit**, and **Configure** for Git, tmux, Starship, kitty, Ghostty, mise, and `.zshrc` files. One that is not saved also offers **Add to your dotfiles**. The keys also work straight from the list.
 
 | Key | Action |
 | --- | --- |
@@ -475,7 +475,7 @@
 | `r` | When the file changed: save this version in your dotfiles. See [Save Or Use The Saved Version](#save-or-use-the-saved-version). |
 | `p` | When the file changed: use the saved version. |
 | `a` | When the file is not saved: add it. See [Add To Your Dotfiles](#add-to-your-dotfiles). |
-| `c` | Change the file's settings one at a time, for Git, tmux, Starship, kitty, Ghostty, and mise files. See [Configure](#configure). |
+| `c` | Change the file's settings one at a time, for Git, tmux, Starship, kitty, Ghostty, mise, and `.zshrc` files. See [Configure](#configure). |
 | `d` | Show how the file differs from its saved copy, or else what changed since its last backup. Any other key goes back. |
 | `b` | List its backups, newest first. `Enter` shows what restoring one changes, then `y` restores it. |
 | `x` | Export: review for secrets, commit, then push. See [Export](#export). |
@@ -570,7 +570,7 @@
 +------------------------------------------------------------------------------------------------+
 ```
 
-* `c` opens the settings Configure knows for the file's program: Git, for `.gitconfig` and `.config/git/config`; tmux, for `.tmux.conf` and `.config/tmux/tmux.conf`; Starship, for `.config/starship.toml`; kitty, for `.config/kitty/kitty.conf`; Ghostty, for `.config/ghostty/config` and `.config/ghostty/config.ghostty`; and mise, for `.config/mise/config.toml`. Other files say to use `e`. The settings for each are listed in [SAFETY.md](SAFETY.md#configure).
+* `c` opens the settings Configure knows for the file's program: Git, for `.gitconfig` and `.config/git/config`; tmux, for `.tmux.conf` and `.config/tmux/tmux.conf`; Starship, for `.config/starship.toml`; kitty, for `.config/kitty/kitty.conf`; Ghostty, for `.config/ghostty/config` and `.config/ghostty/config.ghostty`; mise, for `.config/mise/config.toml`; and zsh, for `.zshrc`, where neet writes only between its `# >>> neet >>>` marker lines, and the screen says so. Other files say to use `e`. The settings for each are listed in [SAFETY.md](SAFETY.md#configure).
 * Each setting shows its value in the file, or **not set**, and what it does. A value about to change is yellow.
 * `Enter` changes the selected setting. Settings with a few choices, such as on and off, or vi and emacs, step through each, then not set. Text and number settings, such as a font size of `13.5`, open a box to type in, where `Enter` keeps it, `Esc` cancels, and an empty value means not set. A value the setting does not take, such as a word for a number, stays in the box with the reason in red.
 * **Changes** lists every change so far. `y` makes them all on the copy, then opens the same review as [Edit](#edit), with the check and the diff. `Esc` drops them all.
@@ -616,4 +616,3 @@
 | Feature | Layout |
 | --- | --- |
 | Start a repository | Without chezmoi, `x` offers to start a Git repository in chezmoi's layout, then add the chosen files to it. |
-| More Configure programs | Shell settings, only in a block neet owns. |
