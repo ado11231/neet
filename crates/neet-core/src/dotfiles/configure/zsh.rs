@@ -9,6 +9,7 @@
 //! - `set`: `HISTSIZE=50000`
 //! - `setopt`: `setopt auto_cd` for on, `unsetopt auto_cd` for off
 
+use std::fmt::Write as _;
 use std::ops::Range;
 
 use super::{Program, Setting};
@@ -117,7 +118,7 @@ pub(super) fn set(text: &str, setting: &Setting, value: Option<&str>) -> Result<
             }
             out.push('\n');
         }
-        out.push_str(&format!("{START}\n{ABOUT}\n{new}{END}\n"));
+        let _ = write!(out, "{START}\n{ABOUT}\n{new}{END}\n");
         return Ok(out);
     };
 
