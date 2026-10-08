@@ -7,9 +7,11 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
+mod ghostty;
 mod kitty;
 mod tmux;
 mod toml_file;
+mod zsh;
 
 /// How long Git may take to read or change one file
 const GIT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -42,6 +44,11 @@ pub enum Format {
     /// kitty's lines of an option, spaces, and its value, such as
     /// `font_size 13.0`
     Kitty,
+    /// Ghostty's lines of a key, `=`, and its value, such as
+    /// `font-size = 13`
+    Ghostty,
+    /// zsh lines, only inside a block neet owns, such as `HISTSIZE=50000`
+    Zsh,
 }
 
 /// One setting neet can change
@@ -52,7 +59,8 @@ pub struct Setting {
     /// What it does, in a few words
     pub about: &'static str,
     pub kind: Kind,
-    /// For tmux, the command a new line starts with, such as `set -g`
+    /// For tmux, the command a new line starts with, such as `set -g`.
+    /// For zsh, how the line is written: `export`, `set`, or `setopt`.
     pub command: &'static str,
 }
 
@@ -75,7 +83,8 @@ const fn setting(key: &'static str, about: &'static str, kind: Kind) -> Setting 
     }
 }
 
-/// A tmux setting, added as `command key value` when the file has none
+/// A setting written with a command: for tmux, added as `command key value`
+/// when the file has none; for zsh, see [`Format::Zsh`]
 const fn tmux(
     command: &'static str,
     key: &'static str,
@@ -296,6 +305,118 @@ pub const PROGRAMS: &[Program] = &[
             ),
         ],
     },
+    Program {
+        name: "Ghostty",
+        files: &[".config/ghostty/config", ".config/ghostty/config.ghostty"],
+        format: Format::Ghostty,
+        settings: &[
+            setting(
+                "theme",
+                "Color theme, such as Catppuccin Mocha.",
+                Kind::Text,
+            ),
+            setting(
+                "font-size",
+                "Font size in points, such as 13.",
+                Kind::Decimal,
+            ),
+            setting(
+                "background-opacity",
+                "How solid the background is, from 0 to 1.",
+                Kind::Decimal,
+            ),
+            setting(
+                "window-padding-x",
+                "Space left and right of the text, such as 4 or 4,8.",
+                Kind::Text,
+            ),
+            setting(
+                "window-padding-y",
+                "Space above and below the text, such as 4 or 4,8.",
+                Kind::Text,
+            ),
+            setting(
+                "cursor-style",
+                "Shape of the cursor.",
+                Kind::Choice(&["block", "bar", "underline", "block_hollow"]),
+            ),
+            setting(
+                "scrollback-limit",
+                "Bytes of output kept to scroll back through.",
+                Kind::Number,
+            ),
+            setting(
+                "macos-option-as-alt",
+                "Which Option keys act as Alt, for terminal shortcuts.",
+                Kind::Choice(&["false", "true", "left", "right"]),
+            ),
+            setting(
+                "mouse-hide-while-typing",
+                "Hide the mouse pointer while you type.",
+                TRUE_FALSE,
+            ),
+            setting(
+                "copy-on-select",
+                "Copy text when you select it.",
+                Kind::Choice(&["true", "false", "clipboard"]),
+            ),
+        ],
+    },
+    Program {
+        name: "zsh",
+        files: &[".zshrc"],
+        format: Format::Zsh,
+        settings: &[
+            tmux(
+                "export",
+                "EDITOR",
+                "Editor programs open for you, such as nano or vim.",
+                Kind::Text,
+            ),
+            tmux(
+                "export",
+                "VISUAL",
+                "Full screen editor, used before EDITOR.",
+                Kind::Text,
+            ),
+            tmux(
+                "set",
+                "HISTSIZE",
+                "Commands kept in history while the shell runs.",
+                Kind::Number,
+            ),
+            tmux(
+                "set",
+                "SAVEHIST",
+                "Commands saved to history for the next shell.",
+                Kind::Number,
+            ),
+            tmux(
+                "setopt",
+                "auto_cd",
+                "Type a folder's name to go into it.",
+                ON_OFF,
+            ),
+            tmux(
+                "setopt",
+                "share_history",
+                "Share history between open terminals.",
+                ON_OFF,
+            ),
+            tmux(
+                "setopt",
+                "hist_ignore_all_dups",
+                "Keep only the newest copy of a repeated command.",
+                ON_OFF,
+            ),
+            tmux(
+                "setopt",
+                "correct",
+                "Offer to fix a mistyped command.",
+                ON_OFF,
+            ),
+        ],
+    },
 ];
 
 /// The program whose settings live in `path`, a path from the home folder
@@ -374,6 +495,8 @@ pub fn values(program: &Program, file: &Path) -> Result<Vec<Option<String>>, Str
         Format::Tmux => Ok(tmux::values(program, &read(file)?)),
         Format::Toml => toml_file::values(program, &read(file)?),
         Format::Kitty => Ok(kitty::values(program, &read(file)?)),
+        Format::Ghostty => Ok(ghostty::values(program, &read(file)?)),
+        Format::Zsh => zsh::values(program, &read(file)?),
     }
 }
 
@@ -397,6 +520,8 @@ pub fn set(
         Format::Tmux => write(file, &tmux::set(&read(file)?, setting, value)?),
         Format::Toml => write(file, &toml_file::set(&read(file)?, setting, value)?),
         Format::Kitty => write(file, &kitty::set(&read(file)?, setting, value)),
+        Format::Ghostty => write(file, &ghostty::set(&read(file)?, setting, value)?),
+        Format::Zsh => write(file, &zsh::set(&read(file)?, setting, value)?),
     }
 }
 
@@ -503,7 +628,12 @@ mod tests {
             program_for(".config/mise/config.toml").map(|p| p.name),
             Some("mise")
         );
-        assert_eq!(program_for(".zshrc"), None);
+        assert_eq!(program_for(".zshrc").map(|p| p.name), Some("zsh"));
+        assert_eq!(
+            program_for(".config/ghostty/config.ghostty").map(|p| p.name),
+            Some("Ghostty")
+        );
+        assert_eq!(program_for(".bashrc"), None);
     }
 
     #[test]
@@ -585,7 +715,7 @@ mod tests {
     }
 
     #[test]
-    fn every_setting_is_listed_once_and_tmux_ones_say_how_to_add_them() {
+    fn every_setting_is_listed_once_and_tmux_and_zsh_ones_say_how_to_add_them() {
         for program in PROGRAMS {
             for (index, setting) in program.settings.iter().enumerate() {
                 assert!(
@@ -596,7 +726,7 @@ mod tests {
                     setting.key
                 );
                 assert_eq!(
-                    program.format == Format::Tmux,
+                    matches!(program.format, Format::Tmux | Format::Zsh),
                     !setting.command.is_empty(),
                     "{}",
                     setting.key

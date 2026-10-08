@@ -113,6 +113,11 @@ pub const FILES: &[Known] = &[
     known(".config/kitty/kitty.conf", Group::Terminal, Syntax::None),
     known(".config/ghostty/config", Group::Terminal, Syntax::None),
     known(
+        ".config/ghostty/config.ghostty",
+        Group::Terminal,
+        Syntax::None,
+    ),
+    known(
         ".config/alacritty/alacritty.toml",
         Group::Terminal,
         Syntax::Toml,

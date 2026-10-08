@@ -252,7 +252,7 @@ min_age_days = 0
 | Git | `.gitconfig`, `.config/git/config`, `.config/git/ignore`, `.gitignore_global` |
 | SSH | `.ssh/config` |
 | Editors | `.vimrc`, `.config/nvim/init.lua`, `.config/nvim/init.vim`, `.nanorc`, `.editorconfig` |
-| Terminal | `.tmux.conf`, `.config/tmux/tmux.conf`, `.config/kitty/kitty.conf`, `.config/ghostty/config`, `.config/alacritty/alacritty.toml`, `.config/starship.toml`, `.wezterm.lua` |
+| Terminal | `.tmux.conf`, `.config/tmux/tmux.conf`, `.config/kitty/kitty.conf`, `.config/ghostty/config`, `.config/ghostty/config.ghostty`, `.config/alacritty/alacritty.toml`, `.config/starship.toml`, `.wezterm.lua` |
 | Tools | `.npmrc`, `.config/mise/config.toml`, `.config/gh/config.yml`, `.Brewfile` |
 
 * Adding a file needs a change to this table and to the code, together.
@@ -320,6 +320,8 @@ min_age_days = 0
 | tmux | `mouse`, `history-limit`, `base-index`, `renumber-windows`, `mode-keys`, `escape-time`, `status-position`, `default-terminal` | neet, line by line |
 | Starship | `add_newline`, `line_break.disabled`, `character.success_symbol`, `character.error_symbol`, `directory.truncation_length`, `cmd_duration.min_time`, `command_timeout`, `scan_timeout` | neet, with a TOML editor that keeps comments and layout |
 | kitty | `font_family`, `font_size`, `scrollback_lines`, `window_padding_width`, `background_opacity`, `cursor_blink_interval`, `macos_option_as_alt`, `enable_audio_bell` | neet, line by line |
+| Ghostty | `theme`, `font-size`, `background-opacity`, `window-padding-x`, `window-padding-y`, `cursor-style`, `scrollback-limit`, `macos-option-as-alt`, `mouse-hide-while-typing`, `copy-on-select` | neet, line by line |
+| zsh, in `.zshrc` | `EDITOR`, `VISUAL`, `HISTSIZE`, `SAVEHIST`, and the options `auto_cd`, `share_history`, `hist_ignore_all_dups`, `correct` | neet, only inside its own block |
 | mise | `tools.node`, `tools.python`, `tools.go`, `tools.ruby`, `settings.auto_install`, `settings.jobs`, `settings.experimental` | neet, with the same TOML editor as Starship |
 
 * Changes are made on the edit copy, then go through the same check, diff, backup, and chezmoi steps as an edit.
@@ -331,9 +333,16 @@ min_age_days = 0
   3. A value with spaces or other characters tmux reads specially is written in single quotes. A value with a `'` in it is refused, and is changed by editing instead.
   4. There is no check for tmux files: tmux has no way to read a file without starting a server.
 * **kitty:** neet never runs kitty. A line is an option, spaces, and the rest of the line as its value, and lines that start with `#` are comments, as kitty reads them. Files it includes are not read. A change replaces only the value on the last line for the option, keeping the spacing before it. With no line, one is added at the end, such as `background_opacity 0.95`. Removing takes out every line for the option. There is no check for kitty files.
+* **Ghostty:** neet never runs Ghostty. A line is a key, `=`, and a value, with spaces around `=` ignored, and lines that start with `#` are comments, as Ghostty reads them. A value in double quotes is read without them, and an empty value counts as not set. Files it includes with `config-file` are not read. A change replaces only the value on the last line for the key, keeping its spacing and its quotes. With no line, one is added at the end, such as `font-size = 13`. A value with spaces at either end is written in quotes, and one that would need quotes but has a `"` in it is refused. Removing takes out every line for the key. There is no check for Ghostty files.
 * **Starship and mise:** `a.b` means the key `b` in the table `[a]`. Changing a value keeps its spacing and comment, and adds a missing table at the end. Removing a value takes out its line, and only when what is left means the same, less that value, so the comments above it stay. A key that holds a table, a list, or an inline table, such as `node = ["20", "22"]` in mise, or a table that is a plain value, is refused, and is changed by editing. The file is checked with the TOML reader, as when editing.
 * More programs are added one at a time. Each is listed here before it ships.
-* Shell settings, when added, only go in a block neet owns, between `# >>> neet >>>` and `# <<< neet <<<`. Lines outside it are never changed.
+* **zsh:** settings only go in a block neet owns, between `# >>> neet >>>` and `# <<< neet <<<`. Lines outside it are never read or changed, and neet never runs zsh to read the file.
+  1. With no block, one is added at the end of `.zshrc`, after an empty line, so its settings come after, and win over, the lines above it.
+  2. Inside it, each setting is one line: `export EDITOR='nano'`, `HISTSIZE=50000`, or `setopt auto_cd` for on and `unsetopt auto_cd` for off. A change replaces the setting's last line and takes out any others for it. Other lines in the block stay.
+  3. An `export` value is written in single quotes, so the shell reads it as it is. A value with a `'` in it is refused, and is changed by editing instead.
+  4. Removing a setting takes out its lines. A block left with no settings is taken out, with the empty line before it.
+  5. A file with a start marker and no end marker, an end marker first, or more than one block is refused, and is fixed by editing.
+  6. The file then goes through the same `zsh -n` check as an edit.
 
 ### chezmoi
 

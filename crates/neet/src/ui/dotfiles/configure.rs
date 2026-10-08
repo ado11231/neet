@@ -195,6 +195,11 @@ impl Configure {
                 "Nothing changed yet. Enter changes the selected setting.",
             ));
         }
+        if self.program.format == configure::Format::Zsh {
+            below.push(Line::from(
+                "neet writes these only between the # >>> neet >>> lines at the end of the file. Every line above them stays as it is.",
+            ));
+        }
         if let Some(error) = &self.error {
             below.push(Line::from(error.clone()).red());
         }
