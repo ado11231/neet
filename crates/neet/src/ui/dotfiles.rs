@@ -24,7 +24,7 @@ mod configure;
 mod export;
 
 use actions::{Act, Menu};
-use change::{Diff, Fix, Mode, Review};
+use change::{Diff, Fix, Mode, Review, Reviewed};
 use configure::Configure;
 use export::{Export, Step};
 use neet_core::dotfiles::configure as settings;
@@ -743,7 +743,7 @@ impl Dotfiles {
             );
             return;
         }
-        let (Ok(home), Ok(source)) = (fs::read(&file.path), fs::read(source)) else {
+        let Ok(reviewed) = Reviewed::open(&file.path, Some(source)) else {
             self.mode = change::done(
                 Err("The file or its source file could not be read.".to_string()),
                 "",
@@ -751,11 +751,22 @@ impl Dotfiles {
             );
             return;
         };
+        let home = reviewed.home.contents();
+        let source = reviewed
+            .other
+            .as_ref()
+            .expect("source was opened")
+            .contents();
         let diff = match fix {
-            Fix::Keep | Fix::Add => Diff::new(&source, &home),
-            Fix::PutBack => Diff::new(&home, &source),
+            Fix::Keep | Fix::Add => Diff::new(source, home),
+            Fix::PutBack => Diff::new(home, source),
         };
-        self.mode = Mode::Ask { fix, index, diff };
+        self.mode = Mode::Ask {
+            fix,
+            index,
+            diff,
+            reviewed,
+        };
     }
 
     /// `a`: shows the whole file as new in chezmoi, and asks.
@@ -764,29 +775,29 @@ impl Dotfiles {
             return;
         };
         let file = &self.listing.files[index];
-        let added = core_change::add_name(file, self.listing.chezmoi.as_ref()).and_then(|_| {
-            fs::read(&file.path).map_err(|error| format!("It could not be read: {error}."))
-        });
+        let added = core_change::add_name(file, self.listing.chezmoi.as_ref())
+            .and_then(|_| Reviewed::open(&file.path, None));
         self.mode = match added {
-            Ok(home) => Mode::Ask {
+            Ok(reviewed) => Mode::Ask {
                 fix: Fix::Add,
                 index,
-                diff: Diff::new(b"", &home),
+                diff: Diff::new(b"", reviewed.home.contents()),
+                reviewed,
             },
             Err(error) => change::done(Err(error), "", None),
         };
     }
 
     /// `y` on the question: runs the fix.
-    fn run_fix(&mut self, fix: Fix, index: usize) {
+    fn run_fix(&mut self, fix: Fix, index: usize, checked: Result<(), String>) {
         let file = &self.listing.files[index];
         let chezmoi = self.listing.chezmoi.as_ref();
         let now = SystemTime::now();
-        let result = match fix {
+        let result = checked.and_then(|()| match fix {
             Fix::Keep => core_change::keep_home(file, chezmoi, &self.backups, now),
             Fix::PutBack => core_change::put_back(file, chezmoi, &self.backups, now),
             Fix::Add => core_change::add(file, chezmoi),
-        };
+        });
         let shown = format!("~/{}", file.known.path);
         let source = self.source_name(file);
         self.mode = change::done(result, &shown, source.as_deref());
@@ -878,13 +889,19 @@ impl Dotfiles {
                 }
                 return Action::None;
             }
-            Mode::Ask { fix, index, diff } => {
+            Mode::Ask {
+                fix,
+                index,
+                diff,
+                reviewed,
+            } => {
                 match key.code {
                     KeyCode::Up | KeyCode::Char('k') => diff.scroll(false),
                     KeyCode::Down | KeyCode::Char('j') => diff.scroll(true),
                     KeyCode::Char('y') => {
                         let (fix, index) = (*fix, *index);
-                        self.run_fix(fix, index);
+                        let checked = reviewed.check();
+                        self.run_fix(fix, index, checked);
                     }
                     _ => {}
                 }
@@ -898,13 +915,15 @@ impl Dotfiles {
                 index,
                 backup,
                 diff,
+                reviewed,
             } => {
                 match key.code {
                     KeyCode::Up | KeyCode::Char('k') => diff.scroll(false),
                     KeyCode::Down | KeyCode::Char('j') => diff.scroll(true),
                     KeyCode::Char('y') => {
                         let (index, backup) = (*index, backup.clone());
-                        self.run_restore(index, &backup);
+                        let checked = reviewed.check();
+                        self.run_restore(index, &backup, checked);
                     }
                     _ => {}
                 }
@@ -965,7 +984,8 @@ impl Dotfiles {
         match publish::plan(&self.listing) {
             Err(error) => self.mode = change::done(Err(error), "", None),
             Ok(plan) if plan.pending.is_empty() => {
-                let ahead = self.ahead();
+                let ahead = dotfiles::repo(&plan.top)
+                    .and_then(|repo| repo.ahead_behind.map(|(ahead, _)| ahead));
                 if ahead.is_some_and(|ahead| ahead > 0) {
                     self.ask_push(plan.top, ahead);
                 } else {
@@ -979,8 +999,10 @@ impl Dotfiles {
                 }
             }
             Ok(plan) => {
-                let target = publish::push_target(&plan.top)
-                    .unwrap_or_else(|_| "no remote branch yet".to_string());
+                let target = publish::push_target(&plan.top).map_or_else(
+                    |_| "no remote branch yet".to_string(),
+                    |target| target.label,
+                );
                 self.mode = Mode::Export(Box::new(Export::new(plan, target)));
             }
         }
@@ -1017,11 +1039,15 @@ impl Dotfiles {
     }
 
     /// `y` on the push question
-    fn push(&mut self, top: &Path, target: &str) {
-        self.mode = match publish::push(top) {
+    fn push(&mut self, top: &Path, target: &publish::PushTarget) {
+        self.mode = match publish::push(top, target) {
             Ok(()) => Mode::Note {
                 title: "Pushed".to_string(),
-                lines: vec![Line::from(format!("✓ Pushed to {target}")).green().bold()],
+                lines: vec![
+                    Line::from(format!("✓ Pushed to {}", target.label))
+                        .green()
+                        .bold(),
+                ],
                 color: ratatui::style::Color::Green,
             },
             Err(error) => change::done(Err(error), "", None),
@@ -1140,7 +1166,9 @@ impl Dotfiles {
             Mode::Review(review) => {
                 change::draw_review(frame, area, review, self.writes(review));
             }
-            Mode::Ask { fix, index, diff } => {
+            Mode::Ask {
+                fix, index, diff, ..
+            } => {
                 let (title, lines) = self.ask_lines(*fix, *index, diff);
                 let hidden = self.listing.files[*index].may_hold_secrets;
                 change::draw_ask(frame, area, &title, lines, diff, hidden);
@@ -1157,6 +1185,7 @@ impl Dotfiles {
                 index,
                 backup,
                 diff,
+                ..
             } => {
                 let file = &self.listing.files[*index];
                 let shown = format!("~/{}", file.known.path);
@@ -1190,7 +1219,7 @@ impl Dotfiles {
                 frame,
                 area,
                 "Push",
-                export::push_lines(target, *ahead),
+                export::push_lines(&target.label, *ahead),
                 visual::ACCENT,
             ),
             Mode::Configure(configure) => {
@@ -1237,7 +1266,7 @@ impl Dotfiles {
     /// `Enter` on a backup: shows what restoring it changes, and asks.
     fn ask_restore(&mut self, index: usize, backup: Backup) {
         let file = &self.listing.files[index];
-        let (Ok(now), Ok(then)) = (fs::read(&file.path), fs::read(&backup.path)) else {
+        let Ok(reviewed) = Reviewed::open(&file.path, Some(&backup.path)) else {
             self.mode = change::done(
                 Err("The file or its backup could not be read.".to_string()),
                 "",
@@ -1245,18 +1274,27 @@ impl Dotfiles {
             );
             return;
         };
-        let diff = Diff::new(&now, &then);
+        let diff = Diff::new(
+            reviewed.home.contents(),
+            reviewed
+                .other
+                .as_ref()
+                .expect("backup was opened")
+                .contents(),
+        );
         self.mode = Mode::Restore {
             index,
             backup,
             diff,
+            reviewed,
         };
     }
 
     /// `y` on the restore question
-    fn run_restore(&mut self, index: usize, backup: &Backup) {
+    fn run_restore(&mut self, index: usize, backup: &Backup, checked: Result<(), String>) {
         let file = &self.listing.files[index];
-        let result = core_change::restore(file, backup, &self.backups, SystemTime::now());
+        let result = checked
+            .and_then(|()| core_change::restore(file, backup, &self.backups, SystemTime::now()));
         let shown = format!("~/{}", file.known.path);
         self.mode = change::done(result, &shown, None);
         self.reload();
@@ -2189,6 +2227,77 @@ mod tests {
     }
 
     #[test]
+    fn keep_and_add_refuse_files_changed_after_review() {
+        let (_dir, mut screen) = screen();
+        press(&mut screen, KeyCode::Down);
+        press(&mut screen, KeyCode::Char('r'));
+        let source = screen.home.join(".local/share/chezmoi/dot_gitconfig");
+        let before = fs::read(&source).unwrap();
+        fs::write(screen.home.join(".gitconfig"), "[user]\nname = Later\n").unwrap();
+        press(&mut screen, KeyCode::Char('y'));
+        assert!(render(&mut screen, 120, 30).contains("changed since the review"));
+        assert_eq!(fs::read(&source).unwrap(), before);
+
+        press(&mut screen, KeyCode::Enter);
+        let index = screen
+            .listing
+            .files
+            .iter()
+            .position(|file| file.known.path == ".config/kitty/kitty.conf")
+            .unwrap();
+        screen.table.select(
+            screen
+                .items()
+                .iter()
+                .position(|item| *item == Item::File(index)),
+        );
+        press(&mut screen, KeyCode::Char('a'));
+        fs::write(
+            screen.home.join(".config/kitty/kitty.conf"),
+            "font_size 18\n",
+        )
+        .unwrap();
+        press(&mut screen, KeyCode::Char('y'));
+        assert!(render(&mut screen, 120, 30).contains("changed since the review"));
+        assert!(
+            !screen
+                .home
+                .join(".local/share/chezmoi/dot_config/kitty/kitty.conf")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn restore_refuses_a_changed_file_or_backup() {
+        for change_backup in [false, true] {
+            let (_dir, mut screen) = git_screen();
+            let file = screen.home.join(".gitconfig");
+            let original = fs::read(&file).unwrap();
+            let backup = screen
+                .backups
+                .save(
+                    ".gitconfig",
+                    b"[user]\nname = Earlier\n",
+                    0o600,
+                    SystemTime::now(),
+                )
+                .unwrap();
+            press(&mut screen, KeyCode::Char('b'));
+            press(&mut screen, KeyCode::Enter);
+            let changed = if change_backup { &backup } else { &file };
+            fs::write(changed, "[user]\nname = Later\n").unwrap();
+            press(&mut screen, KeyCode::Char('y'));
+            assert!(render(&mut screen, 120, 30).contains("changed since the review"));
+            if change_backup {
+                assert_eq!(fs::read(&file).unwrap(), original);
+            } else {
+                assert!(fs::read_to_string(&file).unwrap().contains("Later"));
+            }
+            assert_eq!(screen.backups.list(".gitconfig").unwrap().len(), 1);
+        }
+    }
+
+    #[test]
     fn d_shows_how_a_file_differs_from_its_source() {
         let (_dir, mut screen) = screen();
         press(&mut screen, KeyCode::Char('d'));
@@ -2433,6 +2542,39 @@ mod tests {
             git(&remote, &["log", "-1", "--format=%s", "main"]).trim(),
             "Use hx"
         );
+    }
+
+    #[test]
+    fn export_keeps_the_selected_file_and_message_visible_on_a_short_screen() {
+        let (_dir, mut screen, _remote) = export_screen();
+        let source = screen.home.join(".local/share/chezmoi");
+        for name in [
+            "zprofile",
+            "zshenv",
+            "zlogin",
+            "zlogout",
+            "bashrc",
+            "bash_profile",
+            "profile",
+            "inputrc",
+            "vimrc",
+            "nanorc",
+            "tmux.conf",
+        ] {
+            write(&source.join(format!("dot_{name}")), "value\n");
+            write(&screen.home.join(format!(".{name}")), "value\n");
+        }
+        screen.reload();
+        press(&mut screen, KeyCode::Char('x'));
+        for _ in 0..20 {
+            press(&mut screen, KeyCode::Down);
+        }
+        let text = render(&mut screen, 100, 18);
+        assert!(text.contains("[ ] dot_npmrc"), "{text}");
+        assert!(text.contains("npm token"), "{text}");
+        assert!(text.contains("to origin/main"), "{text}");
+        press(&mut screen, KeyCode::Char('m'));
+        assert!(render(&mut screen, 100, 18).contains("Commit message"));
     }
 
     #[test]

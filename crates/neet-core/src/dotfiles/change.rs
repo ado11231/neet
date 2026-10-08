@@ -259,6 +259,7 @@ impl Edit {
             match run_chezmoi(
                 &["apply", "--force", "--exclude=scripts,externals"],
                 &self.target,
+                Some(source.opened.path()),
             ) {
                 Ok(()) if fs::read(self.home.path()).is_ok_and(|now| now == contents) => {
                     Done::Applied
@@ -294,6 +295,7 @@ pub fn keep_home(
     now: SystemTime,
 ) -> Result<Done, String> {
     let (home, source) = open_differing(file, chezmoi)?;
+    validate(file.known.syntax, home.path(), file.known.path)?;
     if !source.may_run {
         // For a plain source file, this is what `chezmoi re-add` does.
         rewrite::write(&source.opened, home.contents(), backups, &source.name, now)
@@ -315,7 +317,7 @@ pub fn keep_home(
             now,
         )
         .map_err(|error| plain(&error.into()))?;
-    run_chezmoi(&["re-add"], &file.path)?;
+    run_chezmoi(&["re-add"], &file.path, Some(source.opened.path()))?;
     if fs::read(source.opened.path()).is_ok_and(|now| now == home.contents()) {
         Ok(Done::Kept)
     } else {
@@ -343,6 +345,7 @@ pub fn put_back(
             file.known.path
         ));
     }
+    validate(file.known.syntax, source.opened.path(), file.known.path)?;
     if !home.is_unchanged().map_err(|error| plain(&error.into()))? {
         return Err(plain(&WriteError::Changed));
     }
@@ -352,6 +355,7 @@ pub fn put_back(
     run_chezmoi(
         &["apply", "--force", "--exclude=scripts,externals"],
         &file.path,
+        Some(source.opened.path()),
     )?;
     if fs::read(home.path()).is_ok_and(|now| now == source.opened.contents()) {
         Ok(Done::Applied)
@@ -384,7 +388,7 @@ pub fn add(file: &Dotfile, chezmoi: Option<&Chezmoi>) -> Result<Done, String> {
     let home =
         Opened::open(&file.path).map_err(|error| format!("It could not be opened: {error}."))?;
     if chezmoi.may_not_run.is_none() {
-        run_chezmoi(&["add"], &file.path)?;
+        run_chezmoi(&["add"], &file.path, None)?;
     } else {
         for (folder, private) in &new.folders {
             DirBuilder::new()
@@ -481,9 +485,19 @@ pub fn restore(
     now: SystemTime,
 ) -> Result<Done, String> {
     open_home(file)?;
+    validate(file.known.syntax, &backup.path, file.known.path)?;
     rewrite::restore(&file.path, backup, backups, file.known.path, now)
         .map_err(|error| plain(&error))?;
     Ok(Done::Written)
+}
+
+fn validate(syntax: Syntax, path: &Path, name: &str) -> Result<(), String> {
+    match check(syntax, path, name) {
+        Checked::Failed(error) => Err(format!(
+            "The syntax check failed. Nothing was written. {error}"
+        )),
+        Checked::Passed | Checked::NotChecked(_) => Ok(()),
+    }
 }
 
 fn differs() -> String {
@@ -495,7 +509,21 @@ fn open_home(file: &Dotfile) -> Result<Opened, String> {
     if file.found.is_none() {
         return Err("It is not on this Mac.".to_string());
     }
-    if let Some(view_only) = &file.view_only {
+    let home = file
+        .path
+        .ancestors()
+        .nth(file.known.path.split('/').count())
+        .ok_or("Its home folder was not found.")?;
+    let real_home = fs::canonicalize(home).map_err(|error| error.to_string())?;
+    let roots = crate::safety::CleanupRoots::new(home).ok();
+    let current = super::view_only(
+        file.known,
+        &file.path,
+        &real_home,
+        roots.as_ref(),
+        file.managed.as_ref(),
+    );
+    if let Some(view_only) = current.as_ref().or(file.view_only.as_ref()) {
         return Err(format!("{}. View only.", view_only.describe()));
     }
     Opened::open(&file.path).map_err(|error| format!("It could not be opened: {error}."))
@@ -506,6 +534,11 @@ fn open_home(file: &Dotfile) -> Result<Opened, String> {
 /// link with a plain file.
 fn open_source(path: &Path, chezmoi: Option<&Chezmoi>, file: &Dotfile) -> Result<Source, String> {
     let chezmoi = chezmoi.ok_or("chezmoi's folder was not found.")?;
+    let root = fs::canonicalize(&chezmoi.source).map_err(|error| error.to_string())?;
+    let target = fs::canonicalize(path).map_err(|error| error.to_string())?;
+    if !target.starts_with(&root) || target != path {
+        return Err("Its source path contains a link. Change it outside neet.".to_string());
+    }
     let opened = Opened::open(path)
         .map_err(|error| format!("Its source file could not be opened: {error}."))?;
     let relative = path.strip_prefix(&chezmoi.source).unwrap_or(path);
@@ -527,7 +560,30 @@ fn open_differing(file: &Dotfile, chezmoi: Option<&Chezmoi>) -> Result<(Opened, 
 }
 
 /// Runs chezmoi for one file, with no terminal, so it can never ask.
-fn run_chezmoi(args: &[&str], target: &Path) -> Result<(), String> {
+fn run_chezmoi(args: &[&str], target: &Path, source: Option<&Path>) -> Result<(), String> {
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or("HOME is not set.")?;
+    let listing = super::list(&home);
+    let file = listing
+        .files
+        .iter()
+        .find(|file| file.path == target)
+        .ok_or("The file is outside chezmoi's home folder.")?;
+    let chezmoi = listing
+        .chezmoi
+        .as_ref()
+        .ok_or("chezmoi's folder was not found.")?;
+    if chezmoi.may_not_run.is_some()
+        || file.view_only.is_some()
+        || file
+            .found
+            .as_ref()
+            .is_some_and(|found| found.link.is_some())
+        || file.managed.as_ref().and_then(Managed::source) != source
+    {
+        return Err("The file or chezmoi's settings changed. Open Dotfiles again.".to_string());
+    }
     let mut command = Command::new("chezmoi");
     command.args(args).arg("--no-tty").arg("--").arg(target);
     match crate::run::with_timeout(&mut command, CHEZMOI_TIMEOUT) {
@@ -859,6 +915,36 @@ mod tests {
         file.managed = Some(Managed::InSync(source));
         let edit = Edit::begin(&file, Some(&chezmoi)).unwrap();
         assert!(!edit.applies());
+    }
+
+    #[test]
+    fn refuses_broken_shell_text_on_restore_and_put_back() {
+        let (_dir, home, backups) = setup();
+        let chezmoi = chezmoi(&home);
+        let source = chezmoi.source.join("dot_zshrc");
+        fs::write(&source, "if then\n").unwrap();
+        let file = dotfile(&home, Some(Managed::Differs(source)));
+        let backup_path = backups
+            .save(".zshrc", b"if then\n", 0o600, SystemTime::now())
+            .unwrap();
+        let backup = backups.list(".zshrc").unwrap().pop().unwrap();
+        assert_eq!(backup.path, backup_path);
+        assert!(
+            restore(&file, &backup, &backups, SystemTime::now())
+                .unwrap_err()
+                .contains("syntax check failed")
+        );
+        let chezmoi = Chezmoi {
+            may_not_run: None,
+            ..chezmoi
+        };
+        assert!(
+            put_back(&file, Some(&chezmoi), &backups, SystemTime::now())
+                .unwrap_err()
+                .contains("syntax check failed")
+        );
+        assert_eq!(fs::read_to_string(home.join(".zshrc")).unwrap(), "old\n");
+        assert_eq!(backups.list(".zshrc").unwrap().len(), 1);
     }
 
     #[test]

@@ -99,12 +99,14 @@ impl Export {
         Step::Stay
     }
 
-    pub fn draw(&self, frame: &mut Frame, area: Rect) {
-        let remote = &self.target;
-        frame.render_widget(Clear, area);
+    fn file_lines(&self, width: u16) -> (Vec<Line<'static>>, u16) {
         let mut lines = vec![Line::from("Review for secrets, then pick what goes in.").bold()];
         lines.push(Line::default());
+        let mut selected_line = 0;
         for (index, (pending, chosen)) in self.plan.pending.iter().zip(&self.chosen).enumerate() {
+            if index == self.selected {
+                selected_line = visual::wrapped_rows(&lines, width);
+            }
             let mark = if *chosen {
                 Span::raw("[x] ").green().bold()
             } else {
@@ -144,7 +146,14 @@ impl Export {
                 }
             }
         }
-        lines.push(Line::default());
+        (lines, selected_line)
+    }
+
+    pub fn draw(&self, frame: &mut Frame, area: Rect) {
+        let remote = &self.target;
+        frame.render_widget(Clear, area);
+        let (file_lines, selected_line) = self.file_lines(area.width.saturating_sub(4));
+        let mut lines = Vec::new();
         let count = self.paths().len();
         lines.push(Line::from(vec![
             Span::raw(format!("{:<9}", "Commit")).bold(),
@@ -166,21 +175,40 @@ impl Export {
             lines.push(Line::from(error.clone()).red());
         }
         let width = area.width.saturating_sub(4);
-        let height = (visual::wrapped_rows(&lines, width) + 2).min(area.height);
+        let summary_height =
+            (visual::wrapped_rows(&lines, width) + 2).min(area.height.saturating_sub(6));
         let typing = if self.typing.is_some() { 3 } else { 0 };
-        let [body, box_area, _] = Layout::vertical([
-            Constraint::Length(height),
+        let [body, summary, box_area] = Layout::vertical([
+            Constraint::Min(3),
+            Constraint::Length(summary_height),
             Constraint::Length(typing),
-            Constraint::Fill(1),
         ])
         .areas(area);
+        let rows = body.height.saturating_sub(2);
+        let total = visual::wrapped_rows(&file_lines, width);
+        let scroll = if total <= rows {
+            0
+        } else {
+            selected_line.min(total.saturating_sub(rows))
+        };
+        frame.render_widget(
+            Paragraph::new(file_lines)
+                .wrap(Wrap { trim: false })
+                .scroll((scroll, 0))
+                .block(
+                    visual::block()
+                        .title(" Export ")
+                        .padding(Padding::horizontal(1)),
+                ),
+            body,
+        );
         frame.render_widget(
             Paragraph::new(lines).wrap(Wrap { trim: false }).block(
                 visual::block()
-                    .title(Line::from(" Export ").bold())
+                    .title(" Review ")
                     .padding(Padding::horizontal(1)),
             ),
-            body,
+            summary,
         );
         if let Some(text) = &self.typing {
             frame.render_widget(
@@ -248,7 +276,7 @@ pub(in crate::ui) fn push_lines(target: &str, ahead: Option<usize>) -> Vec<Line<
 /// Returns Git's message, or why nothing was chosen.
 pub(in crate::ui) fn commit(export_view: &Export) -> Result<(), String> {
     export::commit(
-        &export_view.plan.top,
+        &export_view.plan,
         &export_view.paths(),
         &export_view.message,
     )

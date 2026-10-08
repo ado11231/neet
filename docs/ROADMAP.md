@@ -130,3 +130,5 @@
 | Power and display | Setting names are checked on real Macs. A refresh rate you do not keep switches back. Every change can be undone. |
 | Project build folders | Only listed build folders that Git ignores are offered. |
 | Treemap and preferences | The treemap shows the scan without changing files, and preferences keep your choices. |
+
+* Dotfiles checks: action and export reviews reject changed files, backups, and links. Pushes name the reviewed commit and tracked branch. Unicode renames and export scrolling have regression tests. Ghostty, the shell block, repository creation, and testing against live personal files remain.
