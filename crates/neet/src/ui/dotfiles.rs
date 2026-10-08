@@ -362,6 +362,11 @@ impl Dotfiles {
                 Line::from(
                     "chezmoi keeps your dotfiles in a Git repository and sets up a new Mac from it.",
                 ),
+                Line::default(),
+                Line::from(vec![
+                    Span::raw("x").fg(visual::ACCENT).bold(),
+                    Span::raw(" starts that repository for you, in chezmoi's folder."),
+                ]),
             ];
         };
         let mut lines = match &self.repo {
@@ -935,10 +940,9 @@ impl Dotfiles {
                 }
                 return Action::None;
             }
-            Mode::Push { top, target, .. } => {
+            Mode::Push { .. } | Mode::CreateRepo { .. } => {
                 if key.code == KeyCode::Char('y') {
-                    let (top, target) = (top.clone(), target.clone());
-                    self.push(&top, &target);
+                    self.send();
                 }
                 return Action::None;
             }
@@ -972,12 +976,10 @@ impl Dotfiles {
     /// push when only commits wait.
     fn start_export(&mut self) {
         if self.listing.chezmoi.is_none() {
-            self.mode = Mode::Note {
-                title: "Export".to_string(),
-                lines: vec![Line::from(
-                    "Export works with chezmoi's repository for now. Starting a repository without chezmoi comes next.",
-                )],
-                color: visual::ACCENT,
+            let folder = dotfiles::chezmoi_folder(&self.home);
+            self.mode = match publish::start_plan(&self.home, &self.listing, &folder) {
+                Ok(plan) => Mode::Export(Box::new(Export::new(plan, self.tilde(&folder)))),
+                Err(error) => change::done(Err(error), "", None),
             };
             return;
         }
@@ -1025,8 +1027,22 @@ impl Dotfiles {
     }
 
     fn ask_push(&mut self, top: PathBuf, ahead: Option<usize>) {
+        let no_remote = dotfiles::repo(&top).is_some_and(|repo| repo.remote.is_none());
         self.mode = match publish::push_target(&top) {
             Ok(target) => Mode::Push { top, target, ahead },
+            Err(_) if no_remote && dotfiles::is_installed("gh") => Mode::CreateRepo { top },
+            Err(_) if no_remote => Mode::Note {
+                title: "Committed".to_string(),
+                lines: vec![
+                    Line::from(format!("✓ Committed in {}", self.tilde(&top)))
+                        .green()
+                        .bold(),
+                    Line::from(
+                        "It has no remote yet. Install gh, GitHub's command line tool, and export again to make a private GitHub repository, or add a remote and push it yourself.",
+                    ),
+                ],
+                color: visual::ACCENT,
+            },
             Err(error) => Mode::Note {
                 title: "Committed".to_string(),
                 lines: vec![
@@ -1036,6 +1052,33 @@ impl Dotfiles {
                 color: visual::ACCENT,
             },
         };
+    }
+
+    /// `y` on the push or GitHub question
+    fn send(&mut self) {
+        match std::mem::replace(&mut self.mode, Mode::Browse) {
+            Mode::Push { top, target, .. } => self.push(&top, &target),
+            Mode::CreateRepo { top } => self.create_github(&top),
+            other => self.mode = other,
+        }
+    }
+
+    /// `y` on the GitHub question
+    fn create_github(&mut self, top: &Path) {
+        self.mode = match publish::create_github(top) {
+            Ok(address) => Mode::Note {
+                title: "On GitHub".to_string(),
+                lines: vec![
+                    Line::from("✓ Made a private GitHub repository and pushed to it")
+                        .green()
+                        .bold(),
+                    Line::from(address),
+                ],
+                color: ratatui::style::Color::Green,
+            },
+            Err(error) => change::done(Err(error), "", None),
+        };
+        self.read_repo();
     }
 
     /// `y` on the push question
@@ -1220,6 +1263,13 @@ impl Dotfiles {
                 area,
                 "Push",
                 export::push_lines(&target.label, *ahead),
+                visual::ACCENT,
+            ),
+            Mode::CreateRepo { top } => super::tools::message(
+                frame,
+                area,
+                "GitHub",
+                export::github_lines(&self.tilde(top)),
                 visual::ACCENT,
             ),
             Mode::Configure(configure) => {
@@ -1683,6 +1733,7 @@ impl Screen for Dotfiles {
             Mode::Ask { .. }
             | Mode::Actions(_)
             | Mode::Push { .. }
+            | Mode::CreateRepo { .. }
             | Mode::Backups { .. }
             | Mode::Restore { .. }
             | Mode::Show { .. }
@@ -1748,6 +1799,7 @@ impl Screen for Dotfiles {
             }
             Mode::Export(_) => "↑↓ move · space in or out · m message · y commit · esc go back",
             Mode::Push { .. } => "y push · esc not now",
+            Mode::CreateRepo { .. } => "y create · esc not now",
             Mode::Note { .. } => "any key continue",
         }
     }
@@ -2468,6 +2520,48 @@ mod tests {
                 "{mine}\n# >>> neet >>>\n# Set by neet's Configure. neet changes only the lines between these markers.\nexport EDITOR='nano'\nsetopt auto_cd\n# <<< neet <<<\n"
             )
         );
+    }
+
+    #[test]
+    fn export_without_chezmoi_starts_a_repository() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = fs::canonicalize(dir.path()).unwrap();
+        write(&home.join(".zshrc"), "export A=1\n");
+        write(
+            &home.join(".npmrc"),
+            "//registry.npmjs.org/:_authToken=npm_secret\n",
+        );
+        let listing = dotfiles::list(&home);
+        let mut screen = Dotfiles::from_listing(home.clone(), listing);
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains("x starts that repository"), "{text}");
+        press(&mut screen, KeyCode::Char('x'));
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains("Start your dotfiles"), "{text}");
+        assert!(text.contains("~/.zshrc"), "{text}");
+        assert!(
+            text.contains("~/.local/share/chezmoi, in chezmoi's layout"),
+            "{text}"
+        );
+        assert!(text.contains("\"Start dotfiles\""), "{text}");
+
+        press(&mut screen, KeyCode::Char('y'));
+        let text = render(&mut screen, 120, 30);
+        let folder = home.join(".local/share/chezmoi");
+        assert_eq!(
+            fs::read_to_string(folder.join("dot_zshrc")).unwrap(),
+            "export A=1\n"
+        );
+        assert!(!folder.join("dot_npmrc").exists());
+        assert!(
+            text.contains("Make a private GitHub repository named dotfiles")
+                || text.contains("It has no remote yet"),
+            "{text}"
+        );
+        screen.back();
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains("✓ saved"), "{text}");
+        assert!(screen.listing.chezmoi.is_some());
     }
 
     #[test]

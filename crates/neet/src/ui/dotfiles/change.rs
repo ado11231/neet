@@ -79,6 +79,11 @@ pub(super) enum Mode {
         target: neet_core::dotfiles::export::PushTarget,
         ahead: Option<usize>,
     },
+    /// After starting a repository with no remote: whether `gh` should
+    /// create a private GitHub repository and push to it
+    CreateRepo {
+        top: PathBuf,
+    },
     /// What happened, until a key is pressed
     Note {
         title: String,

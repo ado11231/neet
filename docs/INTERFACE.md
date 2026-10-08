@@ -541,7 +541,9 @@
 * **Commit** shows how many files go in, and the message. It names the files, such as `Update zshrc and gitconfig`, until you change it with `m`.
 * `y` commits only those files. Then a box asks whether to push, and names the remote branch. Only `y` pushes. A push is never forced, and if the remote has commits you do not, nothing is pushed and the note says to pull first.
 * With nothing to commit but commits not yet pushed, `x` goes straight to the push question.
-* Without chezmoi, `x` says so. Starting a repository in chezmoi's layout comes next.
+* **Without chezmoi**, the Your dotfiles box says `x` starts a repository. `x` opens the same review, titled **Start your dotfiles**, listing every listed dotfile on this Mac by its home path. Links that lead out of your home folder, or into a protected folder, are left out. The Review box adds a **Start** line naming the folder, and a **GitHub** line in place of Push. The message starts as `Start dotfiles`.
+* `y` writes the chosen files into chezmoi's folder, named as `chezmoi add` names them, with a README and a `.chezmoiignore` that keeps the README out of your home folder, then runs `git init` and commits. The screen then reads the folder as chezmoi's, so every file shows saved or not saved.
+* With no remote, and `gh` installed, a box asks whether to make a private GitHub repository named `dotfiles` and push to it. Only `y` makes it. Without `gh`, a note says how to add a remote yourself.
 
 | Key | Action |
 | --- | --- |
@@ -608,11 +610,3 @@
 | PATH | Each folder in search order, with how many programs it holds, where it was added, and any problem. A preview shows the programs it holds. | `w` finds which copy of a program runs. `K` / `J` move a folder. `a` adds, `x` removes, `Enter` saves with a backup. |
 | AI Tools | Sections for tools, settings, instruction files, skills, and project skills. View only. | `Enter` opens a file. |
 | Settings | Sections for power mode, graphics switching, refresh rate, Game Mode, what keeps the Mac awake, and wake settings. | Each change shows what it will do first, and can be undone. |
-
-### Dotfiles: Still To Come
-
-* Drafts for the rest of [Dotfiles](#dotfiles).
-
-| Feature | Layout |
-| --- | --- |
-| Start a repository | Without chezmoi, `x` offers to start a Git repository in chezmoi's layout, then add the chosen files to it. |
