@@ -315,7 +315,15 @@ impl QuickClean {
         match item {
             Item::Rules => match context.cleanable {
                 Some(0) => Status::Nothing,
-                Some(size) => Status::Found { size, count: None },
+                Some(size) => Status::Found {
+                    size,
+                    count: context
+                        .plan
+                        .and_then(|estimate| estimate.planned.as_ref())
+                        .map(|planned| {
+                            planned.plan.rules.iter().map(|rule| rule.items.len()).sum()
+                        }),
+                },
                 None => Status::Looking,
             },
             Item::Clutter(kind) if clutter::neet_removes(kind) => {

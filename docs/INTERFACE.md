@@ -177,7 +177,7 @@
 
 * One table of everything taking space that can be cleared, so you can start with the biggest wins.
 * **Rows,** always in this order, what neet clears first:
-  1. Caches & logs: what every Deep Clean rule found.
+  1. Caches & logs: what every Deep Clean rule found. Found counts the items in those rules, leaving out skipped paths.
   2. Project build folders and installers in Downloads, from the scan. neet moves these to the Trash after you pick and review them.
   3. The Trash, from the scan, which you empty yourself. macOS only lets a terminal read `~/.Trash` with Full Disk Access. Without it, the row says `no access` in yellow instead of `none`, and its Summary says how to turn it on.
   4. The Docker disk image, from the scan, and simulators, asked of `xcrun simctl` when there are simulators on the Mac: runtimes, and simulators left without one. neet asks their own tools to remove them, which is permanent.
@@ -617,4 +617,3 @@
 | --- | --- |
 | Start a repository | Without chezmoi, `x` offers to start a Git repository in chezmoi's layout, then add the chosen files to it. |
 | More Configure programs | Settings for more programs, such as Ghostty, the same way as kitty. Shell settings only in a block neet owns. |
-
