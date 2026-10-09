@@ -399,7 +399,7 @@ min_age_days = 0
 
 ## Startup Items
 
-* Startup lists programs that start on their own. The first screen is view only: it reads, and changes nothing.
+* Startup lists programs that start on their own. It only reads, except to turn your own launch agents off and back on.
 
 ### What Is Read
 
@@ -421,8 +421,21 @@ min_age_days = 0
 
 ### What May Change
 
-* Nothing yet. Turning items off ships in its own change, and is written here before it is built.
-* Planned, and only for your own launch agents in `~/Library/LaunchAgents`: off with `launchctl disable gui/<uid>/<label>`, then `launchctl bootout`; back on with `launchctl enable`, then `launchctl bootstrap gui/<uid> <plist>`. The state before is saved in `~/.local/state/neet/`. The plist is never changed, moved, or removed.
+* Only your own launch agents in `~/Library/LaunchAgents` may be turned off and back on, with `t`, after a question that names the label and the program it runs.
+
+| Change | Commands, in order |
+| --- | --- |
+| Turn off | `launchctl disable gui/<uid>/<label>`, then `launchctl bootout gui/<uid>/<label>`, which stops it now if it runs. |
+| Turn back on | `launchctl enable gui/<uid>/<label>`, then `launchctl bootstrap gui/<uid> <plist>`. |
+
+* `disable` and `enable` are what keep the change after a restart. macOS keeps them in its own list, outside the plist.
+* Turning off something that was not loaded is not an error, and neither is turning on something that is already loaded.
+* Before any command runs, the state before is saved in `~/.local/state/neet/startup/<label>.json`: the plist, whether it was turned off, and whether it was loaded. It stays after neet closes, so you can always turn it back the way it was.
+* The plist is never changed, moved, or removed. Nothing here uses `sudo`, and no command may show a prompt.
+* neet refuses, and runs nothing, when:
+  1. The item is not in `~/Library/LaunchAgents`, has no label, its label starts with `com.apple.`, or its label has a `/` in it.
+  2. The plist is a link that leads out of your home folder, or is not a plain file.
+  3. The plist changed since the question, or now names a different label.
 * View only, always:
   1. Items in `/Library/LaunchAgents` and `/Library/LaunchDaemons`. An admin installed them for every user, sometimes for device management.
   2. Background items inside apps, and apps that open at login. `o` opens System Settings, where macOS turns them off and on.
