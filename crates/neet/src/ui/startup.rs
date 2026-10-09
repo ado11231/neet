@@ -1,22 +1,26 @@
 //! Startup: programs that start on their own, grouped by kind, with whether
-//! each runs, is turned off, and who signed it. View only.
+//! each runs, is turned off, and who signed it. `t` turns your own launch
+//! agents off and back on, after a question; everything else is view only.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::Instant;
 
+use neet_core::startup::turn::{self, Asked, Saved, Turn};
 use neet_core::startup::{self, Item, Kind, Listing, Runs, Signed};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::Stylize;
+use ratatui::style::{Color, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Cell, Padding, Paragraph, Row, Table, TableState, Wrap};
 
 use super::app::{Action, Context, Screen};
 use super::format;
 use super::loading::Loading;
+use super::tools;
 use super::visual::{self, Columns};
 
 /// From this width the selected item shows on the right.
@@ -28,6 +32,12 @@ const LIST_WIDTH: (u16, u16) = (48, 70);
 /// Width of the status column, such as `○ waiting · !`
 const STATUS_WIDTH: u16 = 15;
 
+/// The longest bar in By kind
+const BAR: usize = 20;
+
+/// How many signers Signed by names
+const SIGNERS: usize = 6;
+
 /// Where System Settings lists apps that open at login
 const LOGIN_ITEMS: &str = "x-apple.systempreferences:com.apple.LoginItems-Settings.extension";
 
@@ -35,6 +45,8 @@ const LOGIN_ITEMS: &str = "x-apple.systempreferences:com.apple.LoginItems-Settin
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Entry {
     Kind(Kind),
+    /// A blank row between kinds, on screens with room for it
+    Gap,
     /// An index into the listing's items
     Item(usize),
 }
@@ -44,11 +56,28 @@ enum State {
     Ready(Listing),
 }
 
-/// Lists programs that start on their own. Changes nothing.
+/// News after `t`, until a key is pressed
+struct Note {
+    title: &'static str,
+    lines: Vec<Line<'static>>,
+    color: Color,
+}
+
+/// Lists programs that start on their own, and turns your own launch agents
+/// off and back on.
 pub struct Startup {
     home: PathBuf,
     state: State,
     table: TableState,
+    /// What neet saved before it last turned each of your launch agents
+    saved: HashMap<String, Saved>,
+    /// `t`: the launch agent to turn, waiting for `y`
+    asked: Option<Asked>,
+    note: Option<Note>,
+    /// The item to select again once the list is read again
+    reselect: Option<PathBuf>,
+    /// Whether the list has a blank row between kinds
+    gaps: bool,
 }
 
 impl Startup {
@@ -60,6 +89,11 @@ impl Startup {
             home,
             state: State::Ready(Listing::default()),
             table: TableState::default(),
+            saved: HashMap::new(),
+            asked: None,
+            note: None,
+            reselect: None,
+            gaps: false,
         };
         screen.look();
         screen
@@ -71,7 +105,13 @@ impl Startup {
             home,
             state: State::Ready(listing),
             table: TableState::default(),
+            saved: HashMap::new(),
+            asked: None,
+            note: None,
+            reselect: None,
+            gaps: false,
         };
+        screen.read_saved();
         screen.select_first();
         screen
     }
@@ -92,8 +132,130 @@ impl Startup {
             && let Ok(listing) = receiver.try_recv()
         {
             self.state = State::Ready(listing);
+            self.read_saved();
             self.select_first();
+            if let Some(file) = self.reselect.take() {
+                let listing = self.listing();
+                let row = self.rows().iter().position(|row| match row {
+                    Entry::Item(index) => listing
+                        .and_then(|listing| listing.items.get(*index))
+                        .is_some_and(|item| item.file == file),
+                    Entry::Kind(_) | Entry::Gap => false,
+                });
+                if row.is_some() {
+                    self.table.select(row);
+                }
+            }
         }
+    }
+
+    /// Reads what neet saved before turning each of your launch agents
+    fn read_saved(&mut self) {
+        let Some(listing) = self.listing() else {
+            return;
+        };
+        let saved = listing
+            .items
+            .iter()
+            .filter(|item| item.kind == Kind::YourAgent)
+            .filter_map(|item| item.label.as_deref())
+            .filter_map(|label| Some((label.to_string(), turn::saved(&self.home, label)?)))
+            .collect();
+        self.saved = saved;
+    }
+
+    /// `t`: the question, or why the selected item cannot be turned
+    fn ask_turn(&mut self) {
+        let Some(item) = self.selected() else {
+            return;
+        };
+        let refused = if item.kind == Kind::YourAgent {
+            match turn::ask(item, &self.home) {
+                Ok(asked) => {
+                    self.asked = Some(asked);
+                    return;
+                }
+                Err(reason) => reason,
+            }
+        } else {
+            view_only(item.kind).to_string()
+        };
+        self.note = Some(Note {
+            title: "Startup",
+            lines: vec![Line::from(refused)],
+            color: Color::Yellow,
+        });
+    }
+
+    /// `y`: turns the asked item, then reads the list again
+    fn turn(&mut self) {
+        let Some(asked) = self.asked.take() else {
+            return;
+        };
+        let (title, done) = match asked.turn {
+            Turn::Off => (
+                "Turned off",
+                "It won't start again, even after a restart, until you turn it back on. Its plist is as it was.",
+            ),
+            Turn::On => (
+                "Turned back on",
+                "launchd has it again, and starts it as its plist says.",
+            ),
+        };
+        self.note = Some(match asked.apply(&self.home) {
+            Ok(()) => Note {
+                title,
+                lines: vec![
+                    Line::from(vec![
+                        Span::raw("✓ ").green().bold(),
+                        Span::raw(asked.label.clone()).bold(),
+                    ]),
+                    Line::default(),
+                    Line::from(done),
+                ],
+                color: Color::Green,
+            },
+            Err(reason) => Note {
+                title: "Not changed",
+                lines: vec![Line::from(vec![
+                    Span::raw("✗ ").red().bold(),
+                    Span::raw(reason).red(),
+                ])],
+                color: Color::Red,
+            },
+        });
+        self.reselect = Some(asked.plist.clone());
+        self.look();
+    }
+
+    /// The question before `y`
+    fn question(&self, asked: &Asked) -> Vec<Line<'static>> {
+        let room = 60;
+        let path = |path: &Path| Span::raw(format::shorten_path(&self.tilde(path), room));
+        let (verb, what) = match asked.turn {
+            Turn::Off => (
+                "Turn off",
+                "launchctl turns it off, and stops it now if it runs. It stays off after a restart, until you turn it back on.",
+            ),
+            Turn::On => (
+                "Turn back on",
+                "launchctl turns it on and loads it, so it runs as its plist says.",
+            ),
+        };
+        let mut lines = vec![
+            Line::from(format!("{verb} {}?", asked.label)).bold(),
+            Line::default(),
+        ];
+        if let Some(program) = &asked.program {
+            lines.push(field("Program", path(program)));
+        }
+        lines.push(field("Plist", path(&asked.plist)));
+        lines.push(Line::default());
+        lines.push(Line::from(what));
+        lines.push(Line::from(
+            "The plist is not changed. The state before is saved in ~/.local/state/neet/startup.",
+        ));
+        lines
     }
 
     fn listing(&self) -> Option<&Listing> {
@@ -116,6 +278,9 @@ impl Startup {
                     continue;
                 }
                 if first {
+                    if self.gaps && !rows.is_empty() {
+                        rows.push(Entry::Gap);
+                    }
                     rows.push(Entry::Kind(kind));
                     first = false;
                 }
@@ -123,6 +288,23 @@ impl Startup {
             }
         }
         rows
+    }
+
+    /// Turns the blank rows between kinds on or off, keeping the same item
+    /// selected
+    fn set_gaps(&mut self, gaps: bool) {
+        if self.gaps == gaps {
+            return;
+        }
+        let selected = self
+            .table
+            .selected()
+            .and_then(|row| self.rows().get(row).copied());
+        self.gaps = gaps;
+        if let Some(selected) = selected {
+            let row = self.rows().iter().position(|row| *row == selected);
+            self.table.select(row);
+        }
     }
 
     fn selected(&self) -> Option<&Item> {
@@ -244,6 +426,7 @@ impl Startup {
         let table_rows: Vec<Row> = rows
             .iter()
             .map(|row| match *row {
+                Entry::Gap => columns.row([Cell::from(""), Cell::from("")]),
                 Entry::Kind(kind) => columns.row([
                     Cell::from(Span::styled(kind.title(), visual::HEADING)),
                     Cell::from(""),
@@ -264,10 +447,21 @@ impl Startup {
         frame.render_stateful_widget(table, area, &mut self.table);
     }
 
-    /// The selected item's lines, with paths shortened to fit `width`
+    /// The selected item's lines, with long paths wrapped under their label
     fn details(&self, item: &Item, width: usize) -> Vec<Line<'static>> {
-        let room = width.saturating_sub(9);
-        let path = |path: &Path| Span::raw(format::shorten_path(&self.tilde(path), room));
+        let path = |label: &str, path: &Path| {
+            wrap_path(&self.tilde(path), width.saturating_sub(9).max(1))
+                .into_iter()
+                .enumerate()
+                .map(|(index, part)| {
+                    let head = if index == 0 { label } else { "" };
+                    Line::from(vec![
+                        Span::raw(format!("{head:<9}")).bold(),
+                        Span::raw(part),
+                    ])
+                })
+                .collect::<Vec<_>>()
+        };
         let mut lines = vec![field("Kind", Span::raw(kind_one(item.kind)))];
         if let Some(app) = &item.app {
             lines.push(field("App", Span::raw(app.clone())));
@@ -278,14 +472,14 @@ impl Startup {
             lines.push(field("Label", Span::raw(label.clone())));
         }
         if let Some(program) = &item.program {
-            lines.push(field("Program", path(program)));
+            lines.extend(path("Program", program));
         }
         let file_label = if item.file.extension().is_some_and(|ext| ext == "plist") {
             "Plist"
         } else {
             "Helper"
         };
-        lines.push(field(file_label, path(&item.file)));
+        lines.extend(path(file_label, &item.file));
         lines.push(field("Signed", signed(&item.signed)));
         lines.push(field(
             "Starts",
@@ -296,18 +490,40 @@ impl Startup {
             }),
         ));
         lines.push(field("Now", now(item)));
+        if let Some(saved) = item.label.as_ref().and_then(|label| self.saved.get(label)) {
+            let day = saved.at.get(..10).unwrap_or(&saved.at);
+            let turned = match saved.turned {
+                Turn::Off => "off",
+                Turn::On => "back on",
+            };
+            lines.push(field(
+                "Changed",
+                Span::raw(format!("neet turned it {turned} on {day}")),
+            ));
+        }
         lines.push(Line::default());
         if let Some(problem) = &item.problem {
             lines.push(Line::from(format!("! {problem}")).yellow());
         }
-        lines.push(Line::from(view_only(item.kind)));
+        lines.push(match item.kind {
+            Kind::YourAgent => Line::from(vec![
+                Span::raw("Press "),
+                Span::raw("t").fg(visual::ACCENT).bold(),
+                Span::raw(if item.off {
+                    " to turn it back on."
+                } else {
+                    " to turn it off. Its plist stays as it is."
+                }),
+            ]),
+            kind => Line::from(view_only(kind)),
+        });
         lines
     }
 
     fn draw_details(&self, frame: &mut Frame, area: Rect, item: &Item) {
         let lines = self.details(item, usize::from(area.width.saturating_sub(4)));
         frame.render_widget(
-            Paragraph::new(lines).wrap(Wrap { trim: true }).block(
+            Paragraph::new(lines).wrap(Wrap { trim: false }).block(
                 visual::block()
                     .title(Line::from(format!(" {} ", item.name)).bold())
                     .padding(Padding::horizontal(1)),
@@ -342,12 +558,56 @@ impl Startup {
         login
     }
 
+    /// What `t` does, and the launch agents neet has turned off
+    fn turning(&self) -> Vec<Line<'static>> {
+        let mut lines = vec![
+            Line::from("Turning off").style(visual::HEADING),
+            Line::from(vec![
+                Span::raw("Select one of your launch agents and press "),
+                Span::raw("t").fg(visual::ACCENT).bold(),
+                Span::raw(". neet asks first, and never changes its plist."),
+            ]),
+        ];
+        let Some(listing) = self.listing() else {
+            return lines;
+        };
+        let mut off: Vec<(&str, &str)> = listing
+            .items
+            .iter()
+            .filter(|item| item.off)
+            .filter_map(|item| {
+                let saved = self.saved.get(item.label.as_deref()?)?;
+                (saved.turned == Turn::Off)
+                    .then(|| (item.name.as_str(), saved.at.get(..10).unwrap_or(&saved.at)))
+            })
+            .collect();
+        off.sort_unstable();
+        if off.is_empty() {
+            lines.push(Line::from("neet has not turned anything off."));
+        } else {
+            lines.push(Line::from("Turned off by neet, t turns each back on:"));
+            for (name, day) in off {
+                lines.push(Line::from(vec![
+                    Span::raw(format!("  {name}  ")).yellow(),
+                    Span::raw(format!("on {day}")),
+                ]));
+            }
+        }
+        lines
+    }
+
     /// How many of each kind, and how many of those run
     fn counts(&self) -> Vec<Line<'static>> {
         let mut lines = vec![Line::from("By kind").style(visual::HEADING)];
         let Some(listing) = self.listing() else {
             return lines;
         };
+        let widest = Kind::ALL
+            .iter()
+            .map(|kind| listing.items.iter().filter(|i| i.kind == *kind).count())
+            .max()
+            .unwrap_or(0)
+            .min(BAR);
         for kind in Kind::ALL {
             let items: Vec<&Item> = listing.items.iter().filter(|i| i.kind == kind).collect();
             if items.is_empty() {
@@ -357,15 +617,60 @@ impl Startup {
                 .iter()
                 .filter(|item| matches!(item.runs, Runs::Running(_)))
                 .count();
+            let off = items.iter().filter(|item| item.off).count();
+            // One cell an item, the running ones green
             let mut spans = vec![
                 Span::raw(format!("{:<30}", kind.title())).bold(),
-                Span::raw(format!("{:>3}", items.len())),
+                Span::raw(format!("{:>3} ", items.len())),
+                Span::raw("█".repeat(running.min(BAR))).green(),
+                Span::raw("█".repeat(items.len().min(BAR).saturating_sub(running)))
+                    .fg(visual::ACCENT),
+                Span::raw(" ".repeat(widest.saturating_sub(items.len().min(BAR)))),
             ];
             if running > 0 {
                 spans.push(Span::raw(" · "));
                 spans.push(Span::raw(format!("{running} running")).green());
             }
+            if off > 0 {
+                spans.push(Span::raw(" · "));
+                spans.push(Span::raw(format!("{off} off")).yellow());
+            }
             lines.push(Line::from(spans));
+        }
+        lines
+    }
+
+    /// Who signed the programs, most first
+    fn signers(&self) -> Vec<Line<'static>> {
+        let mut lines = vec![Line::from("Signed by").style(visual::HEADING)];
+        let Some(listing) = self.listing() else {
+            return lines;
+        };
+        let mut counts: HashMap<String, (usize, bool)> = HashMap::new();
+        for item in &listing.items {
+            let (name, warn) = match &item.signed {
+                Signed::Unsigned => ("not signed".to_string(), true),
+                Signed::Unknown => ("not known".to_string(), false),
+                other => (signed(other).content.into_owned(), false),
+            };
+            counts.entry(name).or_insert((0, warn)).0 += 1;
+        }
+        let mut counts: Vec<(String, (usize, bool))> = counts.into_iter().collect();
+        counts.sort_by(|a, b| b.1.0.cmp(&a.1.0).then_with(|| a.0.cmp(&b.0)));
+        let shown = counts.len().min(SIGNERS);
+        for (name, (count, warn)) in &counts[..shown] {
+            let name = format!("{:<30}", format::shorten_middle(name, 29));
+            lines.push(Line::from(vec![
+                if *warn {
+                    Span::raw(name).yellow().bold()
+                } else {
+                    Span::raw(name).bold()
+                },
+                Span::raw(format!("{count:>3}")),
+            ]));
+        }
+        if counts.len() > shown {
+            lines.push(Line::from(format!("{} more", counts.len() - shown)));
         }
         lines
     }
@@ -374,32 +679,50 @@ impl Startup {
     fn legend() -> Vec<Line<'static>> {
         vec![
             Line::from("Legend").style(visual::HEADING),
-            legend_line(Span::raw("● running").green(), "running now"),
+            legend_line(
+                Span::raw("● running").green(),
+                "running now, with a process",
+            ),
             legend_line(
                 Span::raw("○ waiting").fg(visual::ACCENT),
-                "starts when it is needed",
+                "loaded, and starts when it is needed",
             ),
-            legend_line(Span::raw("· not loaded"), "not running"),
-            legend_line(Span::raw("off").yellow(), "turned off"),
-            legend_line(Span::raw("!").yellow(), "something is wrong with it"),
+            legend_line(Span::raw("· not loaded"), "launchd does not have it now"),
+            legend_line(
+                Span::raw("off").yellow(),
+                "turned off, even after a restart",
+            ),
+            legend_line(
+                Span::raw("!").yellow().bold(),
+                "something is wrong; select it to see what",
+            ),
         ]
     }
 
-    /// The list sized to its rows, with the legend below it when there is
-    /// room
+    /// The list sized to its rows, with the counts and the legend below it
+    /// when there is room
     fn draw_list(&mut self, frame: &mut Frame, area: Rect) {
-        let rows = u16::try_from(self.rows().len()).unwrap_or(u16::MAX).max(3);
-        let table_height = rows.saturating_add(2);
-        let legend = Self::legend();
-        let legend_height = u16::try_from(legend.len()).unwrap_or(u16::MAX) + 2;
-        if area.height < table_height + legend_height {
+        let counts = self.counts();
+        let counts_height = u16::try_from(counts.len()).unwrap_or(u16::MAX) + 1;
+        let height = |screen: &Self| {
+            u16::try_from(screen.rows().len())
+                .unwrap_or(u16::MAX)
+                .max(3)
+                .saturating_add(2)
+        };
+        self.set_gaps(true);
+        if area.height < height(self) + counts_height {
+            self.set_gaps(false);
+        }
+        let table_height = height(self);
+        if area.height < table_height + counts_height {
             self.draw_table(frame, area);
             return;
         }
         let [table, below] =
             Layout::vertical([Constraint::Length(table_height), Constraint::Fill(1)]).areas(area);
         self.draw_table(frame, table);
-        visual::sections(frame, below, "", vec![legend]);
+        visual::sections(frame, below, "", vec![counts, self.signers()]);
     }
 
     fn draw_body(&mut self, frame: &mut Frame, body: Rect) {
@@ -409,7 +732,7 @@ impl Startup {
             let [list, side] =
                 Layout::horizontal([Constraint::Length(width), Constraint::Fill(1)]).areas(body);
             self.draw_list(frame, list);
-            let about = vec![self.about(), self.counts()];
+            let about = vec![self.about(), self.turning(), Self::legend()];
             match selected {
                 Some(item) => {
                     let lines = self.details(&item, usize::from(side.width.saturating_sub(4)));
@@ -474,7 +797,7 @@ fn view_only(kind: Kind) -> &'static str {
         Kind::Background => {
             "View only. Press o to turn it off in System Settings, under Allow in the Background."
         }
-        Kind::YourAgent => "View only for now. Turning it off comes in a later version.",
+        Kind::YourAgent => "Press t to turn it off, or back on.",
         Kind::AgentForAll | Kind::Daemon => {
             "View only. An admin set it up for every user, sometimes to manage this Mac."
         }
@@ -526,6 +849,28 @@ fn signed(signed: &Signed) -> Span<'static> {
     }
 }
 
+/// `path` in lines of at most `width` characters, broken after a `/`, and
+/// inside a name only when the name alone is too long
+fn wrap_path(path: &str, width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    for part in path.split_inclusive('/') {
+        let fits = current.chars().count() + part.chars().count() <= width;
+        if !fits && !current.is_empty() {
+            lines.push(std::mem::take(&mut current));
+        }
+        let mut part: Vec<char> = part.chars().collect();
+        while part.len() > width {
+            lines.push(part.drain(..width).collect());
+        }
+        current.extend(part);
+    }
+    if !current.is_empty() || lines.is_empty() {
+        lines.push(current);
+    }
+    lines
+}
+
 fn field(label: &str, value: Span<'static>) -> Line<'static> {
     Line::from(vec![Span::raw(format!("{label:<9}")).bold(), value])
 }
@@ -556,13 +901,37 @@ impl Screen for Startup {
             Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(area);
         self.draw_top(frame, top);
         self.draw_body(frame, body);
+        if let Some(asked) = &self.asked {
+            let (title, yes, color) = match asked.turn {
+                Turn::Off => ("Turn off", "turn it off", Color::Yellow),
+                Turn::On => ("Turn back on", "turn it on", visual::ACCENT),
+            };
+            tools::ask(frame, area, title, self.question(asked), yes, color);
+        } else if let Some(note) = &self.note {
+            let mut lines = note.lines.clone();
+            lines.push(Line::default());
+            lines.push(Line::from("Press any key to go on."));
+            tools::message(frame, area, note.title, lines, note.color);
+        }
     }
 
     fn handle_key(&mut self, key: KeyEvent, _context: &Context) -> Action {
         if self.listing().is_none() {
             return Action::None;
         }
+        if self.asked.is_some() {
+            match key.code {
+                KeyCode::Char('y') => self.turn(),
+                KeyCode::Char('n') => self.asked = None,
+                _ => {}
+            }
+            return Action::None;
+        }
+        if self.note.take().is_some() {
+            return Action::None;
+        }
         match key.code {
+            KeyCode::Char('t') => self.ask_turn(),
             KeyCode::Up | KeyCode::Char('k') => self.step(false),
             KeyCode::Down | KeyCode::Char('j') => self.step(true),
             KeyCode::Char('g') | KeyCode::Home => self.jump(false),
@@ -575,14 +944,36 @@ impl Screen for Startup {
         Action::None
     }
 
+    fn back(&mut self) -> Action {
+        if self.asked.take().is_some() || self.note.take().is_some() {
+            return Action::None;
+        }
+        Action::Back
+    }
+
+    fn is_dialog(&self) -> bool {
+        self.asked.is_some() || self.note.is_some()
+    }
+
     fn hints(&self) -> &'static str {
-        "↑↓ move · o login items · f show in Finder · r look again · esc home · ? help"
+        if self.asked.is_some() {
+            "y go ahead · n or esc go back"
+        } else if self.note.is_some() {
+            "any key go on"
+        } else {
+            "↑↓ move · t turn off or on · o login items · f show in Finder · r look again · esc home · ? help"
+        }
     }
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
         &[
             ("↑↓", "Move between programs"),
             ("g G", "First or last program"),
+            (
+                "t",
+                "Turn your own launch agent off, or back on, after a question",
+            ),
+            ("y", "In the question: go ahead"),
             ("o", "Open Login Items in System Settings"),
             ("f", "Show the selected plist or helper in Finder"),
             ("r", "Look again"),
@@ -684,7 +1075,7 @@ mod tests {
         assert!(text.contains("3 more belong to macOS"));
         assert!(text.contains("o opens them in System Settings"));
         assert!(
-            text.contains("Launch daemons                  1 · 1 running"),
+            text.contains("Launch daemons                  1 █  · 1 running"),
             "{text}"
         );
     }
@@ -709,12 +1100,74 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("! Its plist is empty"), "{text}");
-        assert!(text.contains("Turning it off comes in a later version"));
+        assert!(
+            text.contains("Press t to turn it off. Its plist stays"),
+            "{text}"
+        );
 
         press(&mut screen, KeyCode::Char('G'));
         let text = render(&mut screen, 140, 40);
         assert!(text.contains("when the Mac starts"), "{text}");
         assert!(text.contains("An admin set it up for every user"));
+    }
+
+    #[test]
+    fn t_asks_first_and_n_goes_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = std::fs::canonicalize(dir.path()).unwrap();
+        let agents = home.join("Library/LaunchAgents");
+        std::fs::create_dir_all(&agents).unwrap();
+        let mut listing = sample();
+        let agent = &mut listing.items[1];
+        agent.file = agents.join("com.google.GoogleUpdater.wake.plist");
+        std::fs::write(&agent.file, "<plist/>").unwrap();
+        let mut screen = Startup::from_listing(home, listing);
+        press(&mut screen, KeyCode::Down);
+        press(&mut screen, KeyCode::Char('t'));
+        assert!(screen.is_dialog());
+        let text = render(&mut screen, 140, 40);
+        assert!(
+            text.contains("Turn off com.google.GoogleUpdater.wake?"),
+            "{text}"
+        );
+        assert!(
+            text.contains("Plist    ~/Library/LaunchAgents/com.google.GoogleUpdater.wake.plist"),
+            "{text}"
+        );
+        assert!(text.contains("stops it now if it runs"), "{text}");
+        assert!(text.contains("y turn it off"), "{text}");
+        press(&mut screen, KeyCode::Char('n'));
+        assert!(!screen.is_dialog());
+        assert!(!render(&mut screen, 140, 40).contains("Turn off com.google"));
+    }
+
+    #[test]
+    fn t_says_why_other_items_stay_as_they_are() {
+        let mut screen = Startup::from_listing(PathBuf::from("/home"), sample());
+        press(&mut screen, KeyCode::Char('G'));
+        press(&mut screen, KeyCode::Char('t'));
+        let text = render(&mut screen, 140, 40);
+        assert!(text.contains("An admin set it up for every user"), "{text}");
+        assert!(text.contains("Press any key to go on"), "{text}");
+        press(&mut screen, KeyCode::Char('x'));
+        assert!(!screen.is_dialog());
+
+        // Your agent whose plist is not there any more is refused, not asked.
+        press(&mut screen, KeyCode::Char('g'));
+        press(&mut screen, KeyCode::Down);
+        press(&mut screen, KeyCode::Char('t'));
+        let text = render(&mut screen, 140, 40);
+        assert!(text.contains("could not be read"), "{text}");
+    }
+
+    #[test]
+    fn long_paths_wrap_after_a_slash() {
+        assert_eq!(
+            wrap_path("/Applications/Docker.app/Contents/Library", 20),
+            ["/Applications/", "Docker.app/Contents/", "Library"]
+        );
+        assert_eq!(wrap_path("/abcdefghij", 4), ["/", "abcd", "efgh", "ij"]);
+        assert_eq!(wrap_path("", 4), [""]);
     }
 
     #[test]

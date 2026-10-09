@@ -139,7 +139,7 @@ pub(super) fn message(
 }
 
 /// The question before a tool acts, with `y` to go ahead
-fn ask(
+pub(super) fn ask(
     frame: &mut Frame,
     area: Rect,
     title: &str,
