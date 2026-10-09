@@ -263,7 +263,7 @@ fn sort_key(saved: &str) -> (&str, u32) {
 
 /// `now` in UTC, as a name that sorts in time order, such as
 /// `2026-10-05T16-30-12.123Z`
-fn stamp(now: SystemTime) -> String {
+pub(crate) fn stamp(now: SystemTime) -> String {
     let since = now.duration_since(UNIX_EPOCH).unwrap_or_default();
     let seconds = since.as_secs();
     let days = i64::try_from(seconds / 86_400).unwrap_or(i64::MAX);

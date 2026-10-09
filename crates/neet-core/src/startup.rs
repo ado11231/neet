@@ -6,6 +6,10 @@
 //! `launchctl`, and who signed each program with `codesign --display`. None
 //! of them runs a listed program, and none asks for admin rights. Apps that
 //! open at login are not listed: macOS shows that list only to an admin.
+//!
+//! [`turn`] turns your own launch agents off and back on.
+
+pub mod turn;
 
 use std::collections::HashMap;
 use std::fs;
