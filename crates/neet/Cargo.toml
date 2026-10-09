@@ -12,7 +12,7 @@ keywords = ["macos", "disk", "cleanup", "tui", "cache"]
 categories = ["command-line-utilities", "filesystem"]
 
 [dependencies]
-neet-core = { path = "../neet-core", version = "0.1.0" }
+neet-core = { path = "../neet-core", version = "0.2.0" }
 ratatui = { workspace = true, features = ["unstable-rendered-line-info"] }
 similar = "2"
 unicode-segmentation = "1"

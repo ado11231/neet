@@ -734,7 +734,7 @@ dependencies = [
 
 [[package]]
 name = "neet"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "neet-core",
  "ratatui",
@@ -745,7 +745,7 @@ dependencies = [
 
 [[package]]
 name = "neet-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "jwalk",
  "rustix",
