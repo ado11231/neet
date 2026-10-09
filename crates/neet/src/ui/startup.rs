@@ -32,6 +32,12 @@ const LIST_WIDTH: (u16, u16) = (48, 70);
 /// Width of the status column, such as `○ waiting · !`
 const STATUS_WIDTH: u16 = 15;
 
+/// The longest bar in By kind
+const BAR: usize = 20;
+
+/// How many signers Signed by names
+const SIGNERS: usize = 6;
+
 /// Where System Settings lists apps that open at login
 const LOGIN_ITEMS: &str = "x-apple.systempreferences:com.apple.LoginItems-Settings.extension";
 
@@ -39,6 +45,8 @@ const LOGIN_ITEMS: &str = "x-apple.systempreferences:com.apple.LoginItems-Settin
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Entry {
     Kind(Kind),
+    /// A blank row between kinds, on screens with room for it
+    Gap,
     /// An index into the listing's items
     Item(usize),
 }
@@ -68,6 +76,8 @@ pub struct Startup {
     note: Option<Note>,
     /// The item to select again once the list is read again
     reselect: Option<PathBuf>,
+    /// Whether the list has a blank row between kinds
+    gaps: bool,
 }
 
 impl Startup {
@@ -83,6 +93,7 @@ impl Startup {
             asked: None,
             note: None,
             reselect: None,
+            gaps: false,
         };
         screen.look();
         screen
@@ -98,6 +109,7 @@ impl Startup {
             asked: None,
             note: None,
             reselect: None,
+            gaps: false,
         };
         screen.read_saved();
         screen.select_first();
@@ -128,7 +140,7 @@ impl Startup {
                     Entry::Item(index) => listing
                         .and_then(|listing| listing.items.get(*index))
                         .is_some_and(|item| item.file == file),
-                    Entry::Kind(_) => false,
+                    Entry::Kind(_) | Entry::Gap => false,
                 });
                 if row.is_some() {
                     self.table.select(row);
@@ -266,6 +278,9 @@ impl Startup {
                     continue;
                 }
                 if first {
+                    if self.gaps && !rows.is_empty() {
+                        rows.push(Entry::Gap);
+                    }
                     rows.push(Entry::Kind(kind));
                     first = false;
                 }
@@ -273,6 +288,23 @@ impl Startup {
             }
         }
         rows
+    }
+
+    /// Turns the blank rows between kinds on or off, keeping the same item
+    /// selected
+    fn set_gaps(&mut self, gaps: bool) {
+        if self.gaps == gaps {
+            return;
+        }
+        let selected = self
+            .table
+            .selected()
+            .and_then(|row| self.rows().get(row).copied());
+        self.gaps = gaps;
+        if let Some(selected) = selected {
+            let row = self.rows().iter().position(|row| *row == selected);
+            self.table.select(row);
+        }
     }
 
     fn selected(&self) -> Option<&Item> {
@@ -394,6 +426,7 @@ impl Startup {
         let table_rows: Vec<Row> = rows
             .iter()
             .map(|row| match *row {
+                Entry::Gap => columns.row([Cell::from(""), Cell::from("")]),
                 Entry::Kind(kind) => columns.row([
                     Cell::from(Span::styled(kind.title(), visual::HEADING)),
                     Cell::from(""),
@@ -414,10 +447,21 @@ impl Startup {
         frame.render_stateful_widget(table, area, &mut self.table);
     }
 
-    /// The selected item's lines, with paths shortened to fit `width`
+    /// The selected item's lines, with long paths wrapped under their label
     fn details(&self, item: &Item, width: usize) -> Vec<Line<'static>> {
-        let room = width.saturating_sub(9);
-        let path = |path: &Path| Span::raw(format::shorten_path(&self.tilde(path), room));
+        let path = |label: &str, path: &Path| {
+            wrap_path(&self.tilde(path), width.saturating_sub(9).max(1))
+                .into_iter()
+                .enumerate()
+                .map(|(index, part)| {
+                    let head = if index == 0 { label } else { "" };
+                    Line::from(vec![
+                        Span::raw(format!("{head:<9}")).bold(),
+                        Span::raw(part),
+                    ])
+                })
+                .collect::<Vec<_>>()
+        };
         let mut lines = vec![field("Kind", Span::raw(kind_one(item.kind)))];
         if let Some(app) = &item.app {
             lines.push(field("App", Span::raw(app.clone())));
@@ -428,14 +472,14 @@ impl Startup {
             lines.push(field("Label", Span::raw(label.clone())));
         }
         if let Some(program) = &item.program {
-            lines.push(field("Program", path(program)));
+            lines.extend(path("Program", program));
         }
         let file_label = if item.file.extension().is_some_and(|ext| ext == "plist") {
             "Plist"
         } else {
             "Helper"
         };
-        lines.push(field(file_label, path(&item.file)));
+        lines.extend(path(file_label, &item.file));
         lines.push(field("Signed", signed(&item.signed)));
         lines.push(field(
             "Starts",
@@ -479,7 +523,7 @@ impl Startup {
     fn draw_details(&self, frame: &mut Frame, area: Rect, item: &Item) {
         let lines = self.details(item, usize::from(area.width.saturating_sub(4)));
         frame.render_widget(
-            Paragraph::new(lines).wrap(Wrap { trim: true }).block(
+            Paragraph::new(lines).wrap(Wrap { trim: false }).block(
                 visual::block()
                     .title(Line::from(format!(" {} ", item.name)).bold())
                     .padding(Padding::horizontal(1)),
@@ -514,12 +558,56 @@ impl Startup {
         login
     }
 
+    /// What `t` does, and the launch agents neet has turned off
+    fn turning(&self) -> Vec<Line<'static>> {
+        let mut lines = vec![
+            Line::from("Turning off").style(visual::HEADING),
+            Line::from(vec![
+                Span::raw("Select one of your launch agents and press "),
+                Span::raw("t").fg(visual::ACCENT).bold(),
+                Span::raw(". neet asks first, and never changes its plist."),
+            ]),
+        ];
+        let Some(listing) = self.listing() else {
+            return lines;
+        };
+        let mut off: Vec<(&str, &str)> = listing
+            .items
+            .iter()
+            .filter(|item| item.off)
+            .filter_map(|item| {
+                let saved = self.saved.get(item.label.as_deref()?)?;
+                (saved.turned == Turn::Off)
+                    .then(|| (item.name.as_str(), saved.at.get(..10).unwrap_or(&saved.at)))
+            })
+            .collect();
+        off.sort_unstable();
+        if off.is_empty() {
+            lines.push(Line::from("neet has not turned anything off."));
+        } else {
+            lines.push(Line::from("Turned off by neet, t turns each back on:"));
+            for (name, day) in off {
+                lines.push(Line::from(vec![
+                    Span::raw(format!("  {name}  ")).yellow(),
+                    Span::raw(format!("on {day}")),
+                ]));
+            }
+        }
+        lines
+    }
+
     /// How many of each kind, and how many of those run
     fn counts(&self) -> Vec<Line<'static>> {
         let mut lines = vec![Line::from("By kind").style(visual::HEADING)];
         let Some(listing) = self.listing() else {
             return lines;
         };
+        let widest = Kind::ALL
+            .iter()
+            .map(|kind| listing.items.iter().filter(|i| i.kind == *kind).count())
+            .max()
+            .unwrap_or(0)
+            .min(BAR);
         for kind in Kind::ALL {
             let items: Vec<&Item> = listing.items.iter().filter(|i| i.kind == kind).collect();
             if items.is_empty() {
@@ -529,15 +617,60 @@ impl Startup {
                 .iter()
                 .filter(|item| matches!(item.runs, Runs::Running(_)))
                 .count();
+            let off = items.iter().filter(|item| item.off).count();
+            // One cell an item, the running ones green
             let mut spans = vec![
                 Span::raw(format!("{:<30}", kind.title())).bold(),
-                Span::raw(format!("{:>3}", items.len())),
+                Span::raw(format!("{:>3} ", items.len())),
+                Span::raw("█".repeat(running.min(BAR))).green(),
+                Span::raw("█".repeat(items.len().min(BAR).saturating_sub(running)))
+                    .fg(visual::ACCENT),
+                Span::raw(" ".repeat(widest.saturating_sub(items.len().min(BAR)))),
             ];
             if running > 0 {
                 spans.push(Span::raw(" · "));
                 spans.push(Span::raw(format!("{running} running")).green());
             }
+            if off > 0 {
+                spans.push(Span::raw(" · "));
+                spans.push(Span::raw(format!("{off} off")).yellow());
+            }
             lines.push(Line::from(spans));
+        }
+        lines
+    }
+
+    /// Who signed the programs, most first
+    fn signers(&self) -> Vec<Line<'static>> {
+        let mut lines = vec![Line::from("Signed by").style(visual::HEADING)];
+        let Some(listing) = self.listing() else {
+            return lines;
+        };
+        let mut counts: HashMap<String, (usize, bool)> = HashMap::new();
+        for item in &listing.items {
+            let (name, warn) = match &item.signed {
+                Signed::Unsigned => ("not signed".to_string(), true),
+                Signed::Unknown => ("not known".to_string(), false),
+                other => (signed(other).content.into_owned(), false),
+            };
+            counts.entry(name).or_insert((0, warn)).0 += 1;
+        }
+        let mut counts: Vec<(String, (usize, bool))> = counts.into_iter().collect();
+        counts.sort_by(|a, b| b.1.0.cmp(&a.1.0).then_with(|| a.0.cmp(&b.0)));
+        let shown = counts.len().min(SIGNERS);
+        for (name, (count, warn)) in &counts[..shown] {
+            let name = format!("{:<30}", format::shorten_middle(name, 29));
+            lines.push(Line::from(vec![
+                if *warn {
+                    Span::raw(name).yellow().bold()
+                } else {
+                    Span::raw(name).bold()
+                },
+                Span::raw(format!("{count:>3}")),
+            ]));
+        }
+        if counts.len() > shown {
+            lines.push(Line::from(format!("{} more", counts.len() - shown)));
         }
         lines
     }
@@ -546,32 +679,50 @@ impl Startup {
     fn legend() -> Vec<Line<'static>> {
         vec![
             Line::from("Legend").style(visual::HEADING),
-            legend_line(Span::raw("● running").green(), "running now"),
+            legend_line(
+                Span::raw("● running").green(),
+                "running now, with a process",
+            ),
             legend_line(
                 Span::raw("○ waiting").fg(visual::ACCENT),
-                "starts when it is needed",
+                "loaded, and starts when it is needed",
             ),
-            legend_line(Span::raw("· not loaded"), "not running"),
-            legend_line(Span::raw("off").yellow(), "turned off"),
-            legend_line(Span::raw("!").yellow(), "something is wrong with it"),
+            legend_line(Span::raw("· not loaded"), "launchd does not have it now"),
+            legend_line(
+                Span::raw("off").yellow(),
+                "turned off, even after a restart",
+            ),
+            legend_line(
+                Span::raw("!").yellow().bold(),
+                "something is wrong; select it to see what",
+            ),
         ]
     }
 
-    /// The list sized to its rows, with the legend below it when there is
-    /// room
+    /// The list sized to its rows, with the counts and the legend below it
+    /// when there is room
     fn draw_list(&mut self, frame: &mut Frame, area: Rect) {
-        let rows = u16::try_from(self.rows().len()).unwrap_or(u16::MAX).max(3);
-        let table_height = rows.saturating_add(2);
-        let legend = Self::legend();
-        let legend_height = u16::try_from(legend.len()).unwrap_or(u16::MAX) + 2;
-        if area.height < table_height + legend_height {
+        let counts = self.counts();
+        let counts_height = u16::try_from(counts.len()).unwrap_or(u16::MAX) + 1;
+        let height = |screen: &Self| {
+            u16::try_from(screen.rows().len())
+                .unwrap_or(u16::MAX)
+                .max(3)
+                .saturating_add(2)
+        };
+        self.set_gaps(true);
+        if area.height < height(self) + counts_height {
+            self.set_gaps(false);
+        }
+        let table_height = height(self);
+        if area.height < table_height + counts_height {
             self.draw_table(frame, area);
             return;
         }
         let [table, below] =
             Layout::vertical([Constraint::Length(table_height), Constraint::Fill(1)]).areas(area);
         self.draw_table(frame, table);
-        visual::sections(frame, below, "", vec![legend]);
+        visual::sections(frame, below, "", vec![counts, self.signers()]);
     }
 
     fn draw_body(&mut self, frame: &mut Frame, body: Rect) {
@@ -581,7 +732,7 @@ impl Startup {
             let [list, side] =
                 Layout::horizontal([Constraint::Length(width), Constraint::Fill(1)]).areas(body);
             self.draw_list(frame, list);
-            let about = vec![self.about(), self.counts()];
+            let about = vec![self.about(), self.turning(), Self::legend()];
             match selected {
                 Some(item) => {
                     let lines = self.details(&item, usize::from(side.width.saturating_sub(4)));
@@ -696,6 +847,28 @@ fn signed(signed: &Signed) -> Span<'static> {
         Signed::Unsigned => Span::raw("not signed").yellow(),
         Signed::Unknown => Span::raw("not known"),
     }
+}
+
+/// `path` in lines of at most `width` characters, broken after a `/`, and
+/// inside a name only when the name alone is too long
+fn wrap_path(path: &str, width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    for part in path.split_inclusive('/') {
+        let fits = current.chars().count() + part.chars().count() <= width;
+        if !fits && !current.is_empty() {
+            lines.push(std::mem::take(&mut current));
+        }
+        let mut part: Vec<char> = part.chars().collect();
+        while part.len() > width {
+            lines.push(part.drain(..width).collect());
+        }
+        current.extend(part);
+    }
+    if !current.is_empty() || lines.is_empty() {
+        lines.push(current);
+    }
+    lines
 }
 
 fn field(label: &str, value: Span<'static>) -> Line<'static> {
@@ -902,7 +1075,7 @@ mod tests {
         assert!(text.contains("3 more belong to macOS"));
         assert!(text.contains("o opens them in System Settings"));
         assert!(
-            text.contains("Launch daemons                  1 · 1 running"),
+            text.contains("Launch daemons                  1 █  · 1 running"),
             "{text}"
         );
     }
@@ -985,6 +1158,16 @@ mod tests {
         press(&mut screen, KeyCode::Char('t'));
         let text = render(&mut screen, 140, 40);
         assert!(text.contains("could not be read"), "{text}");
+    }
+
+    #[test]
+    fn long_paths_wrap_after_a_slash() {
+        assert_eq!(
+            wrap_path("/Applications/Docker.app/Contents/Library", 20),
+            ["/Applications/", "Docker.app/Contents/", "Library"]
+        );
+        assert_eq!(wrap_path("/abcdefghij", 4), ["/", "abcd", "efgh", "ij"]);
+        assert_eq!(wrap_path("", 4), [""]);
     }
 
     #[test]
