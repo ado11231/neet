@@ -1,22 +1,26 @@
 //! Startup: programs that start on their own, grouped by kind, with whether
-//! each runs, is turned off, and who signed it. View only.
+//! each runs, is turned off, and who signed it. `t` turns your own launch
+//! agents off and back on, after a question; everything else is view only.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::Instant;
 
+use neet_core::startup::turn::{self, Asked, Saved, Turn};
 use neet_core::startup::{self, Item, Kind, Listing, Runs, Signed};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::Stylize;
+use ratatui::style::{Color, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Cell, Padding, Paragraph, Row, Table, TableState, Wrap};
 
 use super::app::{Action, Context, Screen};
 use super::format;
 use super::loading::Loading;
+use super::tools;
 use super::visual::{self, Columns};
 
 /// From this width the selected item shows on the right.
@@ -44,11 +48,26 @@ enum State {
     Ready(Listing),
 }
 
-/// Lists programs that start on their own. Changes nothing.
+/// News after `t`, until a key is pressed
+struct Note {
+    title: &'static str,
+    lines: Vec<Line<'static>>,
+    color: Color,
+}
+
+/// Lists programs that start on their own, and turns your own launch agents
+/// off and back on.
 pub struct Startup {
     home: PathBuf,
     state: State,
     table: TableState,
+    /// What neet saved before it last turned each of your launch agents
+    saved: HashMap<String, Saved>,
+    /// `t`: the launch agent to turn, waiting for `y`
+    asked: Option<Asked>,
+    note: Option<Note>,
+    /// The item to select again once the list is read again
+    reselect: Option<PathBuf>,
 }
 
 impl Startup {
@@ -60,6 +79,10 @@ impl Startup {
             home,
             state: State::Ready(Listing::default()),
             table: TableState::default(),
+            saved: HashMap::new(),
+            asked: None,
+            note: None,
+            reselect: None,
         };
         screen.look();
         screen
@@ -71,7 +94,12 @@ impl Startup {
             home,
             state: State::Ready(listing),
             table: TableState::default(),
+            saved: HashMap::new(),
+            asked: None,
+            note: None,
+            reselect: None,
         };
+        screen.read_saved();
         screen.select_first();
         screen
     }
@@ -92,8 +120,130 @@ impl Startup {
             && let Ok(listing) = receiver.try_recv()
         {
             self.state = State::Ready(listing);
+            self.read_saved();
             self.select_first();
+            if let Some(file) = self.reselect.take() {
+                let listing = self.listing();
+                let row = self.rows().iter().position(|row| match row {
+                    Entry::Item(index) => listing
+                        .and_then(|listing| listing.items.get(*index))
+                        .is_some_and(|item| item.file == file),
+                    Entry::Kind(_) => false,
+                });
+                if row.is_some() {
+                    self.table.select(row);
+                }
+            }
         }
+    }
+
+    /// Reads what neet saved before turning each of your launch agents
+    fn read_saved(&mut self) {
+        let Some(listing) = self.listing() else {
+            return;
+        };
+        let saved = listing
+            .items
+            .iter()
+            .filter(|item| item.kind == Kind::YourAgent)
+            .filter_map(|item| item.label.as_deref())
+            .filter_map(|label| Some((label.to_string(), turn::saved(&self.home, label)?)))
+            .collect();
+        self.saved = saved;
+    }
+
+    /// `t`: the question, or why the selected item cannot be turned
+    fn ask_turn(&mut self) {
+        let Some(item) = self.selected() else {
+            return;
+        };
+        let refused = if item.kind == Kind::YourAgent {
+            match turn::ask(item, &self.home) {
+                Ok(asked) => {
+                    self.asked = Some(asked);
+                    return;
+                }
+                Err(reason) => reason,
+            }
+        } else {
+            view_only(item.kind).to_string()
+        };
+        self.note = Some(Note {
+            title: "Startup",
+            lines: vec![Line::from(refused)],
+            color: Color::Yellow,
+        });
+    }
+
+    /// `y`: turns the asked item, then reads the list again
+    fn turn(&mut self) {
+        let Some(asked) = self.asked.take() else {
+            return;
+        };
+        let (title, done) = match asked.turn {
+            Turn::Off => (
+                "Turned off",
+                "It won't start again, even after a restart, until you turn it back on. Its plist is as it was.",
+            ),
+            Turn::On => (
+                "Turned back on",
+                "launchd has it again, and starts it as its plist says.",
+            ),
+        };
+        self.note = Some(match asked.apply(&self.home) {
+            Ok(()) => Note {
+                title,
+                lines: vec![
+                    Line::from(vec![
+                        Span::raw("✓ ").green().bold(),
+                        Span::raw(asked.label.clone()).bold(),
+                    ]),
+                    Line::default(),
+                    Line::from(done),
+                ],
+                color: Color::Green,
+            },
+            Err(reason) => Note {
+                title: "Not changed",
+                lines: vec![Line::from(vec![
+                    Span::raw("✗ ").red().bold(),
+                    Span::raw(reason).red(),
+                ])],
+                color: Color::Red,
+            },
+        });
+        self.reselect = Some(asked.plist.clone());
+        self.look();
+    }
+
+    /// The question before `y`
+    fn question(&self, asked: &Asked) -> Vec<Line<'static>> {
+        let room = 60;
+        let path = |path: &Path| Span::raw(format::shorten_path(&self.tilde(path), room));
+        let (verb, what) = match asked.turn {
+            Turn::Off => (
+                "Turn off",
+                "launchctl turns it off, and stops it now if it runs. It stays off after a restart, until you turn it back on.",
+            ),
+            Turn::On => (
+                "Turn back on",
+                "launchctl turns it on and loads it, so it runs as its plist says.",
+            ),
+        };
+        let mut lines = vec![
+            Line::from(format!("{verb} {}?", asked.label)).bold(),
+            Line::default(),
+        ];
+        if let Some(program) = &asked.program {
+            lines.push(field("Program", path(program)));
+        }
+        lines.push(field("Plist", path(&asked.plist)));
+        lines.push(Line::default());
+        lines.push(Line::from(what));
+        lines.push(Line::from(
+            "The plist is not changed. The state before is saved in ~/.local/state/neet/startup.",
+        ));
+        lines
     }
 
     fn listing(&self) -> Option<&Listing> {
@@ -296,11 +446,33 @@ impl Startup {
             }),
         ));
         lines.push(field("Now", now(item)));
+        if let Some(saved) = item.label.as_ref().and_then(|label| self.saved.get(label)) {
+            let day = saved.at.get(..10).unwrap_or(&saved.at);
+            let turned = match saved.turned {
+                Turn::Off => "off",
+                Turn::On => "back on",
+            };
+            lines.push(field(
+                "Changed",
+                Span::raw(format!("neet turned it {turned} on {day}")),
+            ));
+        }
         lines.push(Line::default());
         if let Some(problem) = &item.problem {
             lines.push(Line::from(format!("! {problem}")).yellow());
         }
-        lines.push(Line::from(view_only(item.kind)));
+        lines.push(match item.kind {
+            Kind::YourAgent => Line::from(vec![
+                Span::raw("Press "),
+                Span::raw("t").fg(visual::ACCENT).bold(),
+                Span::raw(if item.off {
+                    " to turn it back on."
+                } else {
+                    " to turn it off. Its plist stays as it is."
+                }),
+            ]),
+            kind => Line::from(view_only(kind)),
+        });
         lines
     }
 
@@ -474,7 +646,7 @@ fn view_only(kind: Kind) -> &'static str {
         Kind::Background => {
             "View only. Press o to turn it off in System Settings, under Allow in the Background."
         }
-        Kind::YourAgent => "View only for now. Turning it off comes in a later version.",
+        Kind::YourAgent => "Press t to turn it off, or back on.",
         Kind::AgentForAll | Kind::Daemon => {
             "View only. An admin set it up for every user, sometimes to manage this Mac."
         }
@@ -556,13 +728,37 @@ impl Screen for Startup {
             Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(area);
         self.draw_top(frame, top);
         self.draw_body(frame, body);
+        if let Some(asked) = &self.asked {
+            let (title, yes, color) = match asked.turn {
+                Turn::Off => ("Turn off", "turn it off", Color::Yellow),
+                Turn::On => ("Turn back on", "turn it on", visual::ACCENT),
+            };
+            tools::ask(frame, area, title, self.question(asked), yes, color);
+        } else if let Some(note) = &self.note {
+            let mut lines = note.lines.clone();
+            lines.push(Line::default());
+            lines.push(Line::from("Press any key to go on."));
+            tools::message(frame, area, note.title, lines, note.color);
+        }
     }
 
     fn handle_key(&mut self, key: KeyEvent, _context: &Context) -> Action {
         if self.listing().is_none() {
             return Action::None;
         }
+        if self.asked.is_some() {
+            match key.code {
+                KeyCode::Char('y') => self.turn(),
+                KeyCode::Char('n') => self.asked = None,
+                _ => {}
+            }
+            return Action::None;
+        }
+        if self.note.take().is_some() {
+            return Action::None;
+        }
         match key.code {
+            KeyCode::Char('t') => self.ask_turn(),
             KeyCode::Up | KeyCode::Char('k') => self.step(false),
             KeyCode::Down | KeyCode::Char('j') => self.step(true),
             KeyCode::Char('g') | KeyCode::Home => self.jump(false),
@@ -575,14 +771,36 @@ impl Screen for Startup {
         Action::None
     }
 
+    fn back(&mut self) -> Action {
+        if self.asked.take().is_some() || self.note.take().is_some() {
+            return Action::None;
+        }
+        Action::Back
+    }
+
+    fn is_dialog(&self) -> bool {
+        self.asked.is_some() || self.note.is_some()
+    }
+
     fn hints(&self) -> &'static str {
-        "↑↓ move · o login items · f show in Finder · r look again · esc home · ? help"
+        if self.asked.is_some() {
+            "y go ahead · n or esc go back"
+        } else if self.note.is_some() {
+            "any key go on"
+        } else {
+            "↑↓ move · t turn off or on · o login items · f show in Finder · r look again · esc home · ? help"
+        }
     }
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
         &[
             ("↑↓", "Move between programs"),
             ("g G", "First or last program"),
+            (
+                "t",
+                "Turn your own launch agent off, or back on, after a question",
+            ),
+            ("y", "In the question: go ahead"),
             ("o", "Open Login Items in System Settings"),
             ("f", "Show the selected plist or helper in Finder"),
             ("r", "Look again"),
@@ -709,12 +927,64 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("! Its plist is empty"), "{text}");
-        assert!(text.contains("Turning it off comes in a later version"));
+        assert!(
+            text.contains("Press t to turn it off. Its plist stays"),
+            "{text}"
+        );
 
         press(&mut screen, KeyCode::Char('G'));
         let text = render(&mut screen, 140, 40);
         assert!(text.contains("when the Mac starts"), "{text}");
         assert!(text.contains("An admin set it up for every user"));
+    }
+
+    #[test]
+    fn t_asks_first_and_n_goes_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = std::fs::canonicalize(dir.path()).unwrap();
+        let agents = home.join("Library/LaunchAgents");
+        std::fs::create_dir_all(&agents).unwrap();
+        let mut listing = sample();
+        let agent = &mut listing.items[1];
+        agent.file = agents.join("com.google.GoogleUpdater.wake.plist");
+        std::fs::write(&agent.file, "<plist/>").unwrap();
+        let mut screen = Startup::from_listing(home, listing);
+        press(&mut screen, KeyCode::Down);
+        press(&mut screen, KeyCode::Char('t'));
+        assert!(screen.is_dialog());
+        let text = render(&mut screen, 140, 40);
+        assert!(
+            text.contains("Turn off com.google.GoogleUpdater.wake?"),
+            "{text}"
+        );
+        assert!(
+            text.contains("Plist    ~/Library/LaunchAgents/com.google.GoogleUpdater.wake.plist"),
+            "{text}"
+        );
+        assert!(text.contains("stops it now if it runs"), "{text}");
+        assert!(text.contains("y turn it off"), "{text}");
+        press(&mut screen, KeyCode::Char('n'));
+        assert!(!screen.is_dialog());
+        assert!(!render(&mut screen, 140, 40).contains("Turn off com.google"));
+    }
+
+    #[test]
+    fn t_says_why_other_items_stay_as_they_are() {
+        let mut screen = Startup::from_listing(PathBuf::from("/home"), sample());
+        press(&mut screen, KeyCode::Char('G'));
+        press(&mut screen, KeyCode::Char('t'));
+        let text = render(&mut screen, 140, 40);
+        assert!(text.contains("An admin set it up for every user"), "{text}");
+        assert!(text.contains("Press any key to go on"), "{text}");
+        press(&mut screen, KeyCode::Char('x'));
+        assert!(!screen.is_dialog());
+
+        // Your agent whose plist is not there any more is refused, not asked.
+        press(&mut screen, KeyCode::Char('g'));
+        press(&mut screen, KeyCode::Down);
+        press(&mut screen, KeyCode::Char('t'));
+        let text = render(&mut screen, 140, 40);
+        assert!(text.contains("could not be read"), "{text}");
     }
 
     #[test]
