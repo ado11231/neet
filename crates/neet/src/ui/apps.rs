@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
+use std::sync::{LazyLock, Mutex};
 use std::thread;
 use std::time::Instant;
 
@@ -59,6 +60,77 @@ fn refusal_text(refusal: Refusal) -> &'static str {
 /// From this many spare rows under a list, the boxes go below it
 const BOXES: u16 = 8;
 
+/// How many apps are measured at once
+const MEASURERS: usize = 4;
+
+/// Where measuring one app is
+#[derive(Clone, Copy)]
+enum Measured {
+    Waiting,
+    Size(u64),
+    /// It could not be read.
+    Failed,
+}
+
+/// Each app's size, by path, kept while neet runs
+static SIZES: LazyLock<Mutex<HashMap<PathBuf, Measured>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn sizes() -> std::sync::MutexGuard<'static, HashMap<PathBuf, Measured>> {
+    SIZES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Starts measuring, in the background, every app in `paths` that is not
+/// measured or being measured yet, several at once. Sizes are kept while
+/// neet runs, so Remove App opens with them.
+pub fn measure(paths: Vec<PathBuf>) {
+    let queue: Vec<PathBuf> = {
+        let mut sizes = sizes();
+        paths
+            .into_iter()
+            .filter(|path| {
+                let new = !sizes.contains_key(path);
+                if new {
+                    sizes.insert(path.clone(), Measured::Waiting);
+                }
+                new
+            })
+            .collect()
+    };
+    let queue = Arc::new(Mutex::new(queue));
+    for _ in 0..MEASURERS {
+        let queue = Arc::clone(&queue);
+        thread::spawn(move || {
+            loop {
+                let next = queue
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .pop();
+                let Some(path) = next else { return };
+                let measured = removal::app_size(&path).map_or(Measured::Failed, Measured::Size);
+                sizes().insert(path, measured);
+            }
+        });
+    }
+}
+
+/// Measures the apps in the Applications folders when neet starts, so Remove
+/// App has their sizes when it opens
+pub fn measure_at_start(home: PathBuf) {
+    thread::spawn(move || {
+        if let Ok(roots) = CleanupRoots::new(&home) {
+            measure(
+                removal::list_apps(&roots)
+                    .into_iter()
+                    .map(|app| app.path)
+                    .collect(),
+            );
+        }
+    });
+}
+
 /// The apps in the Applications folders, each with its size, measured in the
 /// background. Apps neet will not remove are dimmed with the reason.
 pub struct RemoveApp {
@@ -66,7 +138,8 @@ pub struct RemoveApp {
     apps: Vec<App>,
     /// Each app's size, by path, as it is measured
     sizes: HashMap<PathBuf, u64>,
-    measuring: Option<Receiver<(PathBuf, Option<u64>)>>,
+    /// Whether some of the apps are still being measured
+    measuring: bool,
     /// Largest first, instead of by name
     by_size: bool,
     list: TableState,
@@ -87,15 +160,17 @@ impl RemoveApp {
         match roots {
             Ok(roots) => {
                 let apps = removal::list_apps(&roots);
+                measure(apps.iter().map(|app| app.path.clone()).collect());
                 let mut screen = Self::from_apps(roots, apps, apps::is_running);
-                screen.measure();
+                screen.measuring = true;
+                screen.poll();
                 screen
             }
             Err(reason) => Self {
                 roots: None,
                 apps: Vec::new(),
                 sizes: HashMap::new(),
-                measuring: None,
+                measuring: false,
                 by_size: false,
                 list: TableState::default(),
                 is_running: apps::is_running,
@@ -112,7 +187,7 @@ impl RemoveApp {
             roots: Some(roots),
             apps,
             sizes: HashMap::new(),
-            measuring: None,
+            measuring: false,
             by_size: false,
             list: TableState::default().with_selected(Some(0)),
             is_running,
@@ -121,40 +196,27 @@ impl RemoveApp {
         }
     }
 
-    /// Measures every app on its own thread, one after another
-    fn measure(&mut self) {
-        let (sender, sizes) = mpsc::channel();
-        let paths: Vec<PathBuf> = self.apps.iter().map(|app| app.path.clone()).collect();
-        thread::spawn(move || {
-            for path in paths {
-                let size = removal::app_size(&path);
-                // The receiver is gone only when the screen was closed.
-                if sender.send((path, size)).is_err() {
-                    return;
-                }
-            }
-        });
-        self.measuring = Some(sizes);
-    }
-
+    /// Picks up the sizes measured so far
     fn poll(&mut self) {
-        let Some(sizes) = &self.measuring else {
+        if !self.measuring {
             return;
-        };
-        loop {
-            match sizes.try_recv() {
-                Ok((path, Some(size))) => {
-                    self.sizes.insert(path, size);
+        }
+        let sizes = sizes();
+        let mut waiting = false;
+        for app in &self.apps {
+            match sizes.get(&app.path) {
+                Some(Measured::Size(size)) => {
+                    self.sizes.insert(app.path.clone(), *size);
                 }
-                Ok((_, None)) => {}
-                Err(mpsc::TryRecvError::Empty) => return,
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    self.measuring = None;
-                    if self.by_size {
-                        self.sort();
-                    }
-                    return;
-                }
+                Some(Measured::Failed) => {}
+                Some(Measured::Waiting) | None => waiting = true,
+            }
+        }
+        drop(sizes);
+        if !waiting {
+            self.measuring = false;
+            if self.by_size {
+                self.sort();
             }
         }
     }
@@ -230,9 +292,7 @@ impl RemoveApp {
                 format::size_span(size, format::size(size)),
                 size_bar(size, largest, APP_BAR),
             ),
-            None if self.measuring.is_some() => {
-                (Span::raw("…").fg(super::visual::ACCENT), Span::raw(""))
-            }
+            None if self.measuring => (Span::raw("…").fg(super::visual::ACCENT), Span::raw("")),
             None => (Span::raw(""), Span::raw("")),
         };
         match app.refused {
@@ -267,7 +327,7 @@ impl RemoveApp {
     fn app_lines(&self, app: &App, width: usize) -> Vec<Line<'static>> {
         let size = match self.sizes.get(&app.path) {
             Some(&size) => format::size_span(size, format::size(size)),
-            None if self.measuring.is_some() => Span::raw("measuring…"),
+            None if self.measuring => Span::raw("measuring…"),
             None => Span::raw("unknown"),
         };
         let open = app.bundle_id.as_deref().is_some_and(self.is_running);
@@ -370,7 +430,7 @@ impl RemoveApp {
             .sum();
         let blocked = self.apps.len() - removable.len();
         let mut size = vec![format::size_span(size, format::size(size)).bold()];
-        if self.measuring.is_some() {
+        if self.measuring {
             size.push(Span::raw(" so far"));
         }
         let mut lines = vec![
@@ -580,7 +640,7 @@ impl Screen for RemoveApp {
                 Cell::from("App ID"),
             ])
             .style(super::visual::HEADING);
-        let measuring = if self.measuring.is_some() {
+        let measuring = if self.measuring {
             " · measuring…"
         } else {
             ""
@@ -1191,6 +1251,46 @@ mod tests {
         assert!(text.contains("Example"));
         assert!(text.contains("com.example.app"));
         assert!(text.contains("part of macOS"));
+    }
+
+    #[test]
+    fn opens_with_sizes_measured_before() {
+        let (_home, _shared, roots, apps) = setup();
+        let path = apps[0].path.clone();
+        for app in &apps {
+            sizes().insert(app.path.clone(), Measured::Failed);
+        }
+        sizes().insert(path.clone(), Measured::Size(3_000_000_000));
+        let mut screen = RemoveApp::from_apps(roots, apps, |_| false);
+        screen.measuring = true;
+        screen.poll();
+        assert_eq!(screen.sizes.get(&path), Some(&3_000_000_000));
+        assert!(!screen.measuring, "nothing is left to measure");
+        let text = render(&mut screen);
+        assert!(text.contains("3.0 GB"), "{text}");
+        assert!(!text.contains("measuring"), "{text}");
+    }
+
+    #[test]
+    fn measures_each_app_once_in_the_background() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = dir.path().join("Once.app");
+        std::fs::create_dir_all(app.join("Contents")).unwrap();
+        std::fs::write(app.join("Contents/x"), vec![0u8; 10_000]).unwrap();
+        measure(vec![app.clone()]);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while matches!(sizes().get(&app), Some(Measured::Waiting)) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "measuring took too long"
+            );
+            thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(matches!(sizes().get(&app), Some(Measured::Size(size)) if *size >= 10_000));
+        // Asked again, it is kept, not measured again.
+        sizes().insert(app.clone(), Measured::Size(1));
+        measure(vec![app.clone()]);
+        assert!(matches!(sizes().get(&app), Some(Measured::Size(1))));
     }
 
     #[test]

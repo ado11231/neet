@@ -175,6 +175,9 @@ impl App {
     /// `disk_root` is the home folder: the disk to show in the gauge, and
     /// where Clean looks.
     pub fn new(scan: ScanTask, disk_root: Option<PathBuf>) -> Self {
+        if let Some(home) = &disk_root {
+            super::apps::measure_at_start(home.clone());
+        }
         Self {
             stack: vec![Box::new(Home::new())],
             scan,
