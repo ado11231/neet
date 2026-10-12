@@ -149,9 +149,13 @@ fn ensure_closed(path: &Path) -> io::Result<()> {
     }
     let mut command = Command::new("/usr/sbin/lsof");
     command.args(["-n", "-P", "-F", "p", "--"]).arg(path);
-    match crate::run::capture(&mut command, Duration::from_secs(5))? {
+    check_open_result(crate::run::capture(&mut command, Duration::from_secs(5))?)
+}
+
+fn check_open_result(output: Option<crate::run::Captured>) -> io::Result<()> {
+    match output {
         Some(output)
-            if !output.success
+            if output.code == Some(1)
                 && output.stderr.trim().is_empty()
                 && output.stdout.trim().is_empty() =>
         {

@@ -250,6 +250,7 @@ mod tests {
     fn ok() -> Captured {
         Captured {
             success: true,
+            code: Some(0),
             stdout: String::new(),
             stderr: String::new(),
         }
@@ -258,6 +259,7 @@ mod tests {
     fn failed(stderr: &str) -> Captured {
         Captured {
             success: false,
+            code: Some(1),
             stdout: String::new(),
             stderr: stderr.to_string(),
         }

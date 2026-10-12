@@ -117,3 +117,21 @@ fn recently_written_files_are_skipped_without_running_finder() {
     assert!(error.to_string().contains("Recently updated"));
     assert!(item.path.exists());
 }
+
+#[test]
+fn only_a_clean_lsof_exit_one_means_the_file_is_closed() {
+    let result = |code, stderr: &str| {
+        Some(crate::run::Captured {
+            success: code == Some(0),
+            code,
+            stdout: String::new(),
+            stderr: stderr.into(),
+        })
+    };
+    assert!(check_open_result(result(Some(1), "")).is_ok());
+    assert!(check_open_result(result(Some(0), "")).is_err());
+    assert!(check_open_result(result(Some(2), "")).is_err());
+    assert!(check_open_result(result(None, "")).is_err());
+    assert!(check_open_result(result(Some(1), "permission denied")).is_err());
+    assert!(check_open_result(None).is_err());
+}
