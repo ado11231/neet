@@ -1,6 +1,7 @@
 //! Local assistant files, conversation summaries, and skill changes.
 
 mod chat;
+pub mod remove;
 pub mod skills;
 pub mod summary;
 
