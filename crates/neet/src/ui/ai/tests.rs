@@ -298,3 +298,33 @@ fn chats_show_titles_and_missing_projects_and_search_both() {
     press(&mut screen, KeyCode::Enter);
     assert!(render(&mut screen, 100, 30).contains("Fix the checkout button"));
 }
+
+#[test]
+fn chat_selection_follows_paths_and_select_all_respects_filters() {
+    let (_dir, mut screen) = setup();
+    write(
+        &screen.locations.codex.join("sessions/rollout-other.jsonl"),
+        "{}",
+    );
+    press(&mut screen, KeyCode::Tab);
+    finish_refresh(&mut screen);
+    assert!(screen.marked.is_empty());
+    press(&mut screen, KeyCode::Char('a'));
+    assert_eq!(screen.marked.len(), 2);
+    assert!(render(&mut screen, 100, 30).contains("[x] A private chat"));
+    screen.provider = Some(Provider::Claude);
+    assert!(render(&mut screen, 80, 24).contains("2 selected · 1 hidden"));
+    press(&mut screen, KeyCode::Char('a'));
+    assert_eq!(screen.marked.len(), 1);
+    let selected = screen.marked.clone();
+    screen.refresh();
+    finish_refresh(&mut screen);
+    assert_eq!(screen.marked, selected);
+    press(&mut screen, KeyCode::Char(' '));
+    assert_eq!(screen.marked.len(), 2);
+    press(&mut screen, KeyCode::Char('n'));
+    assert!(screen.marked.is_empty());
+    press(&mut screen, KeyCode::Tab);
+    press(&mut screen, KeyCode::Char('a'));
+    assert!(screen.marked.is_empty());
+}

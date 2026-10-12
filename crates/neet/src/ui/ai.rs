@@ -1,5 +1,6 @@
 //! Browse local assistant files and review skill changes.
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
@@ -78,6 +79,7 @@ pub struct AiTools {
     pending: Option<Receiver<Listing>>,
     list: ListState,
     reselect: Option<PathBuf>,
+    marked: BTreeSet<PathBuf>,
     tab: usize,
     filter: String,
     provider: Option<Provider>,
@@ -110,6 +112,7 @@ impl AiTools {
             pending: None,
             list: ListState::default().with_selected(Some(0)),
             reselect: None,
+            marked: BTreeSet::new(),
             tab: 0,
             filter: String::new(),
             provider: None,
@@ -148,6 +151,12 @@ impl AiTools {
         match receiver.try_recv() {
             Ok(listing) => {
                 self.listing = listing;
+                self.marked.retain(|path| {
+                    self.listing
+                        .items
+                        .iter()
+                        .any(|item| item.kind == Kind::Chat && &item.path == path)
+                });
                 self.pending = None;
                 let selected = self
                     .reselect
@@ -203,6 +212,31 @@ impl AiTools {
         self.rows()
             .get(self.list.selected().unwrap_or(0))
             .map(|item| (*item).clone())
+    }
+
+    fn toggle_chat(&mut self) {
+        if let Some(item) = self.selected().filter(|item| item.kind == Kind::Chat)
+            && !self.marked.remove(&item.path)
+        {
+            self.marked.insert(item.path);
+        }
+    }
+
+    fn toggle_all_chats(&mut self) {
+        let paths: Vec<_> = self
+            .rows()
+            .iter()
+            .filter(|item| item.kind == Kind::Chat)
+            .map(|item| item.path.clone())
+            .collect();
+        let clear = paths.iter().all(|path| self.marked.contains(path));
+        for path in paths {
+            if clear {
+                self.marked.remove(&path);
+            } else {
+                self.marked.insert(path);
+            }
+        }
     }
 
     fn change_tab(&mut self, tab: usize) {
@@ -457,9 +491,18 @@ impl AiTools {
                     .chat
                     .as_ref()
                     .map_or_else(|| self.shown_path(path), |chat| chat.project_label());
+                let marker = if item.kind == Kind::Chat {
+                    if self.marked.contains(&item.path) {
+                        "[x] "
+                    } else {
+                        "[ ] "
+                    }
+                } else {
+                    ""
+                };
                 ListItem::new(vec![
                     Line::from(format::shorten_middle(
-                        &ai::display_text(&format!("{} · {}", title, item.provider.name()))
+                        &ai::display_text(&format!("{marker}{} · {}", title, item.provider.name()))
                             .replace('\n', " "),
                         usize::from(area.width.saturating_sub(6)),
                     ))
@@ -538,6 +581,18 @@ impl AiTools {
                 self.listing.warnings.len()
             )))],
         };
+        if self.tab == 1 && self.input.is_none() {
+            let visible = self
+                .rows()
+                .iter()
+                .filter(|item| self.marked.contains(&item.path))
+                .count();
+            let hidden = self.marked.len().saturating_sub(visible);
+            lines.push(Line::from(format!(
+                "{} selected · {hidden} hidden by filters",
+                self.marked.len()
+            )));
+        }
         if !self.note.is_empty() {
             lines.extend(
                 ai::display_text(&self.note)
@@ -723,6 +778,9 @@ impl Screen for AiTools {
                 };
                 self.list.select(Some(0));
             }
+            KeyCode::Char(' ') if self.tab == 1 => self.toggle_chat(),
+            KeyCode::Char('a') if self.tab == 1 => self.toggle_all_chats(),
+            KeyCode::Char('n') if self.tab == 1 => self.marked.clear(),
             KeyCode::Char('/') => self.input = Some(Input::Search),
             KeyCode::Char('i') => {
                 self.input = Some(Input::Install {
@@ -809,6 +867,8 @@ impl Screen for AiTools {
             "↑↓ scroll · PgUp/PgDn page · o Finder · Esc back · ? help · q quit"
         } else if self.viewer.is_some() {
             "↑↓ scroll · PgUp/PgDn page · Esc back · ? help · q quit"
+        } else if self.tab == 1 {
+            "↑↓ move · Enter read · Space select · a all shown · n clear · / find · p tool · Tab section · ? help · Esc back"
         } else if self.tab == 2 {
             "↑↓ move · Tab section · Enter read · i link skill · e edit · b restore · / find · p tool · ? help · Esc back"
         } else {
@@ -828,6 +888,8 @@ impl Screen for AiTools {
                 "Find by path, tool, or project. Esc clears the filter.",
             ),
             ("Enter", "Read the selected file or conversation locally."),
+            ("Space", "Select or deselect a chat."),
+            ("a / n", "Select all shown chats / clear every selection."),
             (
                 "i",
                 "Link a local skill folder. Tab picks Claude, Codex, or Gemini.",
