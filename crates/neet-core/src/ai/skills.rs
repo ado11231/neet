@@ -55,8 +55,12 @@ fn open_skill(home: &Path, path: &Path) -> io::Result<Opened> {
     if truncated {
         return Err(invalid("SKILL.md exceeds 1 MiB"));
     }
-    validate(&bytes)?;
-    Opened::open(path)
+    std::str::from_utf8(&bytes).map_err(|_| invalid("SKILL.md must be UTF-8 text"))?;
+    let opened = Opened::open(path)?;
+    if opened.contents() != bytes {
+        return Err(invalid("the skill changed while opening it; try again"));
+    }
+    Ok(opened)
 }
 
 /// Makes private state folders without following directory links.
@@ -101,6 +105,7 @@ impl Install {
     pub fn prepare(locations: &Locations, source: &Path, provider: Provider) -> io::Result<Self> {
         let source = checked_path(&locations.home, source)?;
         let opened = open_skill(&locations.home, &source.join("SKILL.md"))?;
+        validate(opened.contents())?;
         let name = source
             .file_name()
             .and_then(|name| name.to_str())
@@ -214,7 +219,7 @@ impl Edit {
     /// Edits a private copy, leaving the installed skill alone until review.
     ///
     /// # Errors
-    /// Rejects bundled skills, escaped paths, and invalid or oversized skill files.
+    /// Rejects bundled skills, escaped paths, and nontext or oversized skill files.
     pub fn begin(locations: &Locations, item: &Item) -> io::Result<Self> {
         if item.kind != Kind::Skill || item.bundled {
             return Err(invalid("only your own SKILL.md files can be edited"));

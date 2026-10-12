@@ -207,9 +207,6 @@ struct Scanner<'a> {
 
 impl Scanner<'_> {
     fn add(&mut self, path: PathBuf, provider: Provider, kind: Kind, scope: &str, bundled: bool) {
-        if self.visited >= MAX_ENTRIES {
-            return;
-        }
         if fs::symlink_metadata(&path).is_ok_and(|meta| meta.file_type().is_symlink()) {
             self.listing
                 .warnings
@@ -265,6 +262,9 @@ impl Scanner<'_> {
 
     fn walk_skills(&mut self, root: &Path, provider: Provider, scope: &str) {
         for folder in self.children(root) {
+            if fs::symlink_metadata(&folder).is_ok_and(|meta| meta.is_file()) {
+                continue;
+            }
             let bundled = folder.file_name().is_some_and(|name| name == ".system");
             if bundled {
                 for system in self.children(&folder) {

@@ -55,7 +55,7 @@ fn tabs_filter_and_chat_preview_work_at_all_sizes() {
         let text = render(&mut screen, width, height);
         assert!(text.contains("AI Tools"));
         assert!(text.contains("config.toml"));
-        assert!(text.contains("▸ Codex"), "{text}");
+        assert!(text.contains("▸ config.toml"), "{text}");
         assert!(!text.contains("A private chat"));
     }
     press(&mut screen, KeyCode::Tab);
@@ -72,6 +72,8 @@ fn tabs_filter_and_chat_preview_work_at_all_sizes() {
     assert!(screen.takes_text());
     assert!(screen.rows().is_empty());
     screen.back();
+    assert_eq!(screen.rows().len(), 1);
+    screen.filter = "~/.claude/skills".into();
     assert_eq!(screen.rows().len(), 1);
 }
 
@@ -111,5 +113,161 @@ fn loading_requires_review_and_keeps_other_skill_files() {
     assert!(!target.exists());
     press(&mut screen, KeyCode::Char('y'));
     assert!(target.join("references/readme.md").exists());
-    assert!(screen.note.contains("Skill loaded"));
+    assert!(screen.note.contains("Skill linked"));
+    finish_refresh(&mut screen);
+    assert_eq!(screen.tab, 2);
+    assert_eq!(screen.provider, Some(Provider::Codex));
+    assert_eq!(screen.selected().unwrap().path, target.join("SKILL.md"));
+}
+
+fn finish_refresh(screen: &mut AiTools) {
+    let listing = screen
+        .pending
+        .take()
+        .unwrap()
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .unwrap();
+    let (sender, receiver) = mpsc::channel();
+    sender.send(listing).unwrap();
+    screen.pending = Some(receiver);
+    screen.poll();
+}
+
+#[test]
+fn shared_skills_appear_for_codex_and_gemini() {
+    let (_dir, mut screen) = setup();
+    let shared = screen.locations.home.join(".agents/skills/shared/SKILL.md");
+    write(&shared, SKILL);
+    screen.listing = screen.locations.list();
+    screen.tab = 2;
+    for provider in [Provider::Codex, Provider::Gemini, Provider::Shared] {
+        screen.provider = Some(provider);
+        assert_eq!(screen.rows().len(), 1);
+        assert_eq!(screen.selected().unwrap().path, shared);
+    }
+    screen.provider = Some(Provider::Claude);
+    assert_eq!(screen.rows().len(), 1);
+    assert_ne!(screen.selected().unwrap().path, shared);
+}
+
+#[test]
+fn invalid_load_keeps_path_and_error_visible_and_cancel_keeps_search() {
+    let (_dir, mut screen) = setup();
+    screen.filter = "config".into();
+    press(&mut screen, KeyCode::Char('i'));
+    for c in "~/missing/skill".chars() {
+        press(&mut screen, KeyCode::Char(c));
+    }
+    press(&mut screen, KeyCode::Enter);
+    assert!(screen.takes_text());
+    assert_ne!(screen.note, "");
+    let text = render(&mut screen, 60, 20);
+    assert!(text.contains("~/missing/skill"), "{text}");
+    assert!(text.contains("No such file"), "{text}");
+    screen.back();
+    assert_eq!(screen.filter, "config");
+    assert!(matches!(screen.back(), Action::None));
+    assert_eq!(screen.filter, "");
+    assert!(matches!(screen.back(), Action::Back));
+}
+
+#[test]
+fn long_paths_keep_the_cursor_and_destination_visible() {
+    let (_dir, mut screen) = setup();
+    screen.input = Some(Input::Install {
+        path: format!("~/{}final-folder", "directory/".repeat(20)),
+        target: 1,
+    });
+    let text = render(&mut screen, 60, 20);
+    assert!(text.contains("final-folder▏"), "{text}");
+    assert!(text.contains("~/.agents/skills"), "{text}");
+    assert!(!text.contains("e edit"), "{text}");
+}
+
+#[test]
+fn invalid_edits_keep_the_draft_for_repair_then_save_and_restore() {
+    let (_dir, mut screen) = setup();
+    screen.tab = 2;
+    let original = screen.selected().unwrap().path;
+    let Action::Edit(copy) = press(&mut screen, KeyCode::Char('e')) else {
+        panic!("edit expected");
+    };
+    fs::write(&copy, "invalid skill").unwrap();
+    screen.edited(Ok(()));
+    assert!(screen.is_dialog());
+    assert!(copy.exists());
+    assert!(render(&mut screen, 80, 24).contains("Skill draft kept"));
+    assert!(matches!(press(&mut screen, KeyCode::Char('e')), Action::Edit(path) if path == copy));
+    fs::write(&copy, SKILL.replace("docs", "tests")).unwrap();
+    screen.edited(Ok(()));
+    press(&mut screen, KeyCode::Char('y'));
+    assert!(!copy.exists());
+    finish_refresh(&mut screen);
+    assert_eq!(screen.selected().unwrap().path, original);
+    assert_eq!(
+        fs::read_to_string(&original).unwrap(),
+        SKILL.replace("docs", "tests")
+    );
+    press(&mut screen, KeyCode::Char('b'));
+    assert!(screen.is_dialog());
+    assert!(render(&mut screen, 80, 24).contains("+ Read docs."));
+    press(&mut screen, KeyCode::Char('y'));
+    finish_refresh(&mut screen);
+    assert_eq!(fs::read_to_string(original).unwrap(), SKILL);
+}
+
+#[test]
+fn a_failed_editor_keeps_its_draft_until_discarded() {
+    let (_dir, mut screen) = setup();
+    screen.tab = 2;
+    let Action::Edit(copy) = press(&mut screen, KeyCode::Char('e')) else {
+        panic!("edit expected");
+    };
+    screen.edited(Err("editor failed".into()));
+    assert!(copy.exists());
+    assert!(screen.is_dialog());
+    assert!(render(&mut screen, 60, 20).contains("editor failed"));
+    screen.back();
+    assert!(!copy.exists());
+    assert!(!screen.is_dialog());
+}
+
+#[test]
+fn failed_restore_keeps_the_reviewed_backup_in_its_draft() {
+    let (_dir, mut screen) = setup();
+    screen.tab = 2;
+    let item = screen.selected().unwrap();
+    let edit = Edit::begin(&screen.locations, &item).unwrap();
+    edit.save(SKILL.replace("docs", "tests").as_bytes())
+        .unwrap();
+    press(&mut screen, KeyCode::Char('b'));
+    fs::write(&item.path, SKILL.replace("docs", "other")).unwrap();
+    press(&mut screen, KeyCode::Char('y'));
+    let draft = screen.editing.as_ref().unwrap().draft();
+    assert_eq!(fs::read_to_string(&draft).unwrap(), SKILL);
+    assert_eq!(
+        fs::read_to_string(item.path).unwrap(),
+        SKILL.replace("docs", "other")
+    );
+}
+
+#[test]
+fn refresh_preserves_selection_and_preview_keeps_full_metadata() {
+    let (_dir, mut screen) = setup();
+    screen.tab = 2;
+    let selected = screen.selected().unwrap().path;
+    write(
+        &screen.locations.claude.join("skills/first/SKILL.md"),
+        SKILL,
+    );
+    screen.refresh();
+    finish_refresh(&mut screen);
+    assert_eq!(screen.list.selected(), Some(1));
+    assert_eq!(screen.selected().unwrap().path, selected);
+    press(&mut screen, KeyCode::Enter);
+    let viewer = screen.viewer.as_ref().unwrap();
+    assert_eq!(viewer.source.as_ref(), Some(&selected));
+    assert!(screen.hints().contains("o Finder"));
+    let text = render(&mut screen, 60, 20);
+    assert!(text.contains("~/.claude/skills/sample/SKILL.md"));
 }
