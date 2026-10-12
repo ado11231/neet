@@ -638,8 +638,11 @@
 
 ## AI Tools
 
-* Home key `8` opens AI Tools. Files, Chats, and Skills share one list with a tool filter and path search. Rows lead with the file or skill name. Codex and Gemini filters include shared `.agents/skills`.
-* The selected path, scope, size, and available actions appear beside the list, or below it on narrow terminals. Contents are read only when opened. The scrollable preview includes the full path and scope on small terminals.
+* Home key `8` opens AI Tools. Files, Chats, and Skills share one list with a tool filter and path search. Rows lead with the file, skill name, or chat title. Codex and Gemini filters include shared `.agents/skills`.
+* The selected path, scope, size, and available actions appear beside the list, or below it on narrow terminals. Opening Chats reads bounded local summaries. Other file contents are read only when opened. The scrollable preview includes the full path and scope on small terminals.
+* Chats show a saved title or first user message, the recorded project path, and a `Missing project` tag when that directory no longer exists. Unknown or unreadable paths are not tagged as missing. Search matches titles, paths, and tags.
+* Space selects a chat, `a` toggles all chats shown by the current filters, and `n` clears every selection. The status includes selections hidden by filters. `d` reviews all selected chats, including hidden selections, or the highlighted chat when none are selected.
+* The review lists each transcript path, title, project, count, and total size. `y` moves those files to Trash in the background. Changed, open, recently updated, or unreadable files are skipped. Results show failures and keep failed chats selected. Finder's Put Back restores moved files. Assistant indexes, related files, and cloud history remain.
 * Chat previews show user and assistant messages from supported JSON and JSONL records. Tool calls and results are left out. Invalid records and preview limits are reported.
 * Linking a skill asks for a local folder containing `SKILL.md`. `Tab` picks the target tool. The review names the source and destination and shows the instructions. `y` creates a directory link. Codex uses the shared `.agents/skills` folder. The source folder must stay in place. After linking, the Skills list selects it. Restart the assistant or reload its skills afterward.
 * Editing opens a private copy in your editor. The diff must be confirmed with `y` before the original is backed up and replaced. Restore follows the same review.
@@ -650,12 +653,15 @@
 | --- | --- |
 | `Tab` / `Shift-Tab` | Switch Files, Chats, and Skills. |
 | `p` | Cycle All tools, Claude Code, Codex, Gemini CLI, and Shared. Codex and Gemini also show shared skills. |
-| `/` | Filter by path, tool, or project. `Enter` keeps the filter; `Esc` clears it while typing or browsing. |
+| `/` | Filter by path, tool, chat title, or project. `Enter` keeps the filter; `Esc` clears it while typing or browsing. |
 | `Enter` | Open the selected file or chat. |
+| `Space` | Select or deselect the highlighted chat. |
+| `a` / `n` | Toggle all shown chats / clear every chat selection. |
+| `d` / `Delete` | Review moving selected chat files, or the highlighted chat, to Trash. |
 | `i` | Link a local skill folder. `Tab` or `Shift-Tab` chooses the tool while typing. |
 | `e` | Edit a user skill, or reopen a kept draft, then review. |
 | `b` | Review restoring the latest skill backup. |
-| `y` | Confirm a reviewed skill link, edit, or restore. |
+| `y` | Confirm a reviewed skill change or chat removal. |
 | `o` | Reveal the selected file in Finder, from the list or its preview. |
 | `r` / `w` | Refresh / show skipped paths. |
 | `Up` / `Down`, `PageUp` / `PageDown` | Move or scroll a preview or review. |

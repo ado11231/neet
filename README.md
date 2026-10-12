@@ -55,7 +55,7 @@ neet
 | Large Files | Find your largest and oldest files. |
 | Startup | See what starts on its own. Press `t` to turn your own launch agents off or back on after confirmation. Other items stay view only. |
 | Dotfiles | See your settings files, such as `~/.zshrc`, edit or configure them with a backup, save them with chezmoi, and export them to a private GitHub repository after a review for secrets. |
-| AI Tools | Browse Claude Code, Codex, and Gemini CLI files and chats. Link local skill folders, edit their instructions, and restore backups after review. |
+| AI Tools | Browse assistant files and chat summaries, flag missing projects, and move selected chat files to Trash. Link local skills and review edits and restores. |
 
 * Settings and SSH are on the menu, marked `soon`.
 
@@ -65,7 +65,7 @@ neet
 * Files go to the Trash, never deleted, so you can put them back. The exceptions each ask a red question that says so first: simulator runtimes and Docker images, which neet asks their own tools to remove, and emptying the Trash itself.
 * You review and confirm everything before it moves.
 * Cleanup leaves your personal folders, iCloud files, keychains, and SSH keys alone. The exception is project build folders and installers, which you pick in Quick Clean.
-* Dotfiles and AI Tools show each edit before saving and keep a backup. AI Tools changes only user skill instructions. Chats and tool settings stay view only.
+* Dotfiles and AI Tools show each edit before saving and keep a backup. AI Tools can also move selected chat files to Trash after review. Tool settings stay view only.
 * For a full scan, give your terminal Full Disk Access:
   1. Open System Settings, then Privacy & Security, then Full Disk Access.
   2. Turn on your terminal app, such as Terminal, iTerm, or Ghostty.

@@ -64,7 +64,7 @@ neet/
 | `rewrite.rs` | Saves backups and replaces settings files after checking they are unchanged. |
 | `dotfiles.rs` and `dotfiles/` | Lists settings files, reads chezmoi state, and reviews edits, configuration, backups, and Git export. |
 | `startup.rs` and `startup/turn.rs` | Lists startup items and turns your own launch agents off or back on. |
-| `ai.rs` and `ai/` | Discovers assistant files, formats bounded chat previews, and reviews local skill links, edits, and restores. |
+| `ai.rs` and `ai/` | Discovers assistant files, reads bounded chat summaries and previews, validates chat removal, and reviews skill changes. |
 | `run.rs` | Runs commands with a time limit. |
 
 ### The Program
@@ -84,7 +84,7 @@ neet/
 | `ui/large.rs` | Large Files. |
 | `ui/quick.rs` | Quick Clean: everything that can be cleared, in one table. |
 | `ui/apps.rs` | Remove App: the app list and the app's files. |
-| `ui/ai.rs` | AI Tools: files, chats, skill reviews, and draft recovery. |
+| `ui/ai.rs` and `ui/ai/chats.rs` | AI Tools: files, chat selection, removal review and progress, skill reviews, and draft recovery. |
 | `ui/dotfiles.rs` and `ui/dotfiles/` | Dotfiles and its edit, configure, backup, and export flows. |
 | `ui/startup.rs` | Startup: the list, details, and turn confirmation. |
 | `ui/tools.rs` and `ui/tools/trash.rs` | Docker, simulators, and the Trash. |
