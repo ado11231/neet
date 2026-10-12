@@ -61,6 +61,7 @@
 
 * Review, confirm, and move to the Trash through Finder.
 * A check of every item right before it moves: same file, app closed, not changed recently.
+* Quick Clean lists project build folders and installers, then moves only the ones you pick after review.
 * Typed confirmation for `expert` rules, and no selecting a rule while its app is open.
 * `d` to clean one item from Disk.
 * What Clean can free, on Home.
@@ -104,7 +105,7 @@
 * Its bugs are fixed before any later feature. The other items can be done alongside them.
 * **Done:**
   1. Free space and Finder. Home says how much free space Finder shows, and that it adds space macOS clears on its own, called purgeable space.
-  2. A wireless networks file in user logs. It is a copy macOS wrote once for diagnostics. your Mac connects without it, so the rule keeps offering it, and FEATURES explains it.
+  2. A wireless networks file in user logs. It is a copy macOS wrote once for diagnostics. Your Mac connects without it, so the rule keeps offering it, and FEATURES explains it.
   3. Moving to the Trash no longer waits forever when Finder does not answer.
   4. Every built screen got a clarity pass: Quick Clean, Deep Clean, Remove App, Large Files, and Disk use small titled boxes, one label width, plain words, and lists only as tall as their rows.
   5. A Trash screen lists what is in the Trash and empties it after a red question.
@@ -118,21 +119,20 @@
 
 ### 9. Later Features
 
-* Each of these needs its [open question](FEATURES.md#open-questions) answered first.
+* Remaining work stays here even when a feature has shipped. Proposed features must answer any [open questions](FEATURES.md#open-questions) before implementation.
 
 | Feature | Done When |
 | --- | --- |
-| Startup items | Finding, turning off, and turning back on each kind is checked on every supported macOS version. An incomplete list is labeled. Research done on macOS 26.5 (#90): the answers are in SAFETY.md and FEATURES.md. The view only screen is built and checked on macOS 26.5; turning your own launch agents off and back on (#102) is built and checked by hand on macOS 26.5. |
+| Startup items | List and turn actions are built and checked on macOS 26.5. Checks on macOS 13, 14, and 15 remain in [#22](https://github.com/ado11231/neet/issues/22). Stale plist handling and partial command failures are tracked in [#107](https://github.com/ado11231/neet/issues/107) and [#108](https://github.com/ado11231/neet/issues/108). |
 | Dotfiles | **Done.** Changes stay within the list in SAFETY.md. Backup, restore, check, configure, and export tests pass. With chezmoi, edits reach the source file, and nothing is pushed without `y`. |
 | SSH | Changes stay within `~/.ssh`, and known hosts and permissions can be undone. |
 | Shell PATH | Changes stay within the shell files, and can be undone from their backups. |
-| AI Tools | **First version built.** Browse known user and current-project files for Claude Code, Codex, and Gemini CLI. Read chats on request. Load local skills and review edits and restores with backups. Chat actions are tracked in [#111](https://github.com/ado11231/neet/issues/111); skill removal and plugin discovery in [#112](https://github.com/ado11231/neet/issues/112). |
+| AI Tools | **First version built.** Browse known user and current project files for Claude Code, Codex, and Gemini CLI. Read chats on request. Link local skills and review edits and restores with backups. Chat actions are tracked in [#111](https://github.com/ado11231/neet/issues/111); skill removal and plugin discovery in [#112](https://github.com/ado11231/neet/issues/112). |
 | Power and display | Setting names are checked on real Macs. A refresh rate you do not keep switches back. Every change can be undone. |
-| Project build folders | Only listed build folders that Git ignores are offered. |
 | Treemap and preferences | The treemap shows the scan without changing files, and preferences keep your choices. |
 
 * Dotfiles checks: action and export reviews reject changed files, backups, and links. Pushes name the reviewed commit and tracked branch. Unicode renames and export scrolling have regression tests. Ghostty, the zsh block, and starting a repository without chezmoi are built. On 2026-10-08 every action was run by hand against real personal dotfiles and worked, so Dotfiles is done.
 
 * The opt in Dotfiles test passed with chezmoi 2.72.2 on macOS: edit and apply, save, put back, add, Configure, backup and restore, a link, and export to a local remote. It also refuses hooks added after an edit starts.
 
-* AI Tools checks use temporary homes for discovery, chat parsing, local skill links, edit and restore, stale reviews, and escaped paths. UI tests cover section changes, search, review cancellation, and narrow terminals. Real assistant reloads still need a manual check.
+* AI Tools checks use temporary homes for discovery, chat parsing, local skill links, edit and restore, stale reviews, and escaped paths. UI tests cover section changes, shared skill filters, search, selection after refresh, failed loads, draft recovery, edit and restore, review cancellation, and narrow terminals. Real assistant reloads still need a manual check.

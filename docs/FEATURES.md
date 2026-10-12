@@ -24,7 +24,7 @@
 | Status | Meaning |
 | --- | --- |
 | **Done** | Works in the program, and is tested. |
-| **Proposed** | An idea for after the first release. The design may still change. |
+| **Proposed** | An idea that is not built yet. The design may still change. |
 
 ## Disk
 
@@ -128,13 +128,13 @@
 
 | Feature | What It Does | Status |
 | --- | --- | --- |
-| Browse | Lists known Claude Code, Codex, and Gemini CLI settings, instructions, skills, and chats. Includes shared `.agents/skills` and the current project's files. Filters by tool and path. | Done |
+| Browse | Lists known Claude Code, Codex, and Gemini CLI settings, instructions, skills, and chats. Includes shared `.agents/skills` and the current project's files. Filters by tool and path. Codex and Gemini filters include shared skills. | Done |
 | Read | Opens a local text preview. Chats show user and assistant messages. Credentials and databases are excluded. | Done |
-| Load a skill | Links a local skill folder into a tool's user skills after showing the source, destination, and instructions. Keeps scripts and references together. | Done |
-| Edit and restore | Edits a copy of a user `SKILL.md`, reviews the diff, and saves with a backup. Can review and restore the latest backup. Bundled skills stay view only. | Done |
+| Link a skill | Links a local skill folder into a tool's user skills after showing the source, destination, and instructions. Keeps scripts and references in the source folder, which must remain in place. Selects the linked skill afterward. | Done |
+| Edit and restore | Edits a copy of a user `SKILL.md`, reviews the diff, and saves with a backup. Can review and restore the latest backup. Invalid drafts stay available to repair or discard. Bundled skills stay view only. | Done |
 | Finder | Reveals the selected file, including hidden files. | Done |
 
-* This first version keeps chats, settings, and instruction files view only. Chat actions, remote skill downloads, removing skills, and plugin catalogs are later work.
+* Chats, settings, and instruction files are view only. Chat actions, remote skill downloads, removing skills, and plugin catalogs are not supported.
 * Discovery checks known folders, not every project on disk. It stops at 20,000 entries and reports skipped paths. Previews stop at 512 KiB.
 * See [AI Tools safety](SAFETY.md#ai-tools) for file locations and limits.
 
@@ -161,7 +161,7 @@
 
 ## Planned Features
 
-* All of these are proposed for after the first release. Each needs checking on real Macs before it is built.
+* These features are not built yet. Each needs checking on real Macs.
 
 | Area | What It Would Do |
 | --- | --- |
@@ -169,7 +169,6 @@
 | Shell PATH | Show the folders your shell searches for programs, in order, flag problems, show which copy of a program runs, and reorder them with a backup. |
 | Power and display | Switch power modes, graphics switching, and display refresh rate, and show what keeps the Mac awake. Every change can be undone. |
 | Space breakdown | Explain the gap between the disk's used space and the scan. |
-| Project build folders | Find old build folders in code projects, only when Git ignores them. |
 | Treemap | Show folder sizes as areas. |
 | Saved preferences | Remember your choices between runs. |
 
@@ -183,7 +182,6 @@
 | System logs | Can they be cleaned without admin rights? |
 | Power and display | Which settings exist on each Mac, and does switching back a refresh rate always work? |
 | Space breakdown | Which numbers does macOS report reliably for volumes, snapshots, and purgeable space? |
-| Project build folders | Many projects live in Documents or Desktop, which neet never touches. Can a narrow check allow only ignored build folders there? |
 | Shell PATH | How can neet find where each folder was added, and should edits go in a block neet owns? |
 | Treemap and preferences | How should they work, and what should be saved? |
 

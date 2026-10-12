@@ -450,15 +450,17 @@
 +-----------------------------------------++-----------------------------------------------+
 ```
 
-* View only. Startup opens with a loading box while it reads, about a second, then lists every program that starts on its own, grouped by kind: **Allowed in the background** (helpers inside apps that the app asked macOS to run), **Your launch agents**, **Launch agents for every user**, and **Launch daemons**. What it reads, and what it never runs, is in [SAFETY.md](SAFETY.md#startup-items).
+* Startup opens with a loading box while it reads, about a second, then lists every program that starts on its own, grouped by kind: **Allowed in the background** (helpers inside apps that the app asked macOS to run), **Your launch agents**, **Launch agents for every user**, and **Launch daemons**. Its read and change rules are in [SAFETY.md](SAFETY.md#startup-items).
 * Each row shows the name and whether it runs: **● running** in green, **○ waiting** in blue for one launchd starts when needed, **· not loaded**, or **off** in yellow when it is turned off. A yellow **!** means something is wrong with it, such as an empty plist or a missing program.
 * The top line counts the items, how many run, and how many are turned off.
-* The box beside the list shows the selected item: its kind, app, label, program, plist or helper, who signed it, when it starts, and what it is doing now, then any problem, then why it is view only.
+* The box beside the list shows the selected item: its kind, app, label, program, plist or helper, who signed it, when it starts, and what it is doing now, then any problem and whether `t` can turn it off or back on.
 * Below it, **Open at login** says those apps are not listed, since macOS shows them only to an admin, and how many items belong to macOS and are only counted. **By kind** counts each kind, and how many of each run.
 * Under 96 columns, the selected item shows under the list.
+* `t` reviews turning one of your own launch agents off or back on. The question names the item and action. `y` confirms; `n` or `Esc` cancels. Other items stay view only.
 
 | Key | Action |
 | --- | --- |
+| `t` | Review turning your own launch agent off or back on. |
 | `o` | Open Login Items & Extensions in System Settings. |
 | `f` | Show the selected plist or helper in Finder. |
 | `r` | Look again. |
@@ -636,26 +638,28 @@
 
 ## AI Tools
 
-* Home key `8` opens AI Tools. Files, Chats, and Skills share one list with a tool filter and path search.
-* The selected path, scope, size, and available actions appear beside the list, or below it on narrow terminals. Contents are read only when opened.
+* Home key `8` opens AI Tools. Files, Chats, and Skills share one list with a tool filter and path search. Rows lead with the file or skill name. Codex and Gemini filters include shared `.agents/skills`.
+* The selected path, scope, size, and available actions appear beside the list, or below it on narrow terminals. Contents are read only when opened. The scrollable preview includes the full path and scope on small terminals.
 * Chat previews show user and assistant messages from supported JSON and JSONL records. Tool calls and results are left out. Invalid records and preview limits are reported.
-* Loading a skill asks for a local folder containing `SKILL.md`. `Tab` picks the target tool. The review names the source and destination and shows the instructions. `y` creates a directory link. Codex uses the shared `.agents/skills` folder. Restart the assistant or reload its skills afterward.
+* Linking a skill asks for a local folder containing `SKILL.md`. `Tab` picks the target tool. The review names the source and destination and shows the instructions. `y` creates a directory link. Codex uses the shared `.agents/skills` folder. The source folder must stay in place. After linking, the Skills list selects it. Restart the assistant or reload its skills afterward.
 * Editing opens a private copy in your editor. The diff must be confirmed with `y` before the original is backed up and replaced. Restore follows the same review.
+* A failed load keeps the typed path and shows the error. A failed edit or save keeps the draft: `e` reopens it, and `Esc` discards it. If the original changed, copy your work before discarding the draft and open the skill again.
+* Refresh keeps the selected file when it is still listed.
 
 | Key | Action |
 | --- | --- |
 | `Tab` / `Shift-Tab` | Switch Files, Chats, and Skills. |
-| `p` | Cycle All tools, Claude Code, Codex, Gemini CLI, and Shared. |
-| `/` | Filter by path, tool, or project. `Enter` keeps the filter; `Esc` clears it while typing. |
+| `p` | Cycle All tools, Claude Code, Codex, Gemini CLI, and Shared. Codex and Gemini also show shared skills. |
+| `/` | Filter by path, tool, or project. `Enter` keeps the filter; `Esc` clears it while typing or browsing. |
 | `Enter` | Open the selected file or chat. |
-| `i` | Load a local skill folder. `Tab` chooses the tool while typing. |
-| `e` | Edit a user skill, then review. |
+| `i` | Link a local skill folder. `Tab` or `Shift-Tab` chooses the tool while typing. |
+| `e` | Edit a user skill, or reopen a kept draft, then review. |
 | `b` | Review restoring the latest skill backup. |
-| `y` | Confirm a reviewed skill load, edit, or restore. |
-| `o` | Reveal the selected file in Finder. |
+| `y` | Confirm a reviewed skill link, edit, or restore. |
+| `o` | Reveal the selected file in Finder, from the list or its preview. |
 | `r` / `w` | Refresh / show skipped paths. |
 | `Up` / `Down`, `PageUp` / `PageDown` | Move or scroll a preview or review. |
-| `Esc` | Cancel input or review, close a preview, or return Home. |
+| `Esc` | Cancel input or review, discard a kept draft, close a preview, clear a search, then return Home. |
 
 ## Planned Screens
 
@@ -664,8 +668,6 @@
 | Screen | Layout | Keys |
 | --- | --- | --- |
 | Space Breakdown | A list of parts that add up to the disk's used space: the scan, skipped folders, apps, macOS, snapshots, purgeable space, and anything unexplained. Opened with `b` on Home. | `Enter` opens a folder in Disk. |
-| Projects | A list of build folders in code projects, with project, last change, folder, and size. Folders that cannot be cleaned show the reason. | `Space` selects, `s` sorts, `Enter` reviews. |
-| Startup: turn off | Your own launch agents get `t` to turn off and on, after a question, with the state before saved so it can be undone. | `t` turns off or back on. |
 | SSH | Sections for hosts, keys, agent keys, known hosts, and permission problems. | Fix permissions, add or remove agent keys, remove known hosts. |
 | PATH | Each folder in search order, with how many programs it holds, where it was added, and any problem. A preview shows the programs it holds. | `w` finds which copy of a program runs. `K` / `J` move a folder. `a` adds, `x` removes, `Enter` saves with a backup. |
 | Settings | Sections for power mode, graphics switching, refresh rate, Game Mode, what keeps the Mac awake, and wake settings. | Each change shows what it will do first, and can be undone. |

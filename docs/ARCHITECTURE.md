@@ -55,11 +55,17 @@ neet/
 | `large.rs` | Finds files in the tree above a size, and optionally unchanged for a while. |
 | `clutter.rs` | Measures what neet does not clean itself: the Trash, installers, build folders, and the Docker image from the tree, simulator runtimes from `xcrun simctl`, and temporary files from a scan of `/private/var/folders`. |
 | `rules.rs` | Reads and checks the built in rules and your own. |
-| `safety.rs` | The allowed folders, the protected folders, and the two path checks: one for cleanup, one for app removal. Only these checks can approve an item. |
+| `safety.rs` | The allowed and protected folders, with separate checks for cleanup, app removal, and project build folders and installers. |
 | `clean.rs` | Plans a cleanup from the rules, or from one picked item, then moves the selected items, checking each one again first. |
 | `removal.rs` | Lists apps, finds each app's files by exact name, and plans their removal. |
 | `apps.rs` | Whether an app is open, asked with `lsappinfo`. |
-| `trash.rs` | Moves one item to the Trash by asking Finder with `osascript`, so Put Back works. |
+| `trash.rs` | Moves items to the Trash through Finder, and empties it after confirmation. |
+| `tools.rs` | Lists and removes simulator runtimes and Docker data through their own tools. |
+| `rewrite.rs` | Saves backups and replaces settings files after checking they are unchanged. |
+| `dotfiles.rs` and `dotfiles/` | Lists settings files, reads chezmoi state, and reviews edits, configuration, backups, and Git export. |
+| `startup.rs` and `startup/turn.rs` | Lists startup items and turns your own launch agents off or back on. |
+| `ai.rs` and `ai/` | Discovers assistant files, formats bounded chat previews, and reviews local skill links, edits, and restores. |
+| `run.rs` | Runs commands with a time limit. |
 
 ### The Program
 
@@ -78,11 +84,16 @@ neet/
 | `ui/large.rs` | Large Files. |
 | `ui/quick.rs` | Quick Clean: everything that can be cleared, in one table. |
 | `ui/apps.rs` | Remove App: the app list and the app's files. |
+| `ui/ai.rs` | AI Tools: files, chats, skill reviews, and draft recovery. |
+| `ui/dotfiles.rs` and `ui/dotfiles/` | Dotfiles and its edit, configure, backup, and export flows. |
+| `ui/startup.rs` | Startup: the list, details, and turn confirmation. |
+| `ui/tools.rs` and `ui/tools/trash.rs` | Docker, simulators, and the Trash. |
+| `ui/pick.rs` | Select build folders and installers for review. |
+| `ui/editor.rs` | Leaves the terminal screen to run your editor on a copy, then returns. |
+| `ui/visual.rs` | Shared styles, wrapping, columns, and screen test helpers. |
 | `ui/help.rs` | The help box opened with `?`. |
 | `ui/loading.rs` | The loading box a screen shows while slow work runs. |
 | `ui/format.rs` | Sizes, counts, bars, and ages as text, and shortening long names and folders. |
-
-* `neet-core/src/ai.rs` discovers known assistant files without reading their contents. `ai/chat.rs` formats bounded chat previews; `ai/skills.rs` reviews local skill links, edits, and restores. `neet/src/ui/ai.rs` owns the Files, Chats, and Skills screen.
 
 ## How neet Runs
 
@@ -97,7 +108,7 @@ neet
 ```
 
 * Screens form a stack, with Home at the bottom. Boxes, such as the question before a move, are screens too.
-* Each key returns an action: do nothing, open a screen, go back one, go back to Home, or quit.
+* Each key returns an action: do nothing, open a screen, go back one, go back to Home, open an editor, refresh cleanup plans, or quit.
 * Slow work, such as scanning, planning, and moving, runs on its own thread and reports back, so the screen keeps responding.
 * Adding a feature means adding one menu row and one screen file.
 
@@ -135,9 +146,12 @@ selected rules, a picked item, or an app
 | Terminal screens | `ratatui` |
 | Reading rules | `serde` and `toml` |
 | Changing one TOML setting and keeping comments and layout | `toml_edit` |
+| Reading local JSON files and tool output | `serde_json` |
 | Reading simulator runtimes | `xcrun simctl`, part of Xcode, read with `serde_json` |
 | Finding the temporary folder | `getconf`, part of macOS |
-| Temporary folders in tests | `tempfile` |
+| Private skill drafts and temporary folders in tests | `tempfile` |
+| File diffs | `similar` |
+| Shortening names without splitting characters | `unicode-segmentation` |
 | Whether an app is open | `lsappinfo`, part of macOS |
 | Reading an app's details | `plutil`, part of macOS |
 | Moving to the Trash | `osascript` asking Finder, part of macOS |
@@ -147,6 +161,9 @@ selected rules, a picked item, or an app
 
 ## Building
 
+* From the repository, run `cargo run --release` to build and open the current branch.
+* `cargo install --path crates/neet --force` installs that checkout.
+* Before a PR, run `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, and `cargo test --workspace --all-features`.
 * Needs Rust 1.88 or later, and runs on macOS 13 or later, on Apple silicon and Intel.
 * `unsafe` code is not allowed, and Clippy's strict checks are on.
 * CI runs on every pull request, and on `master` after each merge:

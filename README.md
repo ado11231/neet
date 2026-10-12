@@ -1,6 +1,6 @@
 <h1 align="center">neet</h1>
 
-<p align="center">macOS terminal for cleaning, optimizing and managing your mac</p>
+<p align="center">macOS terminal for cleaning, optimizing and managing your Mac</p>
 
 <p align="center">
   <a href="https://github.com/ado11231/neet/actions/workflows/ci.yml"><img src="https://github.com/ado11231/neet/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -28,11 +28,14 @@ If you have [Rust](https://rustup.rs), you can build the published version inste
 cargo install neet
 ```
 
-Or build the newest code from source:
+Or install the code on `master`:
 
 ```sh
 cargo install --git https://github.com/ado11231/neet neet
 ```
+
+* From a local checkout, `cargo run --release` builds and runs the current branch.
+* To install that checkout as `neet`, run `cargo install --path crates/neet --force`.
 
 ## Use
 
@@ -50,9 +53,9 @@ neet
 | Deep Clean | Go through every cache and log rule, and move what your apps can make again to the Trash. |
 | Remove App | Remove an app along with the files it left in your Library folder. |
 | Large Files | Find your largest and oldest files. |
-| Startup | See the programs that start on their own, whether each runs, and who made it. |
+| Startup | See what starts on its own. Press `t` to turn your own launch agents off or back on after confirmation. Other items stay view only. |
 | Dotfiles | See your settings files, such as `~/.zshrc`, edit or configure them with a backup, save them with chezmoi, and export them to a private GitHub repository after a review for secrets. |
-| AI Tools | Browse Claude Code, Codex, and Gemini CLI files and chats. Load local skills, edit their instructions, and restore backups after review. |
+| AI Tools | Browse Claude Code, Codex, and Gemini CLI files and chats. Link local skill folders, edit their instructions, and restore backups after review. |
 
 * Settings and SSH are on the menu, marked `soon`.
 
@@ -61,8 +64,8 @@ neet
 * Works on macOS 13 or later, on Apple silicon and Intel.
 * Files go to the Trash, never deleted, so you can put them back. The exceptions each ask a red question that says so first: simulator runtimes and Docker images, which neet asks their own tools to remove, and emptying the Trash itself.
 * You review and confirm everything before it moves.
-* Your personal folders, iCloud files, keychains, and SSH keys are never touched. The one exception is project build folders and installers, which you pick in Quick Clean.
-* Dotfiles keeps a backup of every settings file before it changes one, and shows you the change first.
+* Cleanup leaves your personal folders, iCloud files, keychains, and SSH keys alone. The exception is project build folders and installers, which you pick in Quick Clean.
+* Dotfiles and AI Tools show each edit before saving and keep a backup. AI Tools changes only user skill instructions. Chats and tool settings stay view only.
 * For a full scan, give your terminal Full Disk Access:
   1. Open System Settings, then Privacy & Security, then Full Disk Access.
   2. Turn on your terminal app, such as Terminal, iTerm, or Ghostty.
