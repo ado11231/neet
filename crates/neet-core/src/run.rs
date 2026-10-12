@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Captured {
     pub success: bool,
+    pub code: Option<i32>,
     pub stdout: String,
     pub stderr: String,
 }
@@ -59,6 +60,7 @@ pub(crate) fn capture(command: &mut Command, timeout: Duration) -> io::Result<Op
     let stderr = stderr.join().unwrap_or_default();
     Ok(status.map(|status| Captured {
         success: status.success(),
+        code: status.code(),
         stdout,
         stderr,
     }))

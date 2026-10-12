@@ -4,12 +4,12 @@ use std::os::unix::fs::symlink;
 const SKILL: &str =
     "---\nname: sample\ndescription: A sample skill.\n---\nRead the project docs.\n";
 
-fn write(path: &Path, text: &str) {
+pub(super) fn write(path: &Path, text: &str) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(path, text).unwrap();
 }
 
-fn setup() -> (tempfile::TempDir, Locations) {
+pub(super) fn setup() -> (tempfile::TempDir, Locations) {
     let dir = tempfile::tempdir().unwrap();
     let home = fs::canonicalize(dir.path()).unwrap();
     let locations = Locations::new(home, None);
@@ -256,4 +256,31 @@ fn discovery_keeps_entries_found_at_the_limit_and_ignores_loose_skill_files() {
     scanner.walk_chats(&root, Provider::Codex, 1);
     assert_eq!(scanner.listing.items.len(), 2);
     assert_eq!(locations.list().warnings, Vec::<String>::new());
+}
+
+#[test]
+fn gemini_jsonl_sessions_support_discovery_summary_preview_and_removal_review() {
+    let (_dir, locations) = setup();
+    let contents = concat!(
+        "{\"sessionId\":\"example\",\"projectHash\":\"project\"}\n",
+        "{\"type\":\"user\",\"content\":[\"Review the checkout\"]}\n",
+        "{\"type\":\"gemini\",\"content\":[{\"text\":\"Found the problem\"}]}\n",
+        "{\"$rewindTo\":\"example-message\"}\n"
+    );
+    write(
+        &locations
+            .gemini
+            .join("tmp/project/chats/session-example.jsonl"),
+        contents,
+    );
+    let mut listing = locations.list();
+    listing.summarize_chats(&locations);
+    assert_eq!(listing.items.len(), 1);
+    let item = &listing.items[0];
+    assert_eq!(item.chat.as_ref().unwrap().title, "Review the checkout");
+    let preview = locations.preview(item).unwrap();
+    assert!(preview.contains("You\nReview the checkout"));
+    assert!(preview.contains("Assistant\nFound the problem"));
+    assert!(preview.contains("rewinds are not applied"));
+    assert!(remove::Removal::prepare(&locations, item).is_ok());
 }

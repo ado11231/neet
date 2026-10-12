@@ -1,7 +1,9 @@
-//! Local assistant files. Discovery reads names and metadata only.
+//! Local assistant files, conversation summaries, and skill changes.
 
 mod chat;
+pub mod remove;
 pub mod skills;
+pub mod summary;
 
 use std::fs;
 use std::io::{self, Read};
@@ -60,6 +62,7 @@ pub struct Item {
     pub size: u64,
     pub modified: Option<SystemTime>,
     pub bundled: bool,
+    pub chat: Option<summary::Summary>,
 }
 
 #[derive(Default)]
@@ -223,6 +226,7 @@ impl Scanner<'_> {
                 size: meta.len(),
                 modified: meta.modified().ok(),
                 bundled,
+                chat: None,
             }),
             Err(error) if path_exists || error.kind() != io::ErrorKind::NotFound => {
                 self.listing
@@ -297,7 +301,7 @@ impl Scanner<'_> {
                                 .is_some_and(|name| name.to_string_lossy().starts_with("rollout-"))
                     }
                     Provider::Gemini => {
-                        extension == Some("json")
+                        matches!(extension, Some("json" | "jsonl"))
                             && path
                                 .parent()
                                 .and_then(Path::file_name)

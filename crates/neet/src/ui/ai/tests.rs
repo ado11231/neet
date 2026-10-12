@@ -59,8 +59,9 @@ fn tabs_filter_and_chat_preview_work_at_all_sizes() {
         assert!(!text.contains("A private chat"));
     }
     press(&mut screen, KeyCode::Tab);
+    finish_refresh(&mut screen);
     assert_eq!(screen.selected().unwrap().kind, Kind::Chat);
-    assert!(!render(&mut screen, 100, 30).contains("A private chat"));
+    assert!(render(&mut screen, 100, 30).contains("A private chat"));
     press(&mut screen, KeyCode::Enter);
     assert!(render(&mut screen, 100, 30).contains("A private chat"));
     screen.back();
@@ -270,4 +271,124 @@ fn refresh_preserves_selection_and_preview_keeps_full_metadata() {
     assert!(screen.hints().contains("o Finder"));
     let text = render(&mut screen, 60, 20);
     assert!(text.contains("~/.claude/skills/sample/SKILL.md"));
+}
+
+#[test]
+fn chats_show_titles_and_missing_projects_and_search_both() {
+    let (_dir, mut screen) = setup();
+    let path = screen.locations.claude.join("projects/repo/chat.jsonl");
+    write(
+        &path,
+        &format!(
+            r#"{{"cwd":{:?},"message":{{"role":"user","content":"Fix the checkout button"}}}}"#,
+            screen.locations.home.join("deleted-repo")
+        ),
+    );
+    press(&mut screen, KeyCode::Tab);
+    finish_refresh(&mut screen);
+    for (width, height) in visual::tests::SIZES {
+        let text = render(&mut screen, width, height);
+        assert!(text.contains("Fix the checkout"), "{text}");
+        assert!(text.contains("Missing project"), "{text}");
+    }
+    for query in ["checkout", "deleted-repo", "missing project"] {
+        screen.filter = query.into();
+        assert_eq!(screen.rows().len(), 1);
+    }
+    press(&mut screen, KeyCode::Enter);
+    assert!(render(&mut screen, 100, 30).contains("Fix the checkout button"));
+}
+
+#[test]
+fn chat_selection_follows_paths_and_select_all_respects_filters() {
+    let (_dir, mut screen) = setup();
+    write(
+        &screen.locations.codex.join("sessions/rollout-other.jsonl"),
+        "{}",
+    );
+    press(&mut screen, KeyCode::Tab);
+    finish_refresh(&mut screen);
+    assert!(screen.marked.is_empty());
+    press(&mut screen, KeyCode::Char('a'));
+    assert_eq!(screen.marked.len(), 2);
+    assert!(render(&mut screen, 100, 30).contains("[x] A private chat"));
+    screen.provider = Some(Provider::Claude);
+    assert!(render(&mut screen, 80, 24).contains("2 selected · 1 hidden"));
+    press(&mut screen, KeyCode::Char('a'));
+    assert_eq!(screen.marked.len(), 1);
+    let selected = screen.marked.clone();
+    screen.refresh();
+    finish_refresh(&mut screen);
+    assert_eq!(screen.marked, selected);
+    press(&mut screen, KeyCode::Char(' '));
+    assert_eq!(screen.marked.len(), 2);
+    press(&mut screen, KeyCode::Char('n'));
+    assert!(screen.marked.is_empty());
+    press(&mut screen, KeyCode::Tab);
+    press(&mut screen, KeyCode::Char('a'));
+    assert!(screen.marked.is_empty());
+}
+
+#[test]
+fn removal_review_includes_hidden_selections_and_escape_cancels() {
+    let (_dir, mut screen) = setup();
+    let other = screen.locations.codex.join("sessions/rollout-other.jsonl");
+    write(&other, "{}");
+    press(&mut screen, KeyCode::Tab);
+    finish_refresh(&mut screen);
+    press(&mut screen, KeyCode::Char('a'));
+    screen.provider = Some(Provider::Claude);
+    press(&mut screen, KeyCode::Char('d'));
+    assert!(screen.is_dialog());
+    let text = render(&mut screen, 100, 40);
+    assert!(text.contains("Move 2 chat files"), "{text}");
+    assert!(text.contains("rollout-other.jsonl"), "{text}");
+    assert!(text.contains("indexes, related files"), "{text}");
+    screen.back();
+    assert!(other.exists());
+    assert!(screen.cleanup.is_none());
+    assert!(screen.review.is_none());
+    assert_eq!(screen.marked.len(), 2);
+}
+
+#[test]
+fn removal_requires_confirmation_and_blocks_leaving_while_running() {
+    let (_dir, mut screen) = setup();
+    press(&mut screen, KeyCode::Tab);
+    finish_refresh(&mut screen);
+    press(&mut screen, KeyCode::Char('d'));
+    assert!(screen.cleanup.is_none());
+    press(&mut screen, KeyCode::Char('y'));
+    assert!(screen.cleanup.is_some());
+    assert!(screen.is_dialog());
+    assert!(matches!(screen.back(), Action::None));
+}
+
+#[test]
+fn cleanup_reports_partial_failure_and_keeps_failed_chats_selected() {
+    let (_dir, mut screen) = setup();
+    write(
+        &screen.locations.codex.join("sessions/rollout-other.jsonl"),
+        "{}",
+    );
+    press(&mut screen, KeyCode::Tab);
+    finish_refresh(&mut screen);
+    press(&mut screen, KeyCode::Char('a'));
+    let paths: Vec<_> = screen.marked.iter().cloned().collect();
+    fs::rename(&paths[0], screen.locations.home.join("trashed-chat")).unwrap();
+    let (sender, receiver) = mpsc::channel();
+    screen.cleanup = Some(chats::Cleanup::new(2, receiver));
+    sender.send((paths[0].clone(), Ok(()))).unwrap();
+    sender
+        .send((paths[1].clone(), Err("Chat changed after review".into())))
+        .unwrap();
+    drop(sender);
+    screen.poll_cleanup();
+    finish_refresh(&mut screen);
+    assert_eq!(screen.marked.len(), 1);
+    assert!(screen.marked.contains(&paths[1]));
+    assert_eq!(screen.rows().len(), 1);
+    let text = render(&mut screen, 80, 30);
+    assert!(text.contains("1 of 2 chat files moved"), "{text}");
+    assert!(text.contains("Chat changed after review"), "{text}");
 }

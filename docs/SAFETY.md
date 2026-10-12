@@ -28,7 +28,7 @@
 1. Nothing is deleted permanently. The exceptions are [simulators and Docker data](#tools-neet-runs), which only their own tool can remove, and [emptying the Trash](#emptying-the-trash) when you ask, each after a separate red question that says so.
 2. You see every path, and confirm, before anything moves.
 3. Cleanup only removes items inside a short, fixed list of folders. App removal, and build folders and installers, each have their own narrow check.
-4. Cleanup leaves your own files, cloud files, passwords, and keys alone, except for the project build folders and installers you pick. Dotfiles and AI Tools edit only their listed files after review and backup.
+4. Cleanup leaves your own files, cloud files, passwords, and keys alone, except for the project build folders and installers you pick. Dotfiles and AI Tools edit only their listed files after review and backup. AI Tools can also move selected chat transcripts to Trash after review.
 5. Anything that changed since you reviewed it is skipped.
 6. Cleanup never uses admin rights.
 
@@ -465,25 +465,29 @@ min_age_days = 0
 
 ## AI Tools
 
-* Discovery reads file names and metadata in known folders. It does not read chat contents until you open one. It never opens sign in files or databases, runs skills, or sends file contents to a service.
+* Discovery reads file names and metadata in known folders. Opening Chats reads up to 512 KiB per transcript for titles and project paths, with a 32 MiB transcript budget per refresh. Gemini project markers read at most 4 KiB each. Other file contents stay closed until you open one. It never opens sign in files or databases, runs skills, or sends file contents to a service.
 * Known user files:
 
 | Tool | Settings and instructions | Skills | Chats |
 | --- | --- | --- | --- |
 | Claude Code | `~/.claude/settings.json`, `~/.claude/CLAUDE.md` | `~/.claude/skills/*/SKILL.md` | `~/.claude/projects/*/*.jsonl` |
 | Codex | `~/.codex/config.toml`, `AGENTS.md`, `AGENTS.override.md` under `~/.codex` | `~/.agents/skills/*/SKILL.md`, `~/.codex/skills/*/SKILL.md`, including `.system/*` | `~/.codex/sessions` through year/month/day and `archived_sessions`, only `rollout-*.jsonl` |
-| Gemini CLI | `~/.gemini/settings.json`, `~/.gemini/GEMINI.md` | `~/.gemini/skills/*/SKILL.md` and shared `.agents/skills` | `~/.gemini/tmp/*/chats/*.json` |
+| Gemini CLI | `~/.gemini/settings.json`, `~/.gemini/GEMINI.md` | `~/.gemini/skills/*/SKILL.md` and shared `.agents/skills` | `~/.gemini/tmp/*/chats/*.json` and `*.jsonl` |
 
 * `CODEX_HOME` and `CLAUDE_CONFIG_DIR` replace their default roots when set. Resolved paths must stay inside home. Individual file links are skipped. Skill directory links inside home are supported.
 * Project discovery checks the launch directory and its parents up to the first Git root, stopping before home. It looks for `CLAUDE.md`, `CLAUDE.local.md`, `.claude/CLAUDE.md`, `AGENTS.md`, `AGENTS.override.md`, `GEMINI.md`, tool settings, `.claude/settings.local.json`, and the `.claude`, `.codex`, `.gemini`, and `.agents` skill folders. It does not search every project on disk.
-* Discovery stops at 20,000 directory entries and reports an incomplete list. Previews read at most 512 KiB. Settings can contain tokens, so their contents appear only after `Enter`. Chat previews show supported message text and report malformed records. Settings, instructions, chats, and bundled skills are view only.
+* Discovery stops at 20,000 directory entries and reports an incomplete list. Previews read at most 512 KiB. Settings can contain tokens, so their contents appear only after `Enter`. Chat previews show supported message text and report malformed records. Gemini JSONL edits and rewinds are not applied; previews report when those records appear. Settings, instructions, and bundled skills are view only.
 * Linking a local skill reviews its instructions, source, and destination, then creates a directory link in the chosen user skill folder. Codex links into shared `~/.agents/skills`. The source must be inside home, contain a valid UTF-8 `SKILL.md`, and keep its reviewed instructions unchanged. Existing destinations are never replaced. Scripts and references remain in the source folder and are not run by neet. The source folder must stay in place. This is a live link, so later source changes affect the skill.
 * Editing and restoring affect only user `SKILL.md` files of at most 1 MiB. Existing text files with invalid frontmatter can be opened for repair. Before saving, neet checks for frontmatter name and description fields and an instruction body. It does not fully validate YAML or fields specific to a tool.
 * Edits use a private temporary copy and require a diff review. A failed edit or save keeps that draft until you repair it with `e`, discard it with `Esc`, or exit neet. The original stays unchanged when validation fails.
 * Before writing, neet checks the original file and link destination again, saves a backup under `~/.local/state/neet/backups/ai/`, and swaps in the new file. Backup folders refuse links. Backups have mode `0600`; the skill keeps its permissions.
 * `b` reviews restoring the latest backup and backs up the current version too.
-* The first version does not remove chats or skills, resume sessions, fetch remote skills, or edit tool settings. Those need separate reviews of tool indexes, reload behavior, and undo.
+* Chat cleanup reviews the exact transcript paths, titles, count, and size before moving them through Finder. It includes all selected chats, even those hidden by filters. Finder's Put Back can restore the files. This does not erase assistant indexes, related files, or cloud history. Cached entries may remain in the assistant's own history list.
+* Before each move, neet rechecks the file's device, inode, size, modification time, change time, and path. It refuses file links and linked parents. `lsof` checks for open files; a failed check skips the file. Files written in the last minute are also skipped. Close assistants first: an idle assistant can reopen or recreate a transcript, so these checks are not a session lock.
+* Missing-project tags use recorded absolute paths, including Gemini's `.project_root` marker. Unknown paths and permission errors are not treated as missing. neet never deletes a chat just because its project is missing.
+* Resume, archive, assistant index cleanup, skill removal, remote skill downloads, and tool settings changes remain follow-ups.
 
+* Gemini project markers follow its [project registry](https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/config/projectRegistry.ts).
 * File locations were checked against the official [Claude Code directory guide](https://code.claude.com/docs/en/claude-directory), [Codex skills guide](https://learn.chatgpt.com/docs/build-skills), [Gemini skills guide](https://geminicli.com/docs/cli/skills/), and [Gemini session guide](https://geminicli.com/docs/cli/session-management/). Formats can change; unsupported chat records stay out of the preview.
 
 ## Tests
@@ -505,7 +509,7 @@ min_age_days = 0
   13. Tool commands: only runtime IDs reach `simctl`, and what `simctl` and `docker` print is read as data.
   14. Dotfiles: files outside the list, never listed files, links that lead out, a file changed after it was opened, a failed check, a crash in the middle of a write, restoring every backup, and secrets found before an export.
   15. Startup: plists that are empty, unreadable, or links; `launchctl` output that cannot be read marks the list incomplete; helpers inside apps count only when launchd knows them; nothing in `/System/Library` is read.
-  16. AI Tools: known paths, bounded previews, chat records, skill links, stale reviews, edit and restore backups, draft recovery, search, and narrow terminals.
+  16. AI Tools: known paths, bounded previews and summaries, missing-project tags, chat selection and removal checks, partial cleanup failures, skill links, stale reviews, edit and restore backups, draft recovery, search, and narrow terminals.
 * Before release, a harmless test item is moved to the Trash by hand and restored with Put Back. This passed on macOS 26.5.
 * Removing an app owned by root was tried the same way, and Put Back restored it.
 * Planned features add their own tests, for changes outside their lists, links that lead out, and undoing each change.
