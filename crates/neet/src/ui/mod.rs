@@ -1,3 +1,4 @@
+mod ai;
 mod app;
 mod apps;
 mod art;

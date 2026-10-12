@@ -126,7 +126,7 @@
 | Dotfiles | **Done.** Changes stay within the list in SAFETY.md. Backup, restore, check, configure, and export tests pass. With chezmoi, edits reach the source file, and nothing is pushed without `y`. |
 | SSH | Changes stay within `~/.ssh`, and known hosts and permissions can be undone. |
 | Shell PATH | Changes stay within the shell files, and can be undone from their backups. |
-| AI tool files | Only the allowed files are read. Sign in files and chat history are never opened. |
+| AI Tools | **First version built.** Browse known user and current-project files for Claude Code, Codex, and Gemini CLI. Read chats on request. Load local skills and review edits and restores with backups. Chat actions are tracked in [#111](https://github.com/ado11231/neet/issues/111); skill removal and plugin discovery in [#112](https://github.com/ado11231/neet/issues/112). |
 | Power and display | Setting names are checked on real Macs. A refresh rate you do not keep switches back. Every change can be undone. |
 | Project build folders | Only listed build folders that Git ignores are offered. |
 | Treemap and preferences | The treemap shows the scan without changing files, and preferences keep your choices. |
@@ -134,3 +134,5 @@
 * Dotfiles checks: action and export reviews reject changed files, backups, and links. Pushes name the reviewed commit and tracked branch. Unicode renames and export scrolling have regression tests. Ghostty, the zsh block, and starting a repository without chezmoi are built. On 2026-10-08 every action was run by hand against real personal dotfiles and worked, so Dotfiles is done.
 
 * The opt in Dotfiles test passed with chezmoi 2.72.2 on macOS: edit and apply, save, put back, add, Configure, backup and restore, a link, and export to a local remote. It also refuses hooks added after an edit starts.
+
+* AI Tools checks use temporary homes for discovery, chat parsing, local skill links, edit and restore, stale reviews, and escaped paths. UI tests cover section changes, search, review cancellation, and narrow terminals. Real assistant reloads still need a manual check.

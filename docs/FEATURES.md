@@ -11,12 +11,13 @@
 3. [Cleanup](#cleanup)
 4. [Apps](#apps)
 5. [Dotfiles](#dotfiles)
-6. [Startup](#startup)
-7. [The Program](#the-program)
-8. [Planned Features](#planned-features)
-9. [Open Questions](#open-questions)
-10. [Never Planned](#never-planned)
-11. [Terms](#terms)
+6. [AI Tools](#ai-tools)
+7. [Startup](#startup)
+8. [The Program](#the-program)
+9. [Planned Features](#planned-features)
+10. [Open Questions](#open-questions)
+11. [Never Planned](#never-planned)
+12. [Terms](#terms)
 
 ## Status
 
@@ -123,6 +124,20 @@
 
 * What may change, and how, is in [SAFETY.md](SAFETY.md#dotfiles). neet runs chezmoi only when its templates and hooks cannot run a program.
 
+## AI Tools
+
+| Feature | What It Does | Status |
+| --- | --- | --- |
+| Browse | Lists known Claude Code, Codex, and Gemini CLI settings, instructions, skills, and chats. Includes shared `.agents/skills` and the current project's files. Filters by tool and path. | Done |
+| Read | Opens a local text preview. Chats show user and assistant messages. Credentials and databases are excluded. | Done |
+| Load a skill | Links a local skill folder into a tool's user skills after showing the source, destination, and instructions. Keeps scripts and references together. | Done |
+| Edit and restore | Edits a copy of a user `SKILL.md`, reviews the diff, and saves with a backup. Can review and restore the latest backup. Bundled skills stay view only. | Done |
+| Finder | Reveals the selected file, including hidden files. | Done |
+
+* This first version keeps chats, settings, and instruction files view only. Chat actions, remote skill downloads, removing skills, and plugin catalogs are later work.
+* Discovery checks known folders, not every project on disk. It stops at 20,000 entries and reports skipped paths. Previews stop at 512 KiB.
+* See [AI Tools safety](SAFETY.md#ai-tools) for file locations and limits.
+
 ## Startup
 
 | Feature | What It Does | Status |
@@ -152,7 +167,6 @@
 | --- | --- |
 | SSH | Show hosts, key details, and agent keys, fix file permissions that are too open, and remove old known hosts. Never shows a private key. |
 | Shell PATH | Show the folders your shell searches for programs, in order, flag problems, show which copy of a program runs, and reorder them with a backup. |
-| AI tool files | Show the settings, instruction files, and skills that Claude Code and Codex keep on your Mac. View only. |
 | Power and display | Switch power modes, graphics switching, and display refresh rate, and show what keeps the Mac awake. Every change can be undone. |
 | Space breakdown | Explain the gap between the disk's used space and the scan. |
 | Project build folders | Find old build folders in code projects, only when Git ignores them. |
@@ -171,7 +185,6 @@
 | Space breakdown | Which numbers does macOS report reliably for volumes, snapshots, and purgeable space? |
 | Project build folders | Many projects live in Documents or Desktop, which neet never touches. Can a narrow check allow only ignored build folders there? |
 | Shell PATH | How can neet find where each folder was added, and should edits go in a block neet owns? |
-| AI tool files | Where does each tool keep project skills, across versions? |
 | Treemap and preferences | How should they work, and what should be saved? |
 
 ## Never Planned
@@ -186,7 +199,6 @@
 | Turning off System Integrity Protection | It protects macOS itself. |
 | Changing `nvram` | A mistake can stop the Mac from starting. |
 | Showing, creating, or deleting SSH keys | Use `ssh-keygen` for that. |
-| Editing AI tool files | Use the tool itself. |
 | Syncing dotfiles on its own, or pulling and merging | neet commits and pushes only when you press `y`. Use chezmoi or Git to pull changes from another Mac. |
 | Mac settings unrelated to speed, battery, or sleep | Out of scope. |
 

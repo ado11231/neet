@@ -92,8 +92,8 @@ const ENTRIES: &[Entry] = &[
     },
     Entry {
         label: "AI Tools",
-        about: "View Claude Code and Codex settings, instruction files, and skills.",
-        target: Target::Soon,
+        about: "Browse assistant files and chats. Load and edit local skills.",
+        target: Target::Screen(|| Box::new(super::ai::AiTools::new())),
     },
     Entry {
         label: "Settings",
@@ -529,6 +529,8 @@ mod tests {
         press(&mut home, KeyCode::Down);
         assert_eq!(ENTRIES[home.selected()].label, "Dotfiles");
         press(&mut home, KeyCode::Down);
+        assert_eq!(ENTRIES[home.selected()].label, "AI Tools");
+        press(&mut home, KeyCode::Down);
         assert_eq!(ENTRIES[home.selected()].label, "Quit");
     }
 
@@ -550,7 +552,11 @@ mod tests {
             press(&mut home, KeyCode::Char('6')),
             Action::Open(_)
         ));
-        assert!(matches!(press(&mut home, KeyCode::Char('8')), Action::None));
+        assert!(matches!(
+            ENTRIES[key_of("AI Tools") - 1].target,
+            Target::Screen(_)
+        ));
+        assert!(matches!(press(&mut home, KeyCode::Char('9')), Action::None));
     }
 
     /// Draws Home and writes it as `docs/images/home.svg`, the README's

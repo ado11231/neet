@@ -82,6 +82,8 @@ neet/
 | `ui/loading.rs` | The loading box a screen shows while slow work runs. |
 | `ui/format.rs` | Sizes, counts, bars, and ages as text, and shortening long names and folders. |
 
+* `neet-core/src/ai.rs` discovers known assistant files without reading their contents. `ai/chat.rs` formats bounded chat previews; `ai/skills.rs` reviews local skill links, edits, and restores. `neet/src/ui/ai.rs` owns the Files, Chats, and Skills screen.
+
 ## How neet Runs
 
 ```text
