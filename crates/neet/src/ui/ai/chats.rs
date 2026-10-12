@@ -93,6 +93,8 @@ impl AiTools {
 
     pub(super) fn start_chat_removal(&mut self, removals: Vec<Removal>) {
         let total = removals.len();
+        self.marked
+            .extend(removals.iter().map(|removal| removal.item.path.clone()));
         let (sender, receiver) = mpsc::channel();
         thread::spawn(move || {
             for removal in removals {

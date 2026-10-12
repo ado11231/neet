@@ -639,7 +639,7 @@ impl AiTools {
                 lines.push(Line::from(chat.note.clone()));
             }
             if let Some(age) = item.modified.and_then(|time| time.elapsed().ok()) {
-                lines.push(Line::from(format!("Updated {} ago", format::age(age))));
+                lines.push(Line::from(format!("Updated {}", format::age(age))));
             }
         }
         lines.push(Line::from(match item.kind {
