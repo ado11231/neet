@@ -257,3 +257,30 @@ fn discovery_keeps_entries_found_at_the_limit_and_ignores_loose_skill_files() {
     assert_eq!(scanner.listing.items.len(), 2);
     assert_eq!(locations.list().warnings, Vec::<String>::new());
 }
+
+#[test]
+fn gemini_jsonl_sessions_support_discovery_summary_preview_and_removal_review() {
+    let (_dir, locations) = setup();
+    let contents = concat!(
+        "{\"sessionId\":\"example\",\"projectHash\":\"project\"}\n",
+        "{\"type\":\"user\",\"content\":[\"Review the checkout\"]}\n",
+        "{\"type\":\"gemini\",\"content\":[{\"text\":\"Found the problem\"}]}\n",
+        "{\"$rewindTo\":\"example-message\"}\n"
+    );
+    write(
+        &locations
+            .gemini
+            .join("tmp/project/chats/session-example.jsonl"),
+        contents,
+    );
+    let mut listing = locations.list();
+    listing.summarize_chats(&locations);
+    assert_eq!(listing.items.len(), 1);
+    let item = &listing.items[0];
+    assert_eq!(item.chat.as_ref().unwrap().title, "Review the checkout");
+    let preview = locations.preview(item).unwrap();
+    assert!(preview.contains("You\nReview the checkout"));
+    assert!(preview.contains("Assistant\nFound the problem"));
+    assert!(preview.contains("rewinds are not applied"));
+    assert!(remove::Removal::prepare(&locations, item).is_ok());
+}

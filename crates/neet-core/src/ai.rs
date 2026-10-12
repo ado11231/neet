@@ -301,7 +301,7 @@ impl Scanner<'_> {
                                 .is_some_and(|name| name.to_string_lossy().starts_with("rollout-"))
                     }
                     Provider::Gemini => {
-                        extension == Some("json")
+                        matches!(extension, Some("json" | "jsonl"))
                             && path
                                 .parent()
                                 .and_then(Path::file_name)

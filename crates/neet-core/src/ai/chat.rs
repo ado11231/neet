@@ -5,16 +5,16 @@ use super::Provider;
 pub(super) fn render(provider: Provider, bytes: &[u8]) -> String {
     let mut messages = Vec::new();
     let mut malformed = 0;
-    if provider == Provider::Gemini {
-        match serde_json::from_slice::<Value>(bytes) {
-            Ok(value) => {
-                if let Some(rows) = value["messages"].as_array() {
-                    for row in rows {
-                        message(row, &mut messages);
-                    }
-                }
+    let mut edits = false;
+    if provider == Provider::Gemini
+        && let Ok(value) = serde_json::from_slice::<Value>(bytes)
+    {
+        if let Some(rows) = value["messages"].as_array() {
+            for row in rows {
+                message(row, &mut messages);
             }
-            Err(_) => malformed += 1,
+        } else {
+            message(&value, &mut messages);
         }
     } else {
         for line in bytes
@@ -24,6 +24,10 @@ pub(super) fn render(provider: Provider, bytes: &[u8]) -> String {
             match serde_json::from_slice::<Value>(line) {
                 Ok(value) => match provider {
                     Provider::Claude => message(&value["message"], &mut messages),
+                    Provider::Gemini => {
+                        message(&value, &mut messages);
+                        edits |= value.get("$patch").is_some() || value.get("$rewindTo").is_some();
+                    }
                     Provider::Codex
                         if value["type"] == "response_item"
                             && value["payload"]["type"] == "message" =>
@@ -45,6 +49,9 @@ pub(super) fn render(provider: Provider, bytes: &[u8]) -> String {
         messages.push(format!(
             "[{malformed} incomplete or invalid records skipped.]"
         ));
+    }
+    if edits {
+        messages.push("[Session edits and rewinds are not applied in this preview.]".into());
     }
     messages.join("\n\n")
 }
@@ -75,6 +82,9 @@ pub(super) fn content(value: &Value) -> String {
             parts
                 .iter()
                 .filter_map(|part| {
+                    if let Some(text) = part.as_str() {
+                        return Some(text);
+                    }
                     let kind = part["type"].as_str().unwrap_or("text");
                     matches!(kind, "text" | "input_text" | "output_text")
                         .then(|| part["text"].as_str())
