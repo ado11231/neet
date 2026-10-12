@@ -59,8 +59,9 @@ fn tabs_filter_and_chat_preview_work_at_all_sizes() {
         assert!(!text.contains("A private chat"));
     }
     press(&mut screen, KeyCode::Tab);
+    finish_refresh(&mut screen);
     assert_eq!(screen.selected().unwrap().kind, Kind::Chat);
-    assert!(!render(&mut screen, 100, 30).contains("A private chat"));
+    assert!(render(&mut screen, 100, 30).contains("A private chat"));
     press(&mut screen, KeyCode::Enter);
     assert!(render(&mut screen, 100, 30).contains("A private chat"));
     screen.back();
@@ -270,4 +271,30 @@ fn refresh_preserves_selection_and_preview_keeps_full_metadata() {
     assert!(screen.hints().contains("o Finder"));
     let text = render(&mut screen, 60, 20);
     assert!(text.contains("~/.claude/skills/sample/SKILL.md"));
+}
+
+#[test]
+fn chats_show_titles_and_missing_projects_and_search_both() {
+    let (_dir, mut screen) = setup();
+    let path = screen.locations.claude.join("projects/repo/chat.jsonl");
+    write(
+        &path,
+        &format!(
+            r#"{{"cwd":{:?},"message":{{"role":"user","content":"Fix the checkout button"}}}}"#,
+            screen.locations.home.join("deleted-repo")
+        ),
+    );
+    press(&mut screen, KeyCode::Tab);
+    finish_refresh(&mut screen);
+    for (width, height) in visual::tests::SIZES {
+        let text = render(&mut screen, width, height);
+        assert!(text.contains("Fix the checkout"), "{text}");
+        assert!(text.contains("Missing project"), "{text}");
+    }
+    for query in ["checkout", "deleted-repo", "missing project"] {
+        screen.filter = query.into();
+        assert_eq!(screen.rows().len(), 1);
+    }
+    press(&mut screen, KeyCode::Enter);
+    assert!(render(&mut screen, 100, 30).contains("Fix the checkout button"));
 }

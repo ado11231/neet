@@ -129,8 +129,13 @@ impl AiTools {
         self.reselect = selected;
         let (sender, receiver) = mpsc::channel();
         let locations = self.locations.clone();
+        let chats = self.tab == 1;
         thread::spawn(move || {
-            let _ = sender.send(locations.list());
+            let mut listing = locations.list();
+            if chats {
+                listing.summarize_chats(&locations);
+            }
+            let _ = sender.send(listing);
         });
         self.pending = Some(receiver);
         self.list.select(Some(0));
@@ -177,11 +182,16 @@ impl AiTools {
                                 && matches!(provider, Provider::Codex | Provider::Gemini))
                     })
                     && format!(
-                        "{} {} {} {}",
+                        "{} {} {} {} {}",
                         item.path.display(),
                         self.shown_path(&item.path),
                         item.provider.name(),
-                        item.scope
+                        item.scope,
+                        item.chat.as_ref().map_or_else(String::new, |chat| format!(
+                            "{} {}",
+                            chat.title,
+                            chat.project_label()
+                        ))
                     )
                     .to_lowercase()
                     .contains(&filter)
@@ -193,6 +203,20 @@ impl AiTools {
         self.rows()
             .get(self.list.selected().unwrap_or(0))
             .map(|item| (*item).clone())
+    }
+
+    fn change_tab(&mut self, tab: usize) {
+        self.tab = tab;
+        self.list.select(Some(0));
+        if tab == 1
+            && self
+                .listing
+                .items
+                .iter()
+                .any(|item| item.kind == Kind::Chat && item.chat.is_none())
+        {
+            self.refresh();
+        }
     }
 
     fn step(&mut self, down: bool) {
@@ -220,6 +244,9 @@ impl AiTools {
                         item.scope,
                         format::size(item.size)
                     );
+                    let metadata = item.chat.as_ref().map_or(metadata.clone(), |chat| {
+                        format!("{}\n{}\n\n{metadata}", chat.title, chat.project_label())
+                    });
                     let mut viewer = Viewer::new("File preview".into(), &metadata);
                     viewer.source = Some(item.path);
                     self.viewer = Some(viewer);
@@ -413,19 +440,32 @@ impl AiTools {
                 } else {
                     &item.path
                 };
+                let title = item
+                    .chat
+                    .as_ref()
+                    .filter(|chat| !chat.title.is_empty())
+                    .map_or_else(
+                        || {
+                            path.file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                                .into_owned()
+                        },
+                        |chat| chat.title.clone(),
+                    );
+                let subtitle = item
+                    .chat
+                    .as_ref()
+                    .map_or_else(|| self.shown_path(path), |chat| chat.project_label());
                 ListItem::new(vec![
                     Line::from(format::shorten_middle(
-                        &ai::display_text(&format!(
-                            "{} · {}",
-                            path.file_name().unwrap_or_default().to_string_lossy(),
-                            item.provider.name()
-                        ))
-                        .replace('\n', " "),
+                        &ai::display_text(&format!("{} · {}", title, item.provider.name()))
+                            .replace('\n', " "),
                         usize::from(area.width.saturating_sub(6)),
                     ))
                     .style(visual::HEADING),
                     Line::from(format::shorten_middle(
-                        &self.shown_path(path),
+                        &subtitle,
                         usize::from(area.width.saturating_sub(6)),
                     )),
                 ])
@@ -527,6 +567,16 @@ impl AiTools {
             Line::from(format!("{} file size", format::size(item.size))),
             Line::default(),
         ];
+        if let Some(chat) = &item.chat {
+            lines.insert(1, Line::from(chat.title.clone()));
+            lines.insert(2, Line::from(chat.project_label()));
+            if !chat.note.is_empty() {
+                lines.push(Line::from(chat.note.clone()));
+            }
+            if let Some(age) = item.modified.and_then(|time| time.elapsed().ok()) {
+                lines.push(Line::from(format!("Updated {} ago", format::age(age))));
+            }
+        }
         lines.push(Line::from(match item.kind {
             Kind::Chat => "Enter reads this conversation. Chat files stay view only.",
             Kind::Settings => "Enter shows settings, which may include tokens. View only.",
@@ -547,7 +597,7 @@ impl Screen for AiTools {
                 title: "AI Tools",
                 doing: "Finding assistant files",
                 progress: "Claude Code, Codex, Gemini CLI, and shared skills".into(),
-                note: "Reading file names and sizes.",
+                note: "Reading file names and sizes. Chats also show local summaries.",
             }
             .draw(frame, area);
             return;
@@ -658,12 +708,10 @@ impl Screen for AiTools {
             KeyCode::Down | KeyCode::Char('j') => self.step(true),
             KeyCode::Up | KeyCode::Char('k') => self.step(false),
             KeyCode::Tab | KeyCode::Right => {
-                self.tab = (self.tab + 1) % TABS.len();
-                self.list.select(Some(0));
+                self.change_tab((self.tab + 1) % TABS.len());
             }
             KeyCode::BackTab | KeyCode::Left => {
-                self.tab = (self.tab + TABS.len() - 1) % TABS.len();
-                self.list.select(Some(0));
+                self.change_tab((self.tab + TABS.len() - 1) % TABS.len());
             }
             KeyCode::Char('p') => {
                 self.provider = match self.provider {
