@@ -1,5 +1,7 @@
 //! Browse local assistant files and review skill changes.
 
+mod chats;
+
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
@@ -27,6 +29,7 @@ enum Input {
 }
 
 enum Review {
+    Chats(Vec<ai::remove::Removal>),
     Install {
         install: Install,
         provider: Provider,
@@ -87,6 +90,7 @@ pub struct AiTools {
     viewer: Option<Viewer>,
     review: Option<Review>,
     editing: Option<Edit>,
+    cleanup: Option<chats::Cleanup>,
     note: String,
 }
 
@@ -120,6 +124,7 @@ impl AiTools {
             viewer: None,
             review: None,
             editing: None,
+            cleanup: None,
             note: String::new(),
         }
     }
@@ -145,6 +150,7 @@ impl AiTools {
     }
 
     fn poll(&mut self) {
+        self.poll_cleanup();
         let Some(receiver) = &self.pending else {
             return;
         };
@@ -373,6 +379,10 @@ impl AiTools {
         };
         let mut selected = self.selected().map(|item| item.path);
         self.note = match review {
+            Review::Chats(removals) => {
+                self.start_chat_removal(removals);
+                return;
+            }
             Review::Install { install, provider } => match install.apply() {
                 Ok(()) => {
                     selected = Some(install.destination().join("SKILL.md"));
@@ -487,10 +497,10 @@ impl AiTools {
                         },
                         |chat| chat.title.clone(),
                     );
-                let subtitle = item
-                    .chat
-                    .as_ref()
-                    .map_or_else(|| self.shown_path(path), |chat| chat.project_label());
+                let subtitle = item.chat.as_ref().map_or_else(
+                    || self.shown_path(path),
+                    ai::summary::Summary::project_label,
+                );
                 let marker = if item.kind == Kind::Chat {
                     if self.marked.contains(&item.path) {
                         "[x] "
@@ -633,7 +643,7 @@ impl AiTools {
             }
         }
         lines.push(Line::from(match item.kind {
-            Kind::Chat => "Enter reads this conversation. Chat files stay view only.",
+            Kind::Chat => "Enter reads · Space selects · a selects all shown · d reviews removal.",
             Kind::Settings => "Enter shows settings, which may include tokens. View only.",
             Kind::Instructions => "Enter shows instructions. View only.",
             Kind::Skill if item.bundled => "Bundled skill. Enter previews it. View only.",
@@ -647,6 +657,16 @@ impl AiTools {
 impl Screen for AiTools {
     fn draw(&mut self, frame: &mut Frame, area: Rect, _: &Context) {
         self.poll();
+        if let Some(cleanup) = &self.cleanup {
+            super::loading::Loading {
+                title: "AI Tools",
+                doing: "Moving chat files to Trash",
+                progress: format!("{} of {} checked", cleanup.done, cleanup.total),
+                note: "Changed or open files are skipped. Finder can restore moved files.",
+            }
+            .draw(frame, area);
+            return;
+        }
         if self.pending.is_some() {
             super::loading::Loading {
                 title: "AI Tools",
@@ -730,7 +750,7 @@ impl Screen for AiTools {
 
     fn handle_key(&mut self, key: KeyEvent, _: &Context) -> Action {
         self.poll();
-        if self.pending.is_some() {
+        if self.pending.is_some() || self.cleanup.is_some() {
             return Action::None;
         }
         if self.input.is_some() {
@@ -781,6 +801,7 @@ impl Screen for AiTools {
             KeyCode::Char(' ') if self.tab == 1 => self.toggle_chat(),
             KeyCode::Char('a') if self.tab == 1 => self.toggle_all_chats(),
             KeyCode::Char('n') if self.tab == 1 => self.marked.clear(),
+            KeyCode::Char('d') | KeyCode::Delete if self.tab == 1 => self.review_chat_removal(),
             KeyCode::Char('/') => self.input = Some(Input::Search),
             KeyCode::Char('i') => {
                 self.input = Some(Input::Install {
@@ -820,6 +841,9 @@ impl Screen for AiTools {
     }
 
     fn back(&mut self) -> Action {
+        if self.cleanup.is_some() {
+            return Action::None;
+        }
         if let Some(input) = self.input.take() {
             if matches!(input, Input::Search) {
                 self.filter.clear();
@@ -847,11 +871,13 @@ impl Screen for AiTools {
         self.input.is_some()
     }
     fn is_dialog(&self) -> bool {
-        self.review.is_some() || self.editing.is_some()
+        self.review.is_some() || self.editing.is_some() || self.cleanup.is_some()
     }
 
     fn hints(&self) -> &'static str {
-        if matches!(self.input, Some(Input::Search)) {
+        if self.cleanup.is_some() {
+            "Moving chat files to Trash. Please wait."
+        } else if matches!(self.input, Some(Input::Search)) {
             "Enter keep filter · Esc clear"
         } else if self.input.is_some() {
             "Enter review · Tab tool · Esc cancel"
@@ -868,7 +894,7 @@ impl Screen for AiTools {
         } else if self.viewer.is_some() {
             "↑↓ scroll · PgUp/PgDn page · Esc back · ? help · q quit"
         } else if self.tab == 1 {
-            "↑↓ move · Enter read · Space select · a all shown · n clear · / find · p tool · Tab section · ? help · Esc back"
+            "↑↓ move · Enter read · Space select · a all shown · d delete · / find · p tool · Tab section · ? help · Esc back"
         } else if self.tab == 2 {
             "↑↓ move · Tab section · Enter read · i link skill · e edit · b restore · / find · p tool · ? help · Esc back"
         } else {
@@ -891,6 +917,10 @@ impl Screen for AiTools {
             ("Space", "Select or deselect a chat."),
             ("a / n", "Select all shown chats / clear every selection."),
             (
+                "d / Delete",
+                "Review moving selected chat files to Trash, including hidden selections.",
+            ),
+            (
                 "i",
                 "Link a local skill folder. Tab picks Claude, Codex, or Gemini.",
             ),
@@ -899,7 +929,7 @@ impl Screen for AiTools {
                 "Edit your SKILL.md in $VISUAL or $EDITOR, then review.",
             ),
             ("b", "Review restoring the latest skill backup."),
-            ("y", "Confirm the skill change on the review screen."),
+            ("y", "Confirm the listed change on the review screen."),
             ("o", "Reveal the selected file in Finder."),
             ("r / w", "Refresh files / show skipped paths."),
             (

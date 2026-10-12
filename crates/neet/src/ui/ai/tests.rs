@@ -328,3 +328,67 @@ fn chat_selection_follows_paths_and_select_all_respects_filters() {
     press(&mut screen, KeyCode::Char('a'));
     assert!(screen.marked.is_empty());
 }
+
+#[test]
+fn removal_review_includes_hidden_selections_and_escape_cancels() {
+    let (_dir, mut screen) = setup();
+    let other = screen.locations.codex.join("sessions/rollout-other.jsonl");
+    write(&other, "{}");
+    press(&mut screen, KeyCode::Tab);
+    finish_refresh(&mut screen);
+    press(&mut screen, KeyCode::Char('a'));
+    screen.provider = Some(Provider::Claude);
+    press(&mut screen, KeyCode::Char('d'));
+    assert!(screen.is_dialog());
+    let text = render(&mut screen, 100, 40);
+    assert!(text.contains("Move 2 chat files"), "{text}");
+    assert!(text.contains("rollout-other.jsonl"), "{text}");
+    assert!(text.contains("indexes, related files"), "{text}");
+    screen.back();
+    assert!(other.exists());
+    assert!(screen.cleanup.is_none());
+    assert!(screen.review.is_none());
+    assert_eq!(screen.marked.len(), 2);
+}
+
+#[test]
+fn removal_requires_confirmation_and_blocks_leaving_while_running() {
+    let (_dir, mut screen) = setup();
+    press(&mut screen, KeyCode::Tab);
+    finish_refresh(&mut screen);
+    press(&mut screen, KeyCode::Char('d'));
+    assert!(screen.cleanup.is_none());
+    press(&mut screen, KeyCode::Char('y'));
+    assert!(screen.cleanup.is_some());
+    assert!(screen.is_dialog());
+    assert!(matches!(screen.back(), Action::None));
+}
+
+#[test]
+fn cleanup_reports_partial_failure_and_keeps_failed_chats_selected() {
+    let (_dir, mut screen) = setup();
+    write(
+        &screen.locations.codex.join("sessions/rollout-other.jsonl"),
+        "{}",
+    );
+    press(&mut screen, KeyCode::Tab);
+    finish_refresh(&mut screen);
+    press(&mut screen, KeyCode::Char('a'));
+    let paths: Vec<_> = screen.marked.iter().cloned().collect();
+    fs::rename(&paths[0], screen.locations.home.join("trashed-chat")).unwrap();
+    let (sender, receiver) = mpsc::channel();
+    screen.cleanup = Some(chats::Cleanup::new(2, receiver));
+    sender.send((paths[0].clone(), Ok(()))).unwrap();
+    sender
+        .send((paths[1].clone(), Err("Chat changed after review".into())))
+        .unwrap();
+    drop(sender);
+    screen.poll_cleanup();
+    finish_refresh(&mut screen);
+    assert_eq!(screen.marked.len(), 1);
+    assert!(screen.marked.contains(&paths[1]));
+    assert_eq!(screen.rows().len(), 1);
+    let text = render(&mut screen, 80, 30);
+    assert!(text.contains("1 of 2 chat files moved"), "{text}");
+    assert!(text.contains("Chat changed after review"), "{text}");
+}
