@@ -65,7 +65,7 @@ fn message(value: &Value, messages: &mut Vec<String>) {
     }
 }
 
-fn content(value: &Value) -> String {
+pub(super) fn content(value: &Value) -> String {
     if let Some(text) = value.as_str() {
         return text.into();
     }

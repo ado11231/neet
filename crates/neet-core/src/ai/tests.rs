@@ -4,12 +4,12 @@ use std::os::unix::fs::symlink;
 const SKILL: &str =
     "---\nname: sample\ndescription: A sample skill.\n---\nRead the project docs.\n";
 
-fn write(path: &Path, text: &str) {
+pub(super) fn write(path: &Path, text: &str) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(path, text).unwrap();
 }
 
-fn setup() -> (tempfile::TempDir, Locations) {
+pub(super) fn setup() -> (tempfile::TempDir, Locations) {
     let dir = tempfile::tempdir().unwrap();
     let home = fs::canonicalize(dir.path()).unwrap();
     let locations = Locations::new(home, None);
