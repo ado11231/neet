@@ -26,14 +26,21 @@ enum Input {
 }
 
 enum Review {
-    Install(Install),
-    Edit { edit: Edit, contents: Vec<u8> },
+    Install {
+        install: Install,
+        provider: Provider,
+    },
+    Edit {
+        edit: Edit,
+        contents: Vec<u8>,
+    },
 }
 
 struct Viewer {
     title: String,
     lines: Vec<Line<'static>>,
     scroll: u16,
+    source: Option<PathBuf>,
 }
 
 impl Viewer {
@@ -45,6 +52,7 @@ impl Viewer {
                 .map(|line| Line::from(line.to_owned()))
                 .collect(),
             scroll: 0,
+            source: None,
         }
     }
     fn draw(&mut self, frame: &mut Frame, area: Rect) {
@@ -69,6 +77,7 @@ pub struct AiTools {
     listing: Listing,
     pending: Option<Receiver<Listing>>,
     list: ListState,
+    reselect: Option<PathBuf>,
     tab: usize,
     filter: String,
     provider: Option<Provider>,
@@ -100,6 +109,7 @@ impl AiTools {
             listing: Listing::default(),
             pending: None,
             list: ListState::default().with_selected(Some(0)),
+            reselect: None,
             tab: 0,
             filter: String::new(),
             provider: None,
@@ -112,6 +122,11 @@ impl AiTools {
     }
 
     fn refresh(&mut self) {
+        self.refresh_select(self.selected().map(|item| item.path));
+    }
+
+    fn refresh_select(&mut self, selected: Option<PathBuf>) {
+        self.reselect = selected;
         let (sender, receiver) = mpsc::channel();
         let locations = self.locations.clone();
         thread::spawn(move || {
@@ -129,6 +144,12 @@ impl AiTools {
             Ok(listing) => {
                 self.listing = listing;
                 self.pending = None;
+                let selected = self
+                    .reselect
+                    .take()
+                    .and_then(|path| self.rows().iter().position(|item| item.path == path))
+                    .unwrap_or(0);
+                self.list.select(Some(selected));
             }
             Err(mpsc::TryRecvError::Disconnected) => {
                 self.note = "Discovery stopped unexpectedly. Press r to try again.".into();
@@ -150,12 +171,15 @@ impl AiTools {
                     _ => matches!(item.kind, Kind::Settings | Kind::Instructions),
                 };
                 category
-                    && self
-                        .provider
-                        .is_none_or(|provider| item.provider == provider)
+                    && self.provider.is_none_or(|provider| {
+                        item.provider == provider
+                            || (item.provider == Provider::Shared
+                                && matches!(provider, Provider::Codex | Provider::Gemini))
+                    })
                     && format!(
-                        "{} {} {}",
+                        "{} {} {} {}",
                         item.path.display(),
+                        self.shown_path(&item.path),
                         item.provider.name(),
                         item.scope
                     )
@@ -187,7 +211,19 @@ impl AiTools {
     fn open(&mut self) {
         if let Some(item) = self.selected() {
             match self.locations.preview(&item) {
-                Ok(text) => self.viewer = Some(Viewer::new(self.shown_path(&item.path), &text)),
+                Ok(text) => {
+                    let metadata = format!(
+                        "{} · {}\n{}\n{} · {}\n\n{text}",
+                        item.provider.name(),
+                        item.kind.name(),
+                        self.shown_path(&item.path),
+                        item.scope,
+                        format::size(item.size)
+                    );
+                    let mut viewer = Viewer::new("File preview".into(), &metadata);
+                    viewer.source = Some(item.path);
+                    self.viewer = Some(viewer);
+                }
                 Err(error) => self.note = error.to_string(),
             }
         }
@@ -217,6 +253,10 @@ impl AiTools {
             self.note = "No changes to save.".into();
             return;
         }
+        if let Err(error) = std::fs::write(edit.draft(), &contents) {
+            self.draft_error(edit, &format!("Could not keep the draft: {error}"));
+            return;
+        }
         let old = String::from_utf8_lossy(edit.contents());
         let new = String::from_utf8_lossy(&contents);
         let mut viewer = Viewer::new(
@@ -239,7 +279,7 @@ impl AiTools {
         self.review = Some(Review::Edit { edit, contents });
     }
 
-    fn prepare_install(&mut self, path: &str, target: usize) {
+    fn prepare_install(&mut self, path: &str, target: usize) -> bool {
         let source = path.strip_prefix("~/").map_or_else(
             || PathBuf::from(path),
             |rest| self.locations.home.join(rest),
@@ -247,15 +287,22 @@ impl AiTools {
         match Install::prepare(&self.locations, &source, INSTALL_TARGETS[target]) {
             Ok(install) => {
                 let text = format!(
-                    "Link {}\nto {}\n\nThe assistant can load this skill and its scripts.\nChanges to the source also change the loaded skill.\nRestart the assistant or reload its skills after loading.\ny loads this skill. Esc cancels.\n\n{}",
+                    "Link {}\nto {}\n\nThe source must stay in this folder. The assistant can load its instructions and scripts.\nChanges to the source also change the loaded skill.\nRestart the assistant or reload its skills after loading.\ny loads this skill. Esc cancels.\n\n{}",
                     self.shown_path(install.source()),
                     self.shown_path(install.destination()),
                     String::from_utf8_lossy(install.contents())
                 );
                 self.viewer = Some(Viewer::new("Review local skill".into(), &text));
-                self.review = Some(Review::Install(install));
+                self.review = Some(Review::Install {
+                    install,
+                    provider: INSTALL_TARGETS[target],
+                });
+                true
             }
-            Err(error) => self.note = error.to_string(),
+            Err(error) => {
+                self.note = error.to_string();
+                false
+            }
         }
     }
 
@@ -263,24 +310,46 @@ impl AiTools {
         let Some(review) = self.review.take() else {
             return;
         };
+        let mut selected = self.selected().map(|item| item.path);
         self.note = match review {
-            Review::Install(install) => match install.apply() {
-                Ok(()) => "Skill loaded. Restart the assistant or reload its skills.".into(),
+            Review::Install { install, provider } => match install.apply() {
+                Ok(()) => {
+                    selected = Some(install.destination().join("SKILL.md"));
+                    self.tab = 2;
+                    self.provider = Some(provider);
+                    self.filter.clear();
+                    "Skill linked. Restart the assistant or reload its skills.".into()
+                }
                 Err(error) => error.to_string(),
             },
             Review::Edit { edit, contents } => match edit.save(&contents) {
                 Ok(backup) => format!("Skill saved. Backup: {}", self.shown_path(&backup)),
-                Err(error) => error.to_string(),
+                Err(error) => {
+                    self.draft_error(edit, &error.to_string());
+                    return;
+                }
             },
         };
         self.viewer = None;
-        self.refresh();
+        self.refresh_select(selected);
+    }
+
+    fn draft_error(&mut self, edit: Edit, error: &str) {
+        self.viewer = Some(Viewer::new(
+            "Skill draft kept".into(),
+            &format!(
+                "{error}\n\nDraft: {}\n\ne reopens this draft. Esc discards it.\nIf the original changed, copy your work before discarding and open the skill again.",
+                edit.draft().display()
+            ),
+        ));
+        self.editing = Some(edit);
     }
 
     fn input_key(&mut self, key: KeyCode) {
         let Some(mut input) = self.input.take() else {
             return;
         };
+        self.note.clear();
         match &mut input {
             Input::Search => match key {
                 KeyCode::Enter => return,
@@ -292,9 +361,13 @@ impl AiTools {
             },
             Input::Install { path, target } => match key {
                 KeyCode::Tab => *target = (*target + 1) % INSTALL_TARGETS.len(),
+                KeyCode::BackTab => {
+                    *target = (*target + INSTALL_TARGETS.len() - 1) % INSTALL_TARGETS.len();
+                }
                 KeyCode::Enter => {
-                    self.prepare_install(path.trim(), *target);
-                    return;
+                    if self.prepare_install(path.trim(), *target) {
+                        return;
+                    }
                 }
                 KeyCode::Backspace => {
                     path.pop();
@@ -308,15 +381,24 @@ impl AiTools {
     }
 
     fn reveal(&mut self) {
-        if let Some(item) = self.selected() {
-            match std::process::Command::new("/usr/bin/open")
+        let path = self
+            .viewer
+            .as_ref()
+            .and_then(|viewer| viewer.source.clone())
+            .or_else(|| self.selected().map(|item| item.path));
+        if let Some(path) = path {
+            let result = std::process::Command::new("/usr/bin/open")
                 .arg("-R")
-                .arg(item.path)
-                .status()
-            {
-                Ok(status) if status.success() => self.note = "Revealed in Finder.".into(),
-                Ok(_) => self.note = "Finder could not reveal this file.".into(),
-                Err(error) => self.note = error.to_string(),
+                .arg(path)
+                .status();
+            self.note = match result {
+                Ok(status) if status.success() => "Revealed in Finder.".into(),
+                Ok(_) => "Finder could not reveal this file.".into(),
+                Err(error) => error.to_string(),
+            };
+            if let Some(viewer) = &mut self.viewer {
+                viewer.lines.push(Line::default());
+                viewer.lines.push(Line::from(self.note.clone()));
             }
         }
     }
@@ -332,8 +414,16 @@ impl AiTools {
                     &item.path
                 };
                 ListItem::new(vec![
-                    Line::from(format!("{} · {}", item.provider.name(), item.kind.name()))
-                        .style(visual::HEADING),
+                    Line::from(format::shorten_middle(
+                        &ai::display_text(&format!(
+                            "{} · {}",
+                            path.file_name().unwrap_or_default().to_string_lossy(),
+                            item.provider.name()
+                        ))
+                        .replace('\n', " "),
+                        usize::from(area.width.saturating_sub(6)),
+                    ))
+                    .style(visual::HEADING),
                     Line::from(format::shorten_middle(
                         &self.shown_path(path),
                         usize::from(area.width.saturating_sub(6)),
@@ -346,7 +436,21 @@ impl AiTools {
             .title(format!(" {} · {count} ", TABS[self.tab]))
             .padding(Padding::horizontal(1));
         if count == 0 {
-            frame.render_widget(Paragraph::new("No matching files.\n\nr refreshes the list.\ni loads a local skill folder.\n\nLooks in user folders and the current project's parent folders up to its Git root.").wrap(Wrap { trim: false }).block(block), area);
+            let text = if !self.filter.is_empty() {
+                "No matches. Esc clears the search; p changes the tool."
+            } else if self.provider.is_some() {
+                "No files for this tool. p changes the tool."
+            } else {
+                match self.tab {
+                    1 => "No saved chats found. r looks again.",
+                    2 => "No skills found. i links a local skill folder.",
+                    _ => "No settings or instructions found. r looks again.",
+                }
+            };
+            frame.render_widget(
+                Paragraph::new(text).wrap(Wrap { trim: false }).block(block),
+                area,
+            );
         } else {
             frame.render_stateful_widget(
                 List::new(items)
@@ -357,6 +461,55 @@ impl AiTools {
                 &mut self.list,
             );
         }
+    }
+
+    fn status_lines(&self, width: u16) -> Vec<Line<'static>> {
+        let short =
+            |text: &str| format::shorten_middle(&ai::display_text(text), usize::from(width));
+        let mut lines = match &self.input {
+            Some(Input::Install { path, target }) => vec![
+                Line::from(format!(
+                    "Link to {} · Tab changes tool",
+                    INSTALL_TARGETS[*target].name()
+                )),
+                Line::from(format!(
+                    "{}▏",
+                    format::shorten_middle(
+                        &ai::display_text(path),
+                        usize::from(width.saturating_sub(1))
+                    )
+                )),
+                Line::from(short(&format!(
+                    "Destination: {}",
+                    self.shown_path(&self.locations.skill_root(INSTALL_TARGETS[*target]))
+                ))),
+            ],
+            Some(Input::Search) => vec![Line::from(format!(
+                "{}▏",
+                short(&format!("Find: {}", self.filter))
+            ))],
+            None => vec![Line::from(short(&format!(
+                "Find: {} · {} skipped paths · w details",
+                if self.filter.is_empty() {
+                    "all"
+                } else {
+                    &self.filter
+                },
+                self.listing.warnings.len()
+            )))],
+        };
+        if !self.note.is_empty() {
+            lines.extend(
+                ai::display_text(&self.note)
+                    .lines()
+                    .map(|line| Line::from(line.to_owned())),
+            );
+        } else if self.input.is_none() {
+            lines.push(Line::from(
+                "Enter previews the selected file. ? shows all actions.",
+            ));
+        }
+        lines
     }
 
     fn details(&self) -> Vec<Line<'static>> {
@@ -371,7 +524,7 @@ impl AiTools {
                 .style(visual::HEADING),
             Line::from(ai::display_text(&self.shown_path(&item.path))),
             Line::from(ai::display_text(&item.scope)),
-            Line::from(format!("{} on disk", format::size(item.size))),
+            Line::from(format!("{} file size", format::size(item.size))),
             Line::default(),
         ];
         lines.push(Line::from(match item.kind {
@@ -403,10 +556,14 @@ impl Screen for AiTools {
             viewer.draw(frame, area);
             return;
         }
+        let status_lines = self.status_lines(area.width.saturating_sub(4));
+        let status_height = visual::wrapped_rows(&status_lines, area.width.saturating_sub(4))
+            .saturating_add(2)
+            .min(area.height.saturating_sub(9).max(3));
         let [header, body, status] = Layout::vertical([
             Constraint::Length(3),
             Constraint::Fill(1),
-            Constraint::Length(4),
+            Constraint::Length(status_height),
         ])
         .areas(area);
         let tabs = TABS
@@ -450,29 +607,16 @@ impl Screen for AiTools {
                 ),
             details,
         );
-        let text = match &self.input {
-            Some(Input::Install { path, target }) => format!(
-                "Load into {} · Tab changes tool\nLocal skill folder: {path}▏",
-                INSTALL_TARGETS[*target].name()
-            ),
-            Some(Input::Search) => format!("Find: {}▏", self.filter),
-            None if !self.note.is_empty() => self.note.clone(),
-            None => format!(
-                "Filter: {} · {} skipped paths (w shows details)\nCredentials and databases are excluded.",
-                if self.filter.is_empty() {
-                    "none"
-                } else {
-                    &self.filter
-                },
-                self.listing.warnings.len()
-            ),
-        };
         frame.render_widget(
-            Paragraph::new(ai::display_text(&text))
+            Paragraph::new(status_lines)
                 .wrap(Wrap { trim: false })
                 .block(
                     visual::block()
-                        .title(" Status ")
+                        .title(if matches!(self.input, Some(Input::Install { .. })) {
+                            " Local skill folder "
+                        } else {
+                            " Status "
+                        })
                         .padding(Padding::horizontal(1)),
                 ),
             status,
@@ -488,6 +632,11 @@ impl Screen for AiTools {
             self.input_key(key.code);
             return Action::None;
         }
+        if let Some(edit) = &self.editing
+            && key.code == KeyCode::Char('e')
+        {
+            return Action::Edit(edit.draft());
+        }
         if let Some(viewer) = &mut self.viewer {
             match key.code {
                 KeyCode::Down | KeyCode::Char('j') => {
@@ -499,6 +648,7 @@ impl Screen for AiTools {
                 KeyCode::Home => viewer.scroll = 0,
                 KeyCode::End => viewer.scroll = u16::MAX,
                 KeyCode::Char('y') => self.apply_review(),
+                KeyCode::Char('o') if viewer.source.is_some() => self.reveal(),
                 _ => {}
             }
             return Action::None;
@@ -539,7 +689,11 @@ impl Screen for AiTools {
             KeyCode::Char('w') => {
                 self.viewer = Some(Viewer::new(
                     "Skipped paths".into(),
-                    &self.listing.warnings.join("\n\n"),
+                    &if self.listing.warnings.is_empty() {
+                        "No paths were skipped.".into()
+                    } else {
+                        self.listing.warnings.join("\n\n")
+                    },
                 ));
             }
             KeyCode::Enter => self.open(),
@@ -552,22 +706,32 @@ impl Screen for AiTools {
         let Some(edit) = self.editing.take() else {
             return;
         };
-        match result {
-            Err(error) => self.note = error,
-            Ok(()) => match edit.edited() {
-                Ok(contents) => self.review_edit(edit, contents),
-                Err(error) => self.note = error.to_string(),
-            },
+        self.viewer = None;
+        match result.and_then(|()| edit.edited().map_err(|error| error.to_string())) {
+            Ok(contents) => self.review_edit(edit, contents),
+            Err(error) => self.draft_error(edit, &error),
         }
     }
 
     fn back(&mut self) -> Action {
-        if self.input.take().is_some() {
-            self.filter.clear();
+        if let Some(input) = self.input.take() {
+            if matches!(input, Input::Search) {
+                self.filter.clear();
+                self.list.select(Some(0));
+            }
+            self.note.clear();
             return Action::None;
         }
         if self.viewer.take().is_some() {
             self.review = None;
+            if self.editing.take().is_some() {
+                self.note = "Draft discarded.".into();
+            }
+            return Action::None;
+        }
+        if !self.filter.is_empty() {
+            self.filter.clear();
+            self.list.select(Some(0));
             return Action::None;
         }
         Action::Back
@@ -577,25 +741,40 @@ impl Screen for AiTools {
         self.input.is_some()
     }
     fn is_dialog(&self) -> bool {
-        self.review.is_some()
+        self.review.is_some() || self.editing.is_some()
     }
 
     fn hints(&self) -> &'static str {
-        if self.input.is_some() {
-            "Enter accept · Tab tool · Esc cancel"
+        if matches!(self.input, Some(Input::Search)) {
+            "Enter keep filter · Esc clear"
+        } else if self.input.is_some() {
+            "Enter review · Tab tool · Esc cancel"
+        } else if self.editing.is_some() {
+            "e reopen draft · ↑↓ scroll · Esc discard · ? help"
         } else if self.review.is_some() {
             "↑↓ scroll · PgUp/PgDn page · y confirm · Esc cancel · ? help"
+        } else if self
+            .viewer
+            .as_ref()
+            .is_some_and(|viewer| viewer.source.is_some())
+        {
+            "↑↓ scroll · PgUp/PgDn page · o Finder · Esc back · ? help · q quit"
         } else if self.viewer.is_some() {
             "↑↓ scroll · PgUp/PgDn page · Esc back · ? help · q quit"
+        } else if self.tab == 2 {
+            "↑↓ move · Tab section · Enter read · i link skill · e edit · b restore · / find · p tool · ? help · Esc back"
         } else {
-            "↑↓ move · Tab section · Enter read · / find · p tool · i load · e edit · b restore · o Finder · r refresh · Esc back · ? help"
+            "↑↓ move · Tab section · Enter read · / find · p tool · o Finder · r refresh · ? help · Esc back"
         }
     }
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
         &[
             ("Tab / Shift-Tab", "Switch Files, Chats, and Skills."),
-            ("p", "Filter by tool, including Shared (.agents/skills)."),
+            (
+                "p",
+                "Filter by tool. Codex and Gemini include shared skills.",
+            ),
             (
                 "/",
                 "Find by path, tool, or project. Esc clears the filter.",
@@ -603,7 +782,7 @@ impl Screen for AiTools {
             ("Enter", "Read the selected file or conversation locally."),
             (
                 "i",
-                "Load a local skill folder. Tab picks Claude, Codex, or Gemini.",
+                "Link a local skill folder. Tab picks Claude, Codex, or Gemini.",
             ),
             (
                 "e",
@@ -615,7 +794,7 @@ impl Screen for AiTools {
             ("r / w", "Refresh files / show skipped paths."),
             (
                 "Esc",
-                "Cancel input or review, close the preview, or go back.",
+                "Cancel, close a preview, clear a filter, then go back.",
             ),
         ]
     }

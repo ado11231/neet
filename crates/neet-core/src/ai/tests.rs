@@ -224,3 +224,36 @@ fn rejects_invalid_skill_and_backup_directory_escape() {
     );
     assert_eq!(fs::read_dir(outside.path()).unwrap().count(), 0);
 }
+
+#[test]
+fn invalid_installed_skills_can_be_repaired_but_not_loaded() {
+    let (_dir, locations) = setup();
+    let folder = locations.claude.join("skills/broken");
+    write(&folder.join("SKILL.md"), "Missing frontmatter\n");
+    assert!(skills::Install::prepare(&locations, &folder, Provider::Codex).is_err());
+    let item = locations.list().items.remove(0);
+    let edit = skills::Edit::begin(&locations, &item).unwrap();
+    let backup = edit.save(SKILL.as_bytes()).unwrap();
+    assert_eq!(fs::read_to_string(backup).unwrap(), "Missing frontmatter\n");
+    assert_eq!(fs::read_to_string(folder.join("SKILL.md")).unwrap(), SKILL);
+}
+
+#[test]
+fn discovery_keeps_entries_found_at_the_limit_and_ignores_loose_skill_files() {
+    let (_dir, locations) = setup();
+    write(
+        &locations.claude.join("skills/readme.txt"),
+        "not a skill folder",
+    );
+    let root = locations.codex.join("archived_sessions");
+    write(&root.join("rollout-a.jsonl"), "");
+    write(&root.join("rollout-b.jsonl"), "");
+    let mut scanner = Scanner {
+        locations: &locations,
+        listing: Listing::default(),
+        visited: MAX_ENTRIES - 2,
+    };
+    scanner.walk_chats(&root, Provider::Codex, 1);
+    assert_eq!(scanner.listing.items.len(), 2);
+    assert_eq!(locations.list().warnings, Vec::<String>::new());
+}
