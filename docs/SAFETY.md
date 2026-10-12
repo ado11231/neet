@@ -20,7 +20,8 @@
 12. [Dotfiles](#dotfiles)
 13. [Startup Items](#startup-items)
 14. [Planned Features](#planned-features)
-15. [Tests](#tests)
+15. [AI Tools](#ai-tools)
+16. [Tests](#tests)
 
 ## The Promises
 
@@ -463,7 +464,25 @@ min_age_days = 0
 * A command that needs admin rights is shown first, then run once with `sudo`.
 * neet itself never runs as root.
 * neet never reads the inside of a private key.
-* The AI tools view only reads settings, instruction files, and skills. It never opens sign in files, chat history, or databases.
+## AI Tools
+
+* Discovery reads file names and metadata in known folders. It does not read chat contents until you open one. It never opens sign in files or databases, runs skills, or sends file contents to a service.
+* Known user files:
+
+| Tool | Settings and instructions | Skills | Chats |
+| --- | --- | --- | --- |
+| Claude Code | `~/.claude/settings.json`, `~/.claude/CLAUDE.md` | `~/.claude/skills/*/SKILL.md` | `~/.claude/projects/*/*.jsonl` |
+| Codex | `~/.codex/config.toml`, `AGENTS.md`, `AGENTS.override.md` under `~/.codex` | `~/.agents/skills/*/SKILL.md`, `~/.codex/skills/*/SKILL.md`, including `.system/*` | `~/.codex/sessions` through year/month/day and `archived_sessions`, only `rollout-*.jsonl` |
+| Gemini CLI | `~/.gemini/settings.json`, `~/.gemini/GEMINI.md` | `~/.gemini/skills/*/SKILL.md` and shared `.agents/skills` | `~/.gemini/tmp/*/chats/*.json` |
+
+* `CODEX_HOME` and `CLAUDE_CONFIG_DIR` replace their default roots when set. Roots and resolved paths must stay inside home. Individual file links are skipped. Skill directory links inside home are supported.
+* Project discovery checks the launch directory and its parents up to the first Git root, stopping before home. It looks for `CLAUDE.md`, `CLAUDE.local.md`, `.claude/CLAUDE.md`, `AGENTS.md`, `AGENTS.override.md`, `GEMINI.md`, tool settings, `.claude/settings.local.json`, and the `.claude`, `.codex`, `.gemini`, and `.agents` skill folders. It does not search every project on disk.
+* Discovery stops at 20,000 directory entries and reports an incomplete list. Previews read at most 512 KiB. Settings can contain tokens, so their contents appear only after `Enter`. Chat previews show supported message text and report malformed records. Settings, instructions, chats, and bundled skills are view only.
+* Loading a local skill reviews its instructions, source, and destination, then creates a directory link in the chosen user skill folder. Codex loads into shared `~/.agents/skills`. The source must be inside home, contain a valid UTF-8 `SKILL.md`, and keep its reviewed instructions unchanged. Existing destinations are never replaced. Scripts and references remain in the source folder and are not run by neet. This is a live link, so later source changes affect the skill.
+* Editing and restoring affect only user `SKILL.md` files of at most 1 MiB. neet checks for frontmatter name and description fields and an instruction body; it does not fully validate YAML or tool-specific fields. Edits use a private temporary copy and require a diff review. Before writing, neet checks the original file and link destination again, saves a backup under `~/.local/state/neet/backups/ai/`, and swaps in the new file. Backup folders refuse links. Backups have mode `0600`; the skill keeps its permissions. `b` reviews restoring the latest backup and backs up the current version too.
+* The first version does not remove chats or skills, resume sessions, fetch remote skills, or edit tool settings. Those need separate reviews of tool indexes, reload behavior, and undo.
+
+File locations were checked against the official [Claude Code directory guide](https://code.claude.com/docs/en/claude-directory), [Codex skills guide](https://learn.chatgpt.com/docs/build-skills), [Gemini skills guide](https://geminicli.com/docs/cli/skills/), and [Gemini session guide](https://geminicli.com/docs/cli/session-management/). Formats can change; unsupported chat records stay out of the preview.
 
 ## Tests
 

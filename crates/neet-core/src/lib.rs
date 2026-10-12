@@ -1,3 +1,4 @@
+pub mod ai;
 pub mod apps;
 pub mod clean;
 pub mod clutter;

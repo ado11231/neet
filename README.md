@@ -52,8 +52,9 @@ neet
 | Large Files | Find your largest and oldest files. |
 | Startup | See the programs that start on their own, whether each runs, and who made it. |
 | Dotfiles | See your settings files, such as `~/.zshrc`, edit or configure them with a backup, save them with chezmoi, and export them to a private GitHub repository after a review for secrets. |
+| AI Tools | Browse Claude Code, Codex, and Gemini CLI files and chats. Load local skills, edit their instructions, and restore backups after review. |
 
-* AI tool files, Settings, and SSH are on the menu, marked `soon`.
+* Settings and SSH are on the menu, marked `soon`.
 
 ## Notes
 

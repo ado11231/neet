@@ -18,7 +18,8 @@
 10. [Remove App](#remove-app)
 11. [Startup](#startup)
 12. [Dotfiles](#dotfiles)
-13. [Planned Screens](#planned-screens)
+13. [AI Tools](#ai-tools)
+14. [Planned Screens](#planned-screens)
 
 ## Every Screen
 
@@ -51,7 +52,7 @@
       .     .      *        .            | > 1 Disk                            |
   *        .           .        *        |   2 Quick Clean                     |
        .        Art        .             |   ...                               |
-   .       *          .          .       |   8 AI Tools      soon              |
+   .       *          .          .       |   8 AI Tools                        |
        .        .        *       .       |     Quit                            |
   +        .        .        .           +-------------------------------------+
      .        *         .       *        + Disk -------------------------------+
@@ -633,6 +634,29 @@
 * The file in your home folder stays as it is. The new source file waits for [Export](#export).
 * Not for a file `.chezmoiignore` leaves out, a view only file, or a link, which another tool may manage.
 
+## AI Tools
+
+* Home key `8` opens AI Tools. Files, Chats, and Skills share one list with a tool filter and path search.
+* The selected path, scope, size, and available actions appear beside the list, or below it on narrow terminals. Contents are read only when opened.
+* Chat previews show user and assistant messages from supported JSON and JSONL records. Tool calls and results are left out. Invalid records and preview limits are reported.
+* Loading a skill asks for a local folder containing `SKILL.md`. `Tab` picks the target tool. The review names the source and destination and shows the instructions. `y` creates a directory link. Codex uses the shared `.agents/skills` folder. Restart the assistant or reload its skills afterward.
+* Editing opens a private copy in your editor. The diff must be confirmed with `y` before the original is backed up and replaced. Restore follows the same review.
+
+| Key | Action |
+| --- | --- |
+| `Tab` / `Shift-Tab` | Switch Files, Chats, and Skills. |
+| `p` | Cycle All tools, Claude Code, Codex, Gemini CLI, and Shared. |
+| `/` | Filter by path, tool, or project. `Enter` keeps the filter; `Esc` clears it while typing. |
+| `Enter` | Open the selected file or chat. |
+| `i` | Load a local skill folder. `Tab` chooses the tool while typing. |
+| `e` | Edit a user skill, then review. |
+| `b` | Review restoring the latest skill backup. |
+| `y` | Confirm a reviewed skill load, edit, or restore. |
+| `o` | Reveal the selected file in Finder. |
+| `r` / `w` | Refresh / show skipped paths. |
+| `Up` / `Down`, `PageUp` / `PageDown` | Move or scroll a preview or review. |
+| `Esc` | Cancel input or review, close a preview, or return Home. |
+
 ## Planned Screens
 
 * Draft layouts for later features. They may change before they are built.
@@ -644,5 +668,4 @@
 | Startup: turn off | Your own launch agents get `t` to turn off and on, after a question, with the state before saved so it can be undone. | `t` turns off or back on. |
 | SSH | Sections for hosts, keys, agent keys, known hosts, and permission problems. | Fix permissions, add or remove agent keys, remove known hosts. |
 | PATH | Each folder in search order, with how many programs it holds, where it was added, and any problem. A preview shows the programs it holds. | `w` finds which copy of a program runs. `K` / `J` move a folder. `a` adds, `x` removes, `Enter` saves with a backup. |
-| AI Tools | Sections for tools, settings, instruction files, skills, and project skills. View only. | `Enter` opens a file. |
 | Settings | Sections for power mode, graphics switching, refresh rate, Game Mode, what keeps the Mac awake, and wake settings. | Each change shows what it will do first, and can be undone. |
