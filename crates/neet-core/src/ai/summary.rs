@@ -66,11 +66,14 @@ impl Listing {
                     },
                 }
             };
+            if summary.project.is_none() && item.provider == Provider::Gemini {
+                summary.project = gemini_project(locations, &item.path);
+            }
             if let Some(project) = &summary.project {
                 match fs::metadata(project) {
                     Ok(meta) => summary.missing_project = !meta.is_dir(),
                     Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                        summary.missing_project = true
+                        summary.missing_project = true;
                     }
                     Err(_) => summary.note = "Could not check the project directory.".into(),
                 }
@@ -78,6 +81,16 @@ impl Listing {
             item.chat = Some(summary);
         }
     }
+}
+
+fn gemini_project(locations: &Locations, chat: &std::path::Path) -> Option<PathBuf> {
+    let marker = chat.parent()?.parent()?.join(".project_root");
+    let (bytes, truncated) = read_bounded(&locations.home, &marker, 4096).ok()?;
+    if truncated {
+        return None;
+    }
+    let path = PathBuf::from(std::str::from_utf8(&bytes).ok()?.trim());
+    path.is_absolute().then_some(path)
 }
 
 fn parse(provider: Provider, bytes: &[u8]) -> Summary {
@@ -206,5 +219,27 @@ mod tests {
         assert_eq!(summary.title, "Useful title");
         assert!(summary.project.is_none());
         assert!(!summary.missing_project);
+    }
+}
+
+#[cfg(test)]
+mod gemini_tests {
+    use crate::ai::tests::{setup, write};
+
+    #[test]
+    fn gemini_uses_its_project_marker_and_never_decodes_a_hash() {
+        let (_dir, locations) = setup();
+        let folder = locations.gemini.join("tmp/project-hash");
+        write(&folder.join("chats/session.json"), "{}");
+        write(
+            &folder.join(".project_root"),
+            locations.home.join("removed").to_str().unwrap(),
+        );
+        let mut listing = locations.list();
+        listing.summarize_chats(&locations);
+        assert!(listing.items[0].chat.as_ref().unwrap().missing_project);
+        write(&folder.join(".project_root"), "relative");
+        listing.summarize_chats(&locations);
+        assert!(listing.items[0].chat.as_ref().unwrap().project.is_none());
     }
 }
