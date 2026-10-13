@@ -1,7 +1,7 @@
 use std::io;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
 use std::time::SystemTime;
 
@@ -401,16 +401,21 @@ impl Cleanup {
         else {
             return;
         };
-        let mut finished = None;
-        while let Ok(message) = messages.try_recv() {
-            match message {
-                Message::Progress(now, of) => (*done, *total) = (now, of),
-                Message::Done(result) => finished = Some(result),
+        let finished = loop {
+            match messages.try_recv() {
+                Ok(Message::Progress(now, of)) => (*done, *total) = (now, of),
+                Ok(Message::Done(result)) => break result,
+                Err(TryRecvError::Empty) => return,
+                Err(TryRecvError::Disconnected) => {
+                    break Err(
+                        "The task ended without a result. Some items may have moved. \
+                         Check the Trash before trying again."
+                            .to_string(),
+                    );
+                }
             }
-        }
-        if let Some(result) = finished {
-            self.state = State::Done(result);
-        }
+        };
+        self.state = State::Done(finished);
     }
 
     fn is_moving(&self) -> bool {
@@ -496,7 +501,7 @@ impl Screen for Cleanup {
             }
             State::Done(Err(reason)) => {
                 let lines = vec![
-                    Line::from("Nothing was moved.").bold().red(),
+                    Line::from("Cleanup stopped.").bold().red(),
                     Line::default(),
                     Line::from(reason.clone()),
                 ];
@@ -717,6 +722,89 @@ mod tests {
         ));
         assert!(matches!(press(&mut confirm, KeyCode::Enter), Action::None));
         assert!(confirm.is_dialog());
+    }
+
+    #[test]
+    fn a_missing_cleanup_result_allows_leaving_without_claiming_success() {
+        let (_dir, planned) = planned();
+        let (sender, messages) = mpsc::channel();
+        let mut cleanup = Cleanup {
+            planned,
+            state: State::Moving {
+                done: 0,
+                total: 2,
+                messages,
+            },
+            scroll: Scroll::default(),
+        };
+        sender.send(Message::Progress(1, 2)).unwrap();
+        cleanup.poll();
+        assert!(matches!(
+            cleanup.state,
+            State::Moving {
+                done: 1,
+                total: 2,
+                ..
+            }
+        ));
+        assert!(cleanup.is_dialog());
+        assert!(matches!(cleanup.back(), Action::None));
+        assert!(matches!(press(&mut cleanup, KeyCode::Enter), Action::None));
+
+        drop(sender);
+        cleanup.poll();
+        let screen = render(&mut cleanup);
+        assert!(screen.contains("Cleanup stopped."));
+        assert!(screen.contains("Some items may have moved."));
+        assert!(screen.contains("Trash"));
+        assert!(screen.contains("before trying again."));
+        assert!(matches!(
+            &cleanup.state,
+            State::Done(Err(reason)) if reason.contains("Check the Trash before trying again.")
+        ));
+        assert!(!screen.contains("Nothing was moved."));
+        assert!(!screen.contains("Cleanup done"));
+        assert!(!cleanup.is_dialog());
+        assert!(matches!(cleanup.back(), Action::Home));
+        assert!(matches!(press(&mut cleanup, KeyCode::Enter), Action::Home));
+    }
+
+    #[test]
+    fn queued_cleanup_results_survive_the_worker_exiting() {
+        let (_dir, planned) = planned();
+        let outcome = Outcome {
+            moved: vec![clean::Moved {
+                path: planned.home.join("cache"),
+                size: 5000,
+            }],
+            skipped: Vec::new(),
+        };
+        for result in [Ok(outcome), Err("Cannot read the home folder.".to_string())] {
+            let succeeded = result.is_ok();
+            let (sender, messages) = mpsc::channel();
+            sender.send(Message::Progress(1, 1)).unwrap();
+            sender.send(Message::Done(result)).unwrap();
+            drop(sender);
+            let mut cleanup = Cleanup {
+                planned: Arc::clone(&planned),
+                state: State::Moving {
+                    done: 0,
+                    total: 1,
+                    messages,
+                },
+                scroll: Scroll::default(),
+            };
+            cleanup.poll();
+            cleanup.poll();
+            let screen = render(&mut cleanup);
+            if succeeded {
+                assert!(screen.contains("✓ Moved 1 item to the Trash"));
+            } else {
+                assert!(screen.contains("Cannot read the home folder."));
+            }
+            assert!(!screen.contains("ended without a result"));
+            assert!(matches!(cleanup.back(), Action::Home));
+        }
     }
 
     #[test]
