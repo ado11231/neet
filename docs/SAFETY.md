@@ -496,24 +496,24 @@ Later features change files or settings in place, not through the Trash. Each ha
 
 ## Tests
 
-* Automated tests use temporary folders. They never use your real home folder, and never change real Mac settings.
+* Default tests use temporary folders and fake actions. Optional real tool tests are marked ignored and need a separate run.
 * They cover:
-  1. `..` parts, doubled slashes, and paths outside the allowed folders.
-  2. Allowed folders themselves, the home folder, and the top of a disk.
-  3. Protected folders written in other ways.
-  4. Links that lead out, and links swapped in after the review.
-  5. Files replaced after the review.
-  6. Names neet does not support.
-  7. Your own rules reaching outside the allowed folders, and a `safe` level in your rule counting as `caution`.
-  8. Unsupported patterns, and `*` too early in a path.
-  9. Paths in a container outside its `Caches` folder, and Xcode archives.
-  10. An old folder holding a recently changed file.
-  11. App removal refusing Apple's apps, links, apps in subfolders, open apps, files outside the table, and partial names.
-  12. Build folders and installers: accepted in Documents, Desktop, and Downloads, and refused when nested, in `~/Library` or a hidden folder, inside `.git` or `~/.ssh`, a link, a lone `target`, or a file that is not an installer.
-  13. Tool commands: only runtime IDs reach `simctl`, and what `simctl` and `docker` print is read as data.
-  14. Dotfiles: files outside the list, never listed files, links that lead out, a file changed after it was opened, a failed check, a crash in the middle of a write, restoring every backup, and secrets found before an export.
-  15. Startup: plists that are empty, unreadable, or links; `launchctl` output that cannot be read marks the list incomplete; helpers inside apps count only when launchd knows them; nothing in `/System/Library` is read.
-  16. AI Tools: known paths, bounded previews and summaries, missing-project tags, chat selection and removal checks, partial cleanup failures, skill links, stale reviews, edit and restore backups, draft recovery, search, and narrow terminals.
+* `..` parts, doubled slashes, and paths outside the allowed folders.
+* Allowed folders themselves, the home folder, and the top of a disk.
+* Protected folders written in other ways.
+* Links that lead out, and links swapped in after the review.
+* Files replaced after the review.
+* Names neet does not support.
+* Your own rules reaching outside the allowed folders, and a `safe` level in your rule counting as `caution`.
+* Unsupported patterns, and `*` too early in a path.
+* Paths in a container outside its `Caches` folder, and Xcode archives.
+* An old folder holding a recently changed file.
+* App removal refusing Apple's apps, links, apps in subfolders, open apps, files outside the table, and partial names.
+* Build folders and installers: accepted in Documents, Desktop, and Downloads, and refused when nested, in `~/Library` or a hidden folder, inside `.git` or `~/.ssh`, a link, a lone `target`, or a file that is not an installer.
+* Tool commands: only runtime IDs reach `simctl`, and what `simctl` and `docker` print is read as data.
+* Dotfiles: files outside the list, never listed files, links that lead out, a file changed after it was opened, a failed check, a crash in the middle of a write, restoring every backup, and secrets found before an export.
+* Startup: plists that are empty, unreadable, or links; `launchctl` output that cannot be read marks the list incomplete; helpers inside apps count only when launchd knows them; nothing in `/System/Library` is read.
+* AI Tools: known paths, bounded previews and summaries, missing-project tags, chat selection and removal checks, partial cleanup failures, skill links, stale reviews, edit and restore backups, draft recovery, search, and narrow terminals.
 * Before release, a harmless test item is moved to the Trash by hand and restored with Put Back. This passed on macOS 26.5.
 * Removing an app owned by root was tried the same way, and Put Back restored it.
 * Planned features add their own tests, for changes outside their lists, links that lead out, and undoing each change.
