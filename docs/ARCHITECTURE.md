@@ -1,126 +1,96 @@
 # Architecture
 
-* How the code is organized, what each file does, and how a scan and a cleanup run.
-* For anyone working on the code. To learn what neet does, read [FEATURES.md](FEATURES.md).
+* Code layout and file roles.
+* Build checks and release steps.
 
 ## Contents
 
-1. [Overview](#overview)
-2. [Files](#files)
-3. [How neet Runs](#how-neet-runs)
-4. [The Scan](#the-scan)
-5. [A Cleanup](#a-cleanup)
-6. [Dependencies](#dependencies)
-7. [Building](#building)
-8. [Branches And Releases](#branches-and-releases)
+* [Overview](#overview)
+* [Files](#files)
+* [How neet Runs](#how-neet-runs)
+* [The Scan](#the-scan)
+* [A Cleanup](#a-cleanup)
+* [Dependencies](#dependencies)
+* [Building](#building)
+* [Branches And Releases](#branches-and-releases)
 
 ## Overview
 
-* The code is split into two Rust packages, called crates:
-  1. **`neet-core`**, the library. It scans, measures, reads rules, checks paths, plans cleanups, and moves items to the Trash. It draws nothing.
-  2. **`neet`**, the program you run. It draws the screens and reads the keyboard.
-* `neet` uses `neet-core`. `neet-core` never uses `neet`.
-* Where macOS already has a tool, neet runs it instead of adding a dependency.
+* `neet-core` scans files, checks paths, and carries out reviewed changes.
+* `neet` uses that library to draw screens and handle keys.
+* Slow work runs in the background so the screen keeps responding.
+* See [SAFETY.md](SAFETY.md) before adding anything that changes files.
 
 ## Files
 
-```text
-neet/
-├── Cargo.toml                 Workspace settings, shared version, lint rules
-├── release-plz.toml           Version and crates.io release settings
-├── dist-workspace.toml        Settings for building the ready made programs
-├── crates/
-│   ├── neet-core/             The library
-│   │   ├── rules/             Built in cleanup rules, one file per category
-│   │   └── src/
-│   └── neet/                  The program
-│       └── src/
-│           ├── main.rs
-│           └── ui/            One file per screen
-├── docs/
-└── .github/                   CI, releases, and Dependabot
-```
+| Path | Purpose |
+| --- | --- |
+| `Cargo.toml` | Packages, shared version, and code checks. |
+| `crates/neet-core/rules/` | Built in cleanup rules. |
+| `crates/neet-core/src/` | File scans and actions. |
+| `crates/neet/src/` | Terminal app. |
+| `docs/` | Project docs, including app and library changelogs. |
+| `.github/` | Build checks, releases, and dependency updates. |
+| `release-plz.toml` | Crate versions and release notes. |
+| `dist-workspace.toml` | Mac downloads and installer. |
+| `crates/neet/dist.toml` | Changelog path for Mac release notes. |
 
-* `crates/neet-core/tests/dotfiles_chezmoi.rs` checks the Dotfiles round trip with the installed chezmoi, a temporary home folder, and a local Git remote. Run it with `cargo test -p neet-core --test dotfiles_chezmoi -- --ignored`. It never changes your real dotfiles.
-
-### The Library
+### `crates/neet-core/src/`
 
 | File | Purpose |
 | --- | --- |
-| `lib.rs` | Lists the modules below. |
-| `scan.rs` | Scans a folder into a tree on several threads. Does not follow links or enter other disks. Records unreadable folders, and reports progress. |
-| `tree.rs` | The scanned tree: each file and folder, its size, item count, and when it last changed. |
-| `size.rs` | The space a file really takes on disk, and counting a file with several names only once. |
-| `disk.rs` | How big the disk is, how much is free, and the free space Finder shows, which adds purgeable space. |
-| `large.rs` | Finds files in the tree above a size, and optionally unchanged for a while. |
-| `clutter.rs` | Measures what neet does not clean itself: the Trash, installers, build folders, and the Docker image from the tree, simulator runtimes from `xcrun simctl`, and temporary files from a scan of `/private/var/folders`. |
-| `rules.rs` | Reads and checks the built in rules and your own. |
-| `safety.rs` | The allowed and protected folders, with separate checks for cleanup, app removal, and project build folders and installers. |
-| `clean.rs` | Plans a cleanup from the rules, or from one picked item, then moves the selected items, checking each one again first. |
-| `removal.rs` | Lists apps, finds each app's files by exact name, and plans their removal. |
-| `apps.rs` | Whether an app is open, asked with `lsappinfo`. |
-| `trash.rs` | Moves items to the Trash through Finder, and empties it after confirmation. |
-| `tools.rs` | Lists and removes simulator runtimes and Docker data through their own tools. |
-| `rewrite.rs` | Saves backups and replaces settings files after checking they are unchanged. |
-| `dotfiles.rs` and `dotfiles/` | Lists settings files, reads chezmoi state, and reviews edits, configuration, backups, and Git export. |
-| `startup.rs` and `startup/turn.rs` | Lists startup items and turns your own launch agents off or back on. |
-| `ai.rs` and `ai/` | Discovers assistant files, reads bounded chat summaries and previews, validates chat removal, and reviews skill changes. |
-| `run.rs` | Runs commands with a time limit. |
+| `lib.rs` | Lists the library modules. |
+| `scan.rs`, `tree.rs`, `size.rs` | Read folders and record file sizes. |
+| `disk.rs` | Disk totals and Finder's free space. |
+| `large.rs` | Find large or old files in a scan. |
+| `clutter.rs` | Find build folders, installers, and other space to review. |
+| `rules.rs` | Load and check cleanup rules. |
+| `safety.rs` | Check allowed and protected paths. |
+| `clean.rs` | Plan a cleanup and recheck items before moving. |
+| `removal.rs`, `apps.rs` | Find apps and their files, and check open apps. |
+| `trash.rs` | Move items to Trash and empty it after confirmation. |
+| `tools.rs` | Simulator and Docker commands. |
+| `rewrite.rs` | Check files, save backups, and write changes. |
+| `dotfiles.rs`, `dotfiles/` | Settings, chezmoi, edits, backups, and export. |
+| `startup.rs`, `startup/` | List startup items and change user launch agents. |
+| `ai.rs`, `ai/` | Assistant files, chats, and skills. |
+| `run.rs` | Run commands with a time limit. |
 
-### The Program
+### `crates/neet/src/`
 
 | File | Purpose |
 | --- | --- |
-| `main.rs` | Handles `--help` and `--version`, then opens the interface. |
-| `ui/mod.rs` | The main loop: draw, wait for a key, pass it on. |
-| `ui/app.rs` | The screen stack, the keys every screen shares, and the state every screen can read: the scan, the disk space, and what Clean can free. |
-| `ui/home.rs` | Home: the art, the menu, and the Disk and Home folder boxes. |
-| `ui/art.rs` | The Home art. |
-| `ui/scan.rs` | Runs the home folder scan in the background. |
-| `ui/skipped.rs` | Skipped: folders the scan could not read. |
-| `ui/disk.rs` | Disk: the folder browser. |
-| `ui/clean.rs` | Clean: rules, selection, and details. Also works out the Home total in the background. |
-| `ui/review.rs` | Review, Confirm, Move, and Result, shared by every cleanup, plus the notice box. |
-| `ui/large.rs` | Large Files. |
-| `ui/quick.rs` | Quick Clean: everything that can be cleared, in one table. |
-| `ui/apps.rs` | Remove App: the app list and the app's files. |
-| `ui/ai.rs` and `ui/ai/chats.rs` | AI Tools: files, chat selection, removal review and progress, skill reviews, and draft recovery. |
-| `ui/dotfiles.rs` and `ui/dotfiles/` | Dotfiles and its edit, configure, backup, and export flows. |
-| `ui/startup.rs` | Startup: the list, details, and turn confirmation. |
-| `ui/tools.rs` and `ui/tools/trash.rs` | Docker, simulators, and the Trash. |
-| `ui/pick.rs` | Select build folders and installers for review. |
-| `ui/editor.rs` | Leaves the terminal screen to run your editor on a copy, then returns. |
-| `ui/visual.rs` | Shared styles, wrapping, columns, and screen test helpers. |
-| `ui/help.rs` | The help box opened with `?`. |
-| `ui/loading.rs` | The loading box a screen shows while slow work runs. |
-| `ui/format.rs` | Sizes, counts, bars, and ages as text, and shortening long names and folders. |
+| `main.rs` | Command line options and startup. |
+| `ui/mod.rs`, `ui/app.rs` | Main loop, shared state, and screen changes. |
+| `ui/home.rs`, `ui/art.rs` | Home menu and artwork. |
+| `ui/scan.rs`, `ui/skipped.rs` | Background scan and unreadable paths. |
+| `ui/disk.rs`, `ui/large.rs` | Folder browser and large files. |
+| `ui/clean.rs`, `ui/quick.rs` | Deep Clean and Quick Clean. |
+| `ui/apps.rs`, `ui/pick.rs` | App removal, build folders, and installers. |
+| `ui/review.rs` | Cleanup review, confirmation, progress, and results. |
+| `ui/tools.rs`, `ui/tools/` | Docker, simulators, and Trash. |
+| `ui/dotfiles.rs`, `ui/dotfiles/` | Settings files and their actions. |
+| `ui/startup.rs` | Startup list and turn actions. |
+| `ui/ai.rs`, `ui/ai/` | Assistant files, chat cleanup, and skill reviews. |
+| `ui/editor.rs` | Open an editor on a copy, then return to neet. |
+| `ui/visual.rs`, `ui/format.rs` | Shared layout, styles, and text formatting. |
+| `ui/help.rs`, `ui/loading.rs` | Help and loading boxes. |
 
 ## How neet Runs
 
-```text
-neet
-    -> --help or --version: print and exit
-    -> start the home folder scan in the background
-    -> start working out what Clean can free, in the background
-    -> show Home
-    -> loop: draw the top screen, wait for a key, let the screen handle it
-    -> restore the terminal and exit
-```
-
-* Screens form a stack, with Home at the bottom. Boxes, such as the question before a move, are screens too.
-* Each key returns an action: do nothing, open a screen, go back one, go back to Home, open an editor, refresh cleanup plans, or quit.
-* Slow work, such as scanning, planning, and moving, runs on its own thread and reports back, so the screen keeps responding.
-* Adding a feature means adding one menu row and one screen file.
+* `--help` and `--version` print a result and exit.
+* Opening neet starts the scan and cleanup preview, then shows Home.
+* The main loop draws the current screen and handles keys.
+* Screens open on top of each other. `Esc` goes back.
+* Before exit, neet restores the terminal.
 
 ## The Scan
 
-* Starts at your home folder and reads folders on several threads.
-* Stays on one disk, and lists any other disks it passes.
-* Does not follow links.
-* Measures the space each file takes on disk, and counts a file with several names once.
-* Retries lookups that macOS interrupts, so they are not reported as errors.
-* A home folder of 1.4 million items takes under 20 seconds.
-* Sizes are estimates. On APFS, copied files can share space, so the disk gauge uses the disk's own totals instead.
+* Reads folders on several threads without following links or entering other disks.
+* Counts the space files use on disk. Files with several names count once.
+* Records unreadable folders and marks the total incomplete.
+* Sizes are estimates because copied files on APFS can share space.
+* The disk gauge uses macOS totals, not the scan total.
 
 ## A Cleanup
 
