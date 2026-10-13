@@ -1,42 +1,32 @@
 # Interface
 
-* How each screen is laid out, what it shows, and which keys it uses.
-* For anyone using neet, or changing a screen.
-* For what each feature does, read [FEATURES.md](FEATURES.md).
+* Screens, keys, and actions.
+* How to review changes and read results.
 
 ## Contents
 
-1. [Every Screen](#every-screen)
-2. [Home](#home)
-3. [Skipped](#skipped)
-4. [Disk](#disk)
-5. [Quick Clean](#quick-clean)
-6. [Deep Clean](#deep-clean)
-7. [Review, Confirm, And Move](#review-confirm-and-move)
-8. [Trash](#trash)
-9. [Large Files](#large-files)
-10. [Remove App](#remove-app)
-11. [Startup](#startup)
-12. [Dotfiles](#dotfiles)
-13. [AI Tools](#ai-tools)
-14. [Planned Screens](#planned-screens)
+* [Every Screen](#every-screen)
+* [Home](#home)
+* [Skipped](#skipped)
+* [Disk](#disk)
+* [Quick Clean](#quick-clean)
+* [Deep Clean](#deep-clean)
+* [Review, Confirm, And Move](#review-confirm-and-move)
+* [Trash](#trash)
+* [Large Files](#large-files)
+* [Remove App](#remove-app)
+* [Startup](#startup)
+* [Dotfiles](#dotfiles)
+* [AI Tools](#ai-tools)
+* [Planned Screens](#planned-screens)
 
 ## Every Screen
 
-* Run `neet` to open it. It opens on Home and starts scanning your home folder in the background.
-* Each screen fills the terminal. The footer lists keys for the current screen and wraps when needed.
-* The row under the arrow turns bold and keeps its colors, so sizes, bars, and labels read the same as the rows around it. Body text uses the terminal foreground. The artwork’s moonlight blue (`#82aaff`) marks headings, keys, and progress; green marks selection and success; yellow marks caution; red marks errors and permanent removal. Labels and symbols carry the same meaning as the color. Gray and dim styles are reserved for the unchanged Home artwork.
-* Screens stack: each one opens on top of the last, and `Esc` goes back one step.
-* Boxes, such as help and questions, open in the middle of the screen, on top of it.
-* The screen redraws about four times a second, so progress stays current.
-* While a screen waits for slow work, such as the scan, it shows a small box in the middle: what neet is doing, a spinner, how far it has got, and what shows when it is done.
-
-* Numeric headers and values share a right edge. Names and paths align left. Column widths account for the border, padding, and selection arrow; numeric widths grow to fit formatted values.
-* Tables with checkboxes have a blue `✓` over that column and no blank row under the header. Their height includes only the borders, header, and rows.
-* At narrow widths, decorative bars disappear first, followed by secondary metadata. Names, sizes, checkboxes, and risk labels stay visible. Selected details retain hidden metadata. Names and paths shorten by terminal cells without splitting Unicode graphemes.
-* While a loading box shows, the footer of keys is left out, since they do nothing until it is done.
-* Dialogs and loading boxes use the same word wrapping for measurement and rendering. Review, results, and skipped paths scroll through wrapped lines.
-* Screen copy uses short labels and commands. Confirmations still name the action, whether removal is permanent, and how to restore items sent to Trash.
+* neet scans your home folder in the background.
+* The footer lists the keys for the current screen. `?` opens help.
+* The selected row is bold. Text and symbols explain warnings as well as color.
+* Lists and reviews scroll. Narrow screens keep the main actions and selected details.
+* A loading box shows progress while work runs.
 
 | Key | Action |
 | --- | --- |
@@ -47,43 +37,11 @@
 
 ## Home
 
-```text
-  .     *      .        +       .        +- neet ------------------------------+
-      .     .      *        .            | > 1 Disk                            |
-  *        .           .        *        |   2 Quick Clean                     |
-       .        Art        .             |   ...                               |
-   .       *          .          .       |   8 AI Tools                        |
-       .        .        *       .       |     Quit                            |
-  +        .        .        .           +-------------------------------------+
-     .        *         .       *        + Disk -------------------------------+
-  .      .        .        .        .    |                                     |
-      *       .        +       .         | Browse folders by size.             |
-  .        .        *        .           |                                     |
-     .        .         .       .        +-------------------------------------+
-  .       .       .        .       *     + This Mac ---------------------------+
-     .        *        .       .         | ##################.......  64% used |
-  *      .        .         .       .    | Free     88.1 GB of 245.1 GB        |
-     .       .        *        .         | Used     157.0 GB                   |
-  .      +        .        .        .    | Finder   96.2 GB free . 8.1 GB ...  |
-      .       .        .       *         +-------------------------------------+
-  *       .       *        .       .     + Home folder ------------------------+
-     .        .       .        .         | Size     at least 58.8 GB           |
-  .      *        .        +        .    | Items    714,329 . scanned in 8s    |
-      .       .        .       .         | Blocked  147 paths . s shows them   |
-  +       .       *        .       *     | Can free ~1.8 GB in caches & logs   |
-     .        .       .        .         +-------------------------------------+
- up/down move . enter open . s skipped . ? help . q quit
-```
-
-* **Left:** the neet art. Stars cover the whole screen evenly, corners and the space above and below the boxes included, and never sit between or right beside the boxes. It takes about 45% of the width, and more on a wide screen, since the right side is at most 72 columns. It is hidden when the terminal is narrower than 90 columns.
-* **Right:** the menu and three boxes, each sized to its lines, a row apart, centred top to bottom like the art. When room is short, the rows between them go first, then the last boxes.
-* **Menu:** one numbered row per feature.
-  1. Disk comes first, and is selected when neet opens, so you can see where the space went. Then the cleanups, from the quickest to the most detailed: Quick Clean, Deep Clean, Remove App, and Large Files. Then Startup, Dotfiles, AI Tools, Settings, and SSH last, with Quit below.
-  2. The number keys open rows in that order: `1` Disk, `2` Quick Clean, `3` Deep Clean, `4` Remove App, `5` Large Files.
-  3. Features not built yet remain readable and have a yellow `soon` label. The selection skips them. No other row has a note.
-* **The selected row:** its name as the title, and what it does, with a blank row above and below, so it stands a little taller than the boxes under it.
-* **This Mac:** a gauge of how full the disk is, as wide as the box allows. It turns yellow at 75% and red at 90%, and the free space is green, yellow, or red to match. Then free, total, and used space. When macOS can clear 100 MB or more on its own, a last line says how much free space Finder shows, counting that purgeable space. It is read about once a minute.
-* **Home folder:** scan progress, then the folder's total size and item count. If some folders could not be read, the size is marked `at least`, and yellow lines say how many were blocked by macOS or could not be read, and to press `s`. **Can free** shows `finding...`, then in green the total every Deep Clean rule found. It is worked out again after each cleanup, and when you press `r` in Deep Clean.
+* Opens on Disk, followed by cleanup tools, Startup, Dotfiles, and AI Tools.
+* Features marked `soon` are not built yet.
+* Shows disk space, scan progress, skipped paths, and what Deep Clean found.
+* Finder can count space macOS may clear as free. Home explains the difference.
+* An incomplete scan shows `at least` before the home folder size.
 
 | Key | Action |
 | --- | --- |
@@ -94,12 +52,9 @@
 
 ## Skipped
 
-* A single scrolling list:
-  1. If macOS blocked some folders, numbered steps to turn on Full Disk Access for the terminal app neet runs in. The app is named when neet can tell which it is, such as Terminal, iTerm, kitty, Ghostty, or Visual Studio Code.
-  2. Folders macOS blocked, sorted, under one heading with their count.
-  3. Any other folder the scan could not read, with the reason.
-  4. Folders on other disks, which the scan does not enter.
-* Says so when nothing was skipped.
+* Lists folders blocked by macOS, other read errors, and skipped disks.
+* Gives Full Disk Access steps for your terminal when needed.
+* Says when nothing was skipped.
 
 | Key | Action |
 | --- | --- |
@@ -109,38 +64,11 @@
 
 ## Disk
 
-```text
-+ Disk . ~/Library ------------ By size . s sorts by name +  + Caches/ ----------------------------------+
-|        Size              %  Name                        |  | Folder    ~/Library                       |
-| >   28.0 GB  ########..  48%  Application Support/      |  | Size      12.8 GB                         |
-|     12.8 GB  ####......  22%  Caches/                   |  | Share     22% of this folder              |
-|      5.2 GB  ##........   9%  Containers/               |  | Items     40,112                          |
-+ 312 items . 58.2 GB ------------------------------------+  | Changed   today                           |
-+ This folder --------------------------------------------+  | Cleanup   ◆ a folder neet cleans; only ... |
-| Location  ~/Library                                     |  |                                           |
-| Size      58.2 GB                                       |  | Files apps can make again. Clean empties  |
-| Items     312                                           |  | these.                                    |
-| Largest   Application Support/ . 48%                    |  +-------------------------------------------+
-+---------------------------------------------------------+  + Inside . by size -------------------------+
-+ Steps --------------------------------------------------+  |    3.1 GB  ##########  com.spotify.client/ |
-| 1. Press -> or Enter to open a folder.                  |  |    1.2 GB  ####......  Homebrew/           |
-+---------------------------------------------------------+  +-------------------------------------------+
-```
-
-* **Left, 55% of the width:** the current folder, largest first, in a table with no gap under its header: Size, a 10 character bar when space allows, percent, and Name. Folders end in `/`, links in `@`. A share too small to round up to 1% shows as `<1%`. The title reads `Disk ·` and the folder's path, shortened to fit, with the sort order and what `s` changes it to on the right. The bottom edge shows how many items it holds and its size.
-* Sizes and bars of 5 GB or more are red, and of 1 GB or more yellow, as in Large Files.
-* When there is room, the table is only as tall as its rows, with **This folder** (where it is, its size, how many items, and its largest item) and **Steps** below it.
-* **Right,** in small boxes as on the other screens, titled with the selected row's name. Hidden when the terminal is narrower than 100 columns.
-  1. Its folder in blue, its size and share of the current folder (of your home folder at the top), its item count for a folder or its type for a file, and when it last changed. Labels share one width.
-  2. **Cleanup:** whether neet cleans it, in plain words: a green `✓` in a folder neet cleans, a yellow `◆` for a folder neet cleans where only what is inside can go, red for a protected folder neet never removes, and `not a folder neet cleans` anywhere else.
-  3. A plain hint: for well known folders, such as `~/Library/Caches` or `.npm`, what they hold, and for files, what their type usually is, as in Large Files.
-  4. For a folder, **Inside**: what it holds, in the same order, with 10 character bars, up to 12 items and how many more.
-  5. **This Mac:** a gauge of the whole disk, how much is used and free, and how much of it the home folder takes.
-  6. **Steps,** here when they are not on the left.
-* Until the scan finishes, the screen shows the loading box, with how many items and how much space the scan has counted.
-* The selected row is bold, with an arrow in front.
-* Disk only shows what is there. Cleaning happens in Quick Clean, Deep Clean, Remove App, and Large Files.
-* The screen shows the scan as it was. An item moved to the Trash stays listed until the next scan.
+* Browse the scan by folder, largest first.
+* Rows show size, share, and name. Details explain the selected item and its cleanup limits.
+* Folders end in `/` and links in `@`.
+* Disk is view only. Use Quick Clean, Deep Clean, or Remove App to clean.
+* The list stays as scanned until the next scan.
 
 | Key | Action |
 | --- | --- |
