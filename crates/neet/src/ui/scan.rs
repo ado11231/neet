@@ -57,7 +57,19 @@ impl ScanTask {
 
     /// Applies every message the scan thread has sent so far.
     pub fn poll(&mut self) {
-        while let Ok(message) = self.messages.try_recv() {
+        loop {
+            let message = match self.messages.try_recv() {
+                Ok(message) => message,
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    if matches!(self.status, ScanStatus::Running(_)) {
+                        self.status = ScanStatus::Failed(
+                            "The scan ended without a result. Restart neet to try again.".into(),
+                        );
+                    }
+                    break;
+                }
+            };
             self.status = match message {
                 Message::Progress(progress) => ScanStatus::Running(progress),
                 Message::Done(Ok(scan)) => ScanStatus::Done {
@@ -107,5 +119,51 @@ mod tests {
         wait_until_done(&mut task);
 
         assert!(matches!(task.status(), ScanStatus::Failed(_)));
+    }
+
+    #[test]
+    fn a_scan_without_a_final_result_stops_loading() {
+        let (sender, messages) = mpsc::channel();
+        let mut task = ScanTask {
+            status: ScanStatus::Running(Progress::default()),
+            started: Instant::now(),
+            messages,
+        };
+        task.poll();
+        assert!(matches!(task.status(), ScanStatus::Running(_)));
+        sender.send(Message::Progress(Progress::default())).unwrap();
+        drop(sender);
+        task.poll();
+        assert!(
+            matches!(task.status(), ScanStatus::Failed(reason) if reason.contains("without a result"))
+        );
+    }
+
+    #[test]
+    fn a_queued_scan_result_is_kept_after_the_worker_exits() {
+        let root = tempdir().unwrap();
+        for result in [
+            scan::scan(root.path(), |_| {}),
+            Err(io::Error::other("scan failed")),
+        ] {
+            let failed = result.is_err();
+            let (sender, messages) = mpsc::channel();
+            let mut task = ScanTask {
+                status: ScanStatus::Running(Progress::default()),
+                started: Instant::now(),
+                messages,
+            };
+            sender.send(Message::Done(result)).unwrap();
+            drop(sender);
+            task.poll();
+            task.poll();
+            if failed {
+                assert!(
+                    matches!(task.status(), ScanStatus::Failed(reason) if reason == "scan failed")
+                );
+            } else {
+                assert!(matches!(task.status(), ScanStatus::Done { .. }));
+            }
+        }
     }
 }
