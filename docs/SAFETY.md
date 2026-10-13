@@ -1,50 +1,49 @@
 # Safety
 
-* The rules neet follows before it changes, moves, or reads anything private.
-* For anyone changing neet's code or writing cleanup rules.
-* These rules live in the code, not in settings. A rule file can never loosen them.
+* Which files neet may read or change.
+* Required checks, backups, and ways to undo.
 
 ## Contents
 
-1. [The Promises](#the-promises)
-2. [How A Cleanup Runs](#how-a-cleanup-runs)
-3. [Allowed Folders](#allowed-folders)
-4. [Protected Folders](#protected-folders)
-5. [The Path Check](#the-path-check)
-6. [The Check Before Moving](#the-check-before-moving)
-7. [Cleanup Rules](#cleanup-rules)
-8. [App Removal](#app-removal)
-9. [Build Folders And Installers](#build-folders-and-installers)
-10. [Tools neet Runs](#tools-neet-runs)
-11. [Emptying The Trash](#emptying-the-trash)
-12. [Dotfiles](#dotfiles)
-13. [Startup Items](#startup-items)
-14. [Planned Features](#planned-features)
-15. [AI Tools](#ai-tools)
-16. [Tests](#tests)
+* [The Promises](#the-promises)
+* [How A Cleanup Runs](#how-a-cleanup-runs)
+* [Allowed Folders](#allowed-folders)
+* [Protected Folders](#protected-folders)
+* [The Path Check](#the-path-check)
+* [The Check Before Moving](#the-check-before-moving)
+* [Cleanup Rules](#cleanup-rules)
+* [App Removal](#app-removal)
+* [Build Folders And Installers](#build-folders-and-installers)
+* [Tools neet Runs](#tools-neet-runs)
+* [Emptying The Trash](#emptying-the-trash)
+* [Dotfiles](#dotfiles)
+* [Startup Items](#startup-items)
+* [Planned Features](#planned-features)
+* [AI Tools](#ai-tools)
+* [Tests](#tests)
 
 ## The Promises
 
-1. Nothing is deleted permanently. The exceptions are [simulators and Docker data](#tools-neet-runs), which only their own tool can remove, and [emptying the Trash](#emptying-the-trash) when you ask, each after a separate red question that says so.
-2. You see every path, and confirm, before anything moves.
-3. Cleanup only removes items inside a short, fixed list of folders. App removal, and build folders and installers, each have their own narrow check.
-4. Cleanup leaves your own files, cloud files, passwords, and keys alone, except for the project build folders and installers you pick. Dotfiles and AI Tools edit only their listed files after review and backup. AI Tools can also move selected chat transcripts to Trash after review.
-5. Anything that changed since you reviewed it is skipped.
-6. Cleanup never uses admin rights.
+* Cleanup uses Trash. Docker and simulator tools, and emptying Trash, delete permanently after a separate warning and confirmation.
+* Review every path and confirm before files move.
+* Cleanup uses fixed folder lists. App removal, build folders, and installers each have their own checks.
+* Cleanup protects personal files, cloud files, passwords, and keys. Selected build folders, installers, and chat transcripts have separate rules. Dotfile and skill edits need review and backup.
+* Anything that changed since you reviewed it is skipped.
+* Cleanup never uses admin rights.
 
 ## How A Cleanup Runs
 
-1. Find every item the selected rules cover. Nothing changes yet.
-2. Show every path.
-3. Show the number of items, their total size, and that they go to the Trash.
-4. Ask you to confirm.
-5. Check each item again, right before it moves.
-6. Ask Finder to move it to the Trash, so Put Back can restore it.
+* Find every item the selected rules cover. Nothing changes yet.
+* Show every path.
+* Show the number of items, their total size, and that they go to the Trash.
+* Ask you to confirm.
+* Check each item again, right before it moves.
+* Ask Finder to move it to the Trash, so Put Back can restore it.
 
 * There is no command or option that skips the review or the question.
 * The first cleanup makes macOS ask whether your terminal may control Finder.
-* Finder has a minute to answer each move. If it does not, the item is skipped with the reason. Finder may still move it later, so look in the Trash before trying again.
-* Afterwards, neet shows how much space the items take in the Trash. That space is freed when you empty the Trash.
+* Finder has one minute to answer each move. A timeout is reported. Check Trash before retrying because Finder may still finish later.
+* Results show moved and skipped items. Space is freed only when Trash is emptied.
 
 ## Allowed Folders
 
@@ -70,7 +69,7 @@
 
 ## Protected Folders
 
-* neet refuses these, and everything inside them:
+neet refuses these, and everything inside them:
 
 | Path | Why |
 | --- | --- |
@@ -85,26 +84,26 @@
 
 ## The Path Check
 
-* Every item must pass this check before it can be shown for review. It:
-  1. Refuses empty and relative paths, and `..` parts.
-  2. Follows any links in the folders above the item, to find where it really is. The item itself is judged as it is, so a link is judged as a link.
-  3. Refuses anything protected.
-  4. Requires the item to be inside an allowed folder, and not the folder itself.
-  5. Refuses a link, unless it leads somewhere inside the same allowed folder that is not protected.
-  6. Records the item's real path and its identity on disk, which stays the same even if it is renamed.
-* Only this check, and the ones for [App Removal](#app-removal) and [Build Folders And Installers](#build-folders-and-installers), can approve an item. No other code can skip them.
+* Before review, each item must pass these checks:
+* Refuses empty and relative paths, and `..` parts.
+* Resolve parent links to find the real location. Check the item itself as it is.
+* Refuses anything protected.
+* Requires the item to be inside an allowed folder, and not the folder itself.
+* Refuses a link, unless it leads somewhere inside the same allowed folder that is not protected.
+* Record the real path and file identity.
+* Only the path check and the separate app, build folder, and installer checks can approve a cleanup item.
 * Links are never moved. Finder might move what a link points to instead of the link.
 
 ## The Check Before Moving
 
 * Right before each item moves, neet checks that:
-  1. The item still passes the same check that approved it.
-  2. Its real path and identity on disk are unchanged.
-  3. The apps its rule needs closed are still closed.
-  4. Nothing inside it changed more recently than its rule allows.
+* The item still passes the same check that approved it.
+* Its real path and identity on disk are unchanged.
+* The apps its rule needs closed are still closed.
+* Nothing inside it changed more recently than its rule allows.
 * If any check fails, or neet cannot be sure, the item is skipped and listed with the reason.
 * If neet cannot tell whether an app is open, it treats it as open.
-* **Known gap:** Finder moves a path, not an open file. A very short moment remains between the last check and the move. Checking right before each move keeps it as short as possible.
+* **Known gap:** a file can still change between the last check and Finder moving its path.
 
 ## Cleanup Rules
 
@@ -140,28 +139,28 @@ min_age_days = 0
 * neet refuses unknown fields, any pattern other than `*`, and any path outside the allowed folders.
 * Your own rules never start selected. A `safe` level in your rule counts as `caution`.
 * Before adding a built in rule:
-  1. Run the tests.
-  2. Read every path it finds on a real Mac.
-  3. Write down the macOS and app versions you checked.
+* Run the tests.
+* Read every path it finds on a real Mac.
+* Write down the macOS and app versions you checked.
 
 ## App Removal
 
-* App removal uses its own check, not the allowed folders. It follows the same review, question, check before moving, and Trash steps as a cleanup.
+App removal has its own path check, then uses the normal review, confirmation, and Trash flow.
 
 ### Which Apps
 
 * Only an app directly inside `/Applications` or `~/Applications`.
 * Refused:
-  1. Apple's apps, whose bundle ID starts with `com.apple.`.
-  2. Links, such as `/Applications/Safari.app`.
-  3. Apps in subfolders, such as `/Applications/Utilities`.
-  4. Apps without a bundle ID neet can read.
-  5. Apps that are open, checked when you open one and again before each move.
+* Apple's apps, whose bundle ID starts with `com.apple.`.
+* Links, such as `/Applications/Safari.app`.
+* Apps in subfolders, such as `/Applications/Utilities`.
+* Apps without a bundle ID neet can read.
+* Apps that are open, checked when you open one and again before each move.
 * An app owned by another user, such as one from the App Store, makes Finder ask for your password. neet never uses `sudo`.
 
 ### Which Files
 
-* Only items directly inside these folders in `~/Library`, found by exact name. Capital letters do not matter, as on the Mac's disk. Nothing partial.
+* Match exact names directly inside these Library folders, ignoring letter case. Partial names do not count.
 * `<id>` is the app's bundle ID, such as `com.hnc.Discord`. `<name>` is the app's name, such as `Discord`.
 
 | Folder | Name | Starts Selected | Note |
@@ -185,7 +184,7 @@ min_age_days = 0
 
 ## Build Folders And Installers
 
-* Quick Clean can move project build folders, installers in Downloads, and Docker's disk image to the Trash. It uses its own check, not the allowed folders, and follows the same review, question, check before moving, and Trash steps as a cleanup.
+* Quick Clean uses separate checks for build folders, installers, and Docker reset. Review and confirmation are still required.
 * Every item starts selected. You can clear any of them before the review.
 
 | Item | Taken only when |
@@ -196,16 +195,16 @@ min_age_days = 0
 | Docker's disk image | It is a file at exactly `~/Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw`. Only [resetting Docker](#resetting-docker) takes it, after Docker Desktop has quit. |
 
 * Refused:
-  1. Links, whatever they point to.
-  2. Anything else in `~/Library`, or in a hidden folder directly in your home folder, such as `~/.vscode`. Tools keep their own copies there.
-  3. A build folder inside another one, such as `node_modules` inside `node_modules`. The outer one is taken whole.
-  4. Every other protected folder still applies, such as `.git`, iCloud, keychains, and `~/.ssh`.
+* Links, whatever they point to.
+* Anything else in `~/Library`, or in a hidden folder directly in your home folder, such as `~/.vscode`. Tools keep their own copies there.
+* A build folder inside another one, such as `node_modules` inside `node_modules`. The outer one is taken whole.
+* Every other protected folder still applies, such as `.git`, iCloud, keychains, and `~/.ssh`.
 * Build folders come back when you install or build again. An installer only comes back if you download it again.
 
 ## Tools neet Runs
 
-* Simulator runtimes, simulators, and Docker's images and volumes cannot go to the Trash: macOS keeps runtimes in secure storage, and Docker keeps the rest inside its own disk image. neet asks their own tool to remove them, from Quick Clean.
-* This is the only way neet removes anything permanently. Runtimes and images can be downloaded again. Simulators and volumes hold data that cannot.
+* Quick Clean asks simulator and Docker tools to remove their own data. These commands delete permanently.
+* Runtimes and images can be downloaded again. Simulator and volume data may have no other copy. Emptying Trash is also permanent.
 
 | Tool | Command | Removes |
 | --- | --- | --- |
@@ -215,39 +214,39 @@ min_age_days = 0
 | Docker volumes | `docker volume rm -- <name>`, once per volume you select | A volume no container uses, with its data. Docker refuses if a container uses it. |
 
 * Before any of these runs, neet:
-  1. Lists exactly what the tool reports: each runtime with its version, build, size, when it was last used, and the simulators on it; simulators left without a runtime; or Docker's images, containers, volumes, and build cache with Docker's reported estimates, and each volume no container uses.
-  2. Starts with nothing selected for runtimes, simulators, and volumes.
-  3. Asks in a red box that lists what goes and says the removal is permanent and does not go to the Trash. Only `y` goes ahead.
+* Show runtime details and devices, or Docker sizes and unused volumes.
+* Starts with nothing selected for runtimes, simulators, and volumes.
+* Warn that removal is permanent. Only `y` confirms.
 * Only IDs made of letters, digits, and hyphens are passed to `simctl`, so they can never be `all` or an option. Only volume names made of letters, digits, `_`, `.`, and `-`, starting with a letter or digit, are passed to `docker`, after `--`.
-* Docker's reported reclaimable space is an estimate, not promised savings. neet does not use it to predict free disk space after cleanup.
-* `docker container ls` reads running container names, images, and Compose project labels before and after prune, with a ten second limit. This check changes nothing. A failed lookup stays visible and is not treated as an empty list.
+* Docker sizes are estimates. They are not used to promise free space after prune.
+* `docker container ls` checks running containers, images, and Compose labels before and after prune, with a ten second limit. Failed checks stay visible.
 * None of these commands uses admin rights. neet never starts Docker on its own; `o` opens Docker Desktop only when you press it.
 
 ### Resetting Docker
 
-* `x` on the Docker screen resets Docker: every image, container, and volume goes at once, by moving Docker's disk image to the Trash. It is not permanent: moving it back restores it.
-* neet asks first, in a yellow box that names the size and says what goes with it. Only `y` goes ahead. Then neet:
-  1. Stops Docker Desktop with `docker desktop stop`, then waits, up to three minutes, until `lsof` says no process has the disk image open. If one still does, or `lsof` cannot tell, nothing moves.
-  2. Checks the disk image with the [build folder check](#build-folders-and-installers), which takes only that one file.
-  3. Moves it into `~/.Trash` itself, keeping its name, or adding a number if the Trash already has a `Docker.raw`. Finder cannot reach into another app's container folder, and hangs when asked, so Finder's Put Back does not know where it came from.
-* Docker Desktop makes a new, empty disk image the next time it opens. To undo, move `Docker.raw` from the Trash back to `~/Library/Containers/com.docker.docker/Data/vms/0/data/` before opening Docker Desktop again.
+* Reset moves Docker's whole disk image, including containers and volumes, to Trash. It can be restored by hand.
+* A yellow question names the size and what will move. Only `y` confirms:
+* Stop Docker Desktop with `docker desktop stop`. Wait up to three minutes for `lsof` to confirm no process has the image open. Refuse if the check fails.
+* Recheck the exact Docker image path listed above.
+* Move it directly to `~/.Trash`, adding a number if its name exists. Finder cannot do this move, so Put Back is unavailable.
+* To restore, move `Docker.raw` from Trash to `~/Library/Containers/com.docker.docker/Data/vms/0/data/` before reopening Docker. Otherwise Docker makes an empty image.
 
 ## Emptying The Trash
 
-* The Trash screen, from the Trash row in Quick Clean, lists what is in `~/.Trash` from the scan, largest first. Finder's own `.DS_Store` file is left out.
-* `e` asks first, in a red box that names the size and item count, and says it cannot be undone and that Put Back stops working. Only `y` goes ahead. `n` or `Esc` goes back.
-* neet then asks Finder to empty the Trash with `osascript -e 'tell application "Finder" to empty trash'`, the same as Finder's Empty Trash. Finder deletes every item in the Trash for good, including Trash on other disks. neet deletes nothing itself. It waits up to ten minutes.
+* Trash lists scanned items in `~/.Trash`, largest first, excluding `.DS_Store`.
+* `e` asks before permanent deletion and warns that Put Back stops working. Only `y` confirms.
+* Finder empties Trash through `osascript`, including Trash on other disks. The command has a ten minute limit.
 * `o` opens the Trash in Finder, where Put Back works, and changes nothing.
-* When macOS will not let the scan read `~/.Trash`, because the terminal lacks Full Disk Access, the screen says so and how to turn it on. It cannot be emptied from neet until then, since neet would not know what it deletes.
+* If Trash could not be read, neet refuses to empty it and explains Full Disk Access.
 * The first time, macOS asks whether neet may control Finder, as it does for moving to the Trash.
 
 ## Dotfiles
 
-* Dotfiles changes settings files in place, not through the Trash. Every change shows a diff first, is saved as a backup, and can be undone.
+Dotfile edits need a diff review and backup. They do not use Trash.
 
 ### Which Files
 
-* Only these files are listed. Paths are inside your home folder.
+Only these files are listed. Paths are inside your home folder.
 
 | Group | Files |
 | --- | --- |
@@ -260,21 +259,21 @@ min_age_days = 0
 
 * Adding a file needs a change to this table and to the code, together.
 * Never listed, read, or exported:
-  1. Shell and editor history, such as `.zsh_history`, `.bash_history`, and `.viminfo`.
-  2. Files that hold passwords or tokens: `.netrc`, `.git-credentials`, `.config/gh/hosts.yml`, and everything in `~/.aws`, `~/.docker`, and `~/.kube`.
-  3. Everything in `~/.ssh` except `config`.
-  4. Files a shell makes for itself, such as `.zcompdump`.
+* Shell and editor history, such as `.zsh_history`, `.bash_history`, and `.viminfo`.
+* Files that hold passwords or tokens: `.netrc`, `.git-credentials`, `.config/gh/hosts.yml`, and everything in `~/.aws`, `~/.docker`, and `~/.kube`.
+* Everything in `~/.ssh` except `config`.
+* Files a shell makes for itself, such as `.zcompdump`.
 * `.npmrc` can hold a token. It is marked **secret**, and starts left out of exports.
 
 ### What May Change
 
 * Only the files in the table, and, with [chezmoi](#chezmoi), the source file chezmoi keeps for each one.
 * View only, never changed:
-  1. `.ssh/config`. Changing it waits for the SSH feature.
-  2. A file that is a link leading outside your home folder, or into a [protected folder](#protected-folders).
-  3. A file neet cannot write as you. neet never uses `sudo` here.
-  4. With chezmoi: templates, encrypted files, and files chezmoi builds from scripts or changes in place.
-* A file that is a link inside your home folder is changed where the link leads. The link itself stays. Links in parent folders pass the same check. A source path in chezmoi that contains a link is refused.
+* `.ssh/config`. Changing it waits for the SSH feature.
+* A file that is a link leading outside your home folder, or into a [protected folder](#protected-folders).
+* A file neet cannot write as you. neet never uses `sudo` here.
+* With chezmoi: templates, encrypted files, and files chezmoi builds from scripts or changes in place.
+* Allowed links are edited at their destination. Parent links get the same check. chezmoi source paths containing links are refused.
 
 ### How A Change Runs
 
