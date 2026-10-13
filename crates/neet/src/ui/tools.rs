@@ -54,11 +54,17 @@ impl<T, R> Stage<T, R> {
             Self::Looking(_, answer) => match answer.try_recv() {
                 Ok(Ok(found)) => Self::Ready(found),
                 Ok(Err(reason)) => Self::Failed(reason),
-                Err(_) => return,
+                Err(mpsc::TryRecvError::Empty) => return,
+                Err(mpsc::TryRecvError::Disconnected) => Self::Failed(
+                    "The task ended without a result. Go back and open this screen again.".into(),
+                ),
             },
             Self::Working(_, answer) => match answer.try_recv() {
                 Ok(result) => Self::Done(result),
-                Err(_) => return,
+                Err(mpsc::TryRecvError::Empty) => return,
+                Err(mpsc::TryRecvError::Disconnected) => Self::Failed(
+                    "The task ended without a result. Some changes may have finished. Check what changed before trying again.".into(),
+                ),
             },
             _ => return,
         };
@@ -899,6 +905,7 @@ impl Screen for Simulators {
             Stage::Asking(_) => "y remove permanently · n or esc back",
             Stage::Working(..) => "removing, please wait",
             Stage::Done(_) => "enter or esc home",
+            Stage::Failed(_) => "esc back · ? help",
             _ => "↑↓ move · space select · enter remove · esc back · ? help",
         }
     }
@@ -1844,6 +1851,59 @@ mod tests {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::crossterm::event::KeyModifiers;
+
+    #[test]
+    fn lost_tool_results_stop_loading_and_do_not_claim_success() {
+        let (sender, receiver) = mpsc::channel();
+        let mut screen = DockerSpace::with(Stage::Looking(Instant::now(), receiver));
+        drop(sender);
+        assert!(render(&mut screen).contains("ended without a result"));
+        assert!(matches!(screen.back(), Action::Back));
+
+        let (sender, receiver) = mpsc::channel();
+        screen.stage = Stage::Working(Instant::now(), receiver);
+        assert!(render(&mut screen).contains("Running docker system prune"));
+        assert!(screen.is_dialog());
+        drop(sender);
+        let text = render(&mut screen);
+        assert!(text.contains("Some changes may have finished"));
+        assert!(!text.contains("Docker freed"));
+        assert!(!screen.is_dialog());
+        assert!(matches!(screen.back(), Action::Back));
+    }
+
+    #[test]
+    fn queued_tool_results_are_kept_after_the_worker_exits() {
+        let (sender, receiver) = mpsc::channel();
+        let mut stage: Stage<u8, u8> = Stage::Looking(Instant::now(), receiver);
+        stage.poll();
+        assert!(matches!(stage, Stage::Looking(..)));
+        sender.send(Ok(7)).unwrap();
+        drop(sender);
+        stage.poll();
+        stage.poll();
+        assert!(matches!(stage, Stage::Ready(7)));
+
+        let (sender, receiver) = mpsc::channel();
+        stage = Stage::Working(Instant::now(), receiver);
+        sender.send(9).unwrap();
+        drop(sender);
+        stage.poll();
+        stage.poll();
+        assert!(matches!(stage, Stage::Done(9)));
+    }
+
+    #[test]
+    fn a_lost_simulator_result_allows_leaving() {
+        let (sender, receiver) = mpsc::channel();
+        let mut screen = Simulators::with(Stage::Working(Instant::now(), receiver));
+        drop(sender);
+
+        assert!(render(&mut screen).contains("Some changes may have finished"));
+        assert!(!screen.is_dialog());
+        assert_eq!(screen.hints(), "esc back · ? help");
+        assert!(matches!(screen.back(), Action::Back));
+    }
 
     fn render(screen: &mut dyn Screen) -> String {
         let mut terminal = Terminal::new(TestBackend::new(110, 30)).unwrap();
