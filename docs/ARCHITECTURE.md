@@ -94,70 +94,48 @@
 
 ## A Cleanup
 
-```text
-selected rules, a picked item, or an app
-    -> find the items
-    -> approve each item with the path check
-    -> show every path, then ask
-    -> check each item again, then ask Finder to move it
-    -> show what moved and what was skipped
-```
-
-* Only an approved item can reach the code that moves files. See [SAFETY.md](SAFETY.md).
-* Tests replace Finder with a stand in, so they never touch the real Trash.
+* Find items and check their paths.
+* Show every path and ask for confirmation.
+* Recheck each item before asking Finder to move it to Trash.
+* Show moved and skipped items, with reasons.
+* Tests replace Finder with a fake mover and leave the real Trash alone.
+* Docker, simulator, and Trash actions have separate rules in [SAFETY.md](SAFETY.md).
 
 ## Dependencies
 
-| Need | Uses |
+| Need | Tool |
 | --- | --- |
-| Walking folders on several threads | `jwalk` |
-| Disk size and free space | `rustix` |
-| The free space Finder shows | `osascript` asking macOS, part of macOS |
+| Folder scans | `jwalk` |
+| File and disk details | `rustix` |
 | Terminal screens | `ratatui` |
-| Reading rules | `serde` and `toml` |
-| Changing one TOML setting and keeping comments and layout | `toml_edit` |
-| Reading local JSON files and tool output | `serde_json` |
-| Reading simulator runtimes | `xcrun simctl`, part of Xcode, read with `serde_json` |
-| Finding the temporary folder | `getconf`, part of macOS |
-| Private skill drafts and temporary folders in tests | `tempfile` |
+| JSON and TOML | `serde`, `serde_json`, `toml`, `toml_edit` |
+| Private drafts and test folders | `tempfile` |
 | File diffs | `similar` |
-| Shortening names without splitting characters | `unicode-segmentation` |
-| Whether an app is open | `lsappinfo`, part of macOS |
-| Reading an app's details | `plutil`, part of macOS |
-| Moving to the Trash | `osascript` asking Finder, part of macOS |
-| Building release programs | `dist`, run in CI |
-
-* Try each new crate in a small test before relying on it.
+| Shorten text without splitting characters | `unicode-segmentation` |
+| Finder actions and free space | `osascript` |
+| App details and open apps | `plutil`, `lsappinfo` |
+| Simulators and temporary folders | `xcrun simctl`, `getconf` |
+| Release downloads | `dist` |
 
 ## Building
 
-* From the repository, run `cargo run --release` to build and open the current branch.
-* `cargo install --path crates/neet --force` installs that checkout.
-* Before a PR, run `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, and `cargo test --workspace --all-features`.
-* Needs Rust 1.88 or later, and runs on macOS 13 or later, on Apple silicon and Intel.
-* `unsafe` code is not allowed, and Clippy's strict checks are on.
-* CI runs on every pull request, and on `master` after each merge:
-  1. Formatting, Clippy, and tests.
-  2. A build with Rust 1.88.
-  3. The tests for Apple silicon and for Intel. The CI Macs are Apple silicon, so the Intel tests run under Rosetta, Apple's tool for running Intel programs.
+* Requires Rust 1.88 or later and macOS 13 or later.
+* Run: `cargo run --release`.
+* Install: `cargo install --path crates/neet --locked --force`.
+* Check before a PR:
+
+```sh
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-features
+cargo +1.88 check --workspace --all-targets --all-features --locked
+```
 
 ## Branches And Releases
 
-* Every change starts on its own branch, such as `feat/...`, `fix/...`, or `docs/...`, and reaches `master` through a pull request.
-* `master` only accepts pull requests with every CI check passing.
-* Commit messages follow the form `type(area): summary`, such as `feat(core): ...`. Release notes are written from them.
-* Dependabot opens update pull requests every Monday.
-
-| Step | What Happens |
-| --- | --- |
-| 1. Merge to `master` | release-plz opens or updates a release pull request with the next version and release notes. |
-| 2. Review | Check the version and notes, and edit them if needed. |
-| 3. Merge the release pull request | release-plz publishes both crates to crates.io, and tags the program, such as `neet-v0.1.0`. |
-| 4. The tag | dist builds neet on Apple silicon and Intel Macs, and makes the GitHub release with the downloads, checksums, and an install script. |
-
-| Secret | Used For |
-| --- | --- |
-| `CARGO_REGISTRY_TOKEN` | Publishing to crates.io. |
-| `RELEASE_PLZ_TOKEN` | A GitHub token, so CI runs on the release pull request, and the tag starts the build. |
-
-* crates.io only accepts a release from an account with a verified email address. If publishing fails, verify it, then run the failed job again.
+* Use a branch and PR into `master`. All required checks must pass.
+* Use `type(scope): summary` for commits and PR titles.
+* Keep commits at 200 changed lines or fewer, counting additions and deletions. Merge by rebase.
+* Commit as `ado11231 <adoalagic0@gmail.com>`. No co-author.
+* Get approval for each doc before committing. Stop and recap after each PR.
+* release-plz prepares the release PR. Merging it publishes the crates and starts the Mac download builds.
