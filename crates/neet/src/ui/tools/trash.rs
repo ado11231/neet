@@ -301,7 +301,7 @@ impl Screen for Trash {
                     Color::Green,
                 );
             }
-            Stage::Done(Err(reason)) => {
+            Stage::Done(Err(reason)) | Stage::Failed(reason) => {
                 return message(
                     frame,
                     area,
@@ -366,7 +366,7 @@ impl Screen for Trash {
                 }
                 return Action::None;
             }
-            Stage::Done(_) => {
+            Stage::Done(_) | Stage::Failed(_) => {
                 return if key.code == KeyCode::Enter {
                     Action::Home
                 } else {
@@ -404,7 +404,7 @@ impl Screen for Trash {
                 Action::None
             }
             Stage::Working(..) => Action::None,
-            Stage::Done(_) => Action::Home,
+            Stage::Done(_) | Stage::Failed(_) => Action::Home,
             _ => Action::Back,
         }
     }
@@ -417,7 +417,7 @@ impl Screen for Trash {
         match self.stage {
             Stage::Asking(_) => "y empty for good · n or esc go back",
             Stage::Working(..) => "emptying, please wait",
-            Stage::Done(_) => "enter or esc home",
+            Stage::Done(_) | Stage::Failed(_) => "enter or esc home",
             _ => "↑↓ move · e empty the Trash · o open in Finder · esc back · ? help",
         }
     }
@@ -537,5 +537,19 @@ mod tests {
             assert!(!trash.is_dialog());
             assert!(matches!(trash.back(), Action::Home));
         }
+    }
+
+    #[test]
+    fn a_lost_emptying_result_is_visible_and_allows_leaving() {
+        let mut trash = screen(false);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        trash.stage = Stage::Working(Instant::now(), receiver);
+        drop(sender);
+
+        let text = render(&mut trash);
+        assert!(text.contains("Some changes may have finished"));
+        assert!(!text.contains("The Trash is empty"));
+        assert!(!trash.is_dialog());
+        assert!(matches!(trash.back(), Action::Home));
     }
 }
