@@ -33,7 +33,7 @@
 | Arrow keys, or `h` `j` `k` `l` | Move. |
 | `Esc` | Go back one step. |
 | `?` | Show the keys for this screen. |
-| `q` | Quit. Does nothing while a question is open or files are moving. |
+| `q` | Quit. Does nothing while a question is open or files are moving, even with Help open. |
 
 ## Home
 
@@ -167,6 +167,7 @@
 
 * Open from Quick Clean to see Trash items, largest first.
 * `e` asks before emptying. Only `y` confirms permanent deletion.
+* Wait for emptying to finish. Then `Enter` or `Esc` returns Home.
 * Finder empties Trash on all disks, not just the items shown from your home folder.
 * Emptying cannot be undone. See [Trash safety](SAFETY.md#emptying-the-trash).
 * If macOS blocks the scan, enable Full Disk Access before emptying from neet.
