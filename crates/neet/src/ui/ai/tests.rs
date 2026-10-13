@@ -394,6 +394,85 @@ fn removal_requires_confirmation_and_blocks_leaving_while_running() {
 }
 
 #[test]
+fn chat_removal_keeps_summary_and_actions_visible_while_scrolling() {
+    let (_dir, mut screen) = setup();
+    for index in 0..12 {
+        write(
+            &screen
+                .locations
+                .claude
+                .join(format!("projects/repo/z-{index:02}.jsonl")),
+            "{}",
+        );
+    }
+    press(&mut screen, KeyCode::Tab);
+    finish_refresh(&mut screen);
+    press(&mut screen, KeyCode::Char('a'));
+    let last_file = screen
+        .rows()
+        .last()
+        .unwrap()
+        .path
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    press(&mut screen, KeyCode::Char('d'));
+    for (width, height) in visual::tests::SIZES {
+        for key in [KeyCode::Home, KeyCode::End] {
+            press(&mut screen, key);
+            let text = render(&mut screen, width, height);
+            assert!(text.contains("Move 13 chat files to Trash?"), "{text}");
+            assert!(text.contains("13 ready"), "{text}");
+            assert!(text.contains("y move to Trash"), "{text}");
+            assert!(text.contains("n / Esc cancel"), "{text}");
+            assert!(text.contains("Finder's Put Back"), "{text}");
+            if key == KeyCode::End {
+                assert!(text.contains(&last_file), "{text}");
+            }
+        }
+    }
+    screen.back();
+    assert_eq!(screen.marked.len(), 13);
+    assert!(screen.cleanup.is_none());
+}
+
+#[test]
+fn interrupted_cleanup_lists_files_without_a_confirmed_result() {
+    let (_dir, mut screen) = setup();
+    write(
+        &screen.locations.codex.join("sessions/rollout-other.jsonl"),
+        "{}",
+    );
+    press(&mut screen, KeyCode::Tab);
+    finish_refresh(&mut screen);
+    press(&mut screen, KeyCode::Char('a'));
+    let items: Vec<_> = screen.rows().into_iter().cloned().collect();
+    let (sender, receiver) = mpsc::channel();
+    sender
+        .send((items[0].path.clone(), Err("Chat is open".into())))
+        .unwrap();
+    drop(sender);
+    screen.cleanup = Some(chats::Cleanup::new(items, receiver));
+    screen.poll_cleanup();
+    finish_refresh(&mut screen);
+    let text = render(&mut screen, 100, 40);
+    for expected in [
+        "0 moved",
+        "1 not moved",
+        "1 unconfirmed",
+        "Check the Trash",
+        "Chat is open",
+        "rollout-other.jsonl",
+    ] {
+        assert!(text.contains(expected), "{text}");
+    }
+    assert_eq!(screen.marked.len(), 2);
+    assert!(screen.review.is_none());
+    assert!(screen.cleanup.is_none());
+}
+
+#[test]
 fn cleanup_reports_partial_failure_and_keeps_failed_chats_selected() {
     let (_dir, mut screen) = setup();
     write(
@@ -406,7 +485,10 @@ fn cleanup_reports_partial_failure_and_keeps_failed_chats_selected() {
     let paths: Vec<_> = screen.marked.iter().cloned().collect();
     fs::rename(&paths[0], screen.locations.home.join("trashed-chat")).unwrap();
     let (sender, receiver) = mpsc::channel();
-    screen.cleanup = Some(chats::Cleanup::new(2, receiver));
+    screen.cleanup = Some(chats::Cleanup::new(
+        screen.rows().into_iter().cloned().collect(),
+        receiver,
+    ));
     sender.send((paths[0].clone(), Ok(()))).unwrap();
     sender
         .send((paths[1].clone(), Err("Chat changed after review".into())))

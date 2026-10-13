@@ -1,6 +1,6 @@
 //! Chat removal review and progress. File moves run outside the UI thread.
 
-use std::fmt::Write;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
@@ -18,17 +18,19 @@ pub(super) struct Cleanup {
     pub total: usize,
     pub done: usize,
     removed: usize,
-    failures: Vec<String>,
+    items: Vec<Item>,
+    results: BTreeMap<PathBuf, Result<(), String>>,
 }
 
 impl Cleanup {
-    pub(super) fn new(total: usize, receiver: Receiver<MoveResult>) -> Self {
+    pub(super) fn new(items: Vec<Item>, receiver: Receiver<MoveResult>) -> Self {
         Self {
             receiver,
-            total,
+            total: items.len(),
             done: 0,
             removed: 0,
-            failures: Vec::new(),
+            items,
+            results: BTreeMap::new(),
         }
     }
 }
@@ -155,7 +157,10 @@ impl AiTools {
     }
 
     pub(super) fn start_chat_removal(&mut self, removals: Vec<Removal>) {
-        let total = removals.len();
+        let items = removals
+            .iter()
+            .map(|removal| removal.item.clone())
+            .collect();
         self.marked
             .extend(removals.iter().map(|removal| removal.item.path.clone()));
         let (sender, receiver) = mpsc::channel();
@@ -167,7 +172,7 @@ impl AiTools {
                 }
             }
         });
-        self.cleanup = Some(Cleanup::new(total, receiver));
+        self.cleanup = Some(Cleanup::new(items, receiver));
         self.viewer = None;
     }
 
@@ -179,36 +184,81 @@ impl AiTools {
             match cleanup.receiver.try_recv() {
                 Ok((path, result)) => {
                     cleanup.done += 1;
-                    match result {
-                        Ok(()) => {
-                            cleanup.removed += 1;
-                            self.marked.remove(&path);
-                        }
-                        Err(error) => cleanup
-                            .failures
-                            .push(format!("{}: {error}", path.display())),
+                    if result.is_ok() {
+                        cleanup.removed += 1;
+                        self.marked.remove(&path);
                     }
+                    cleanup.results.insert(path, result);
                 }
                 Err(mpsc::TryRecvError::Empty) => return,
                 Err(mpsc::TryRecvError::Disconnected) => break,
             }
         }
         let cleanup = self.cleanup.take().unwrap();
-        let mut text = format!(
-            "{} of {} chat files moved to Trash.\nRestore them with Finder's Put Back.",
-            cleanup.removed, cleanup.total
-        );
-        if cleanup.done != cleanup.total {
-            text.push_str("\nCleanup stopped unexpectedly. Check the Trash before retrying.");
-        }
-        if !cleanup.failures.is_empty() {
-            let _ = write!(text, "\n\nNot moved:\n{}", cleanup.failures.join("\n\n"));
-        }
-        self.viewer = Some(Viewer::new("Chat cleanup result".into(), &text));
+        self.viewer = Some(self.cleanup_viewer(&cleanup));
         self.note = format!(
             "{} of {} chat files moved to Trash.",
             cleanup.removed, cleanup.total
         );
         self.refresh();
+    }
+
+    fn cleanup_viewer(&self, cleanup: &Cleanup) -> Viewer {
+        let mut viewer = Viewer::new("Chat cleanup result".into(), "");
+        let failed = cleanup.done.saturating_sub(cleanup.removed);
+        let unchecked = cleanup.total.saturating_sub(cleanup.done);
+        viewer.summary = vec![
+            Line::from(format!(
+                "{} of {} chat files moved to Trash.",
+                cleanup.removed, cleanup.total
+            ))
+            .bold(),
+            Line::from(format!(
+                "{} moved · {failed} not moved · {unchecked} unconfirmed",
+                cleanup.removed
+            )),
+        ];
+        if unchecked > 0 {
+            viewer.summary.push(
+                Line::from("Cleanup stopped early. Check the Trash before retrying.").yellow(),
+            );
+        }
+        for (group, count) in [
+            ("Not moved", failed),
+            ("Unconfirmed", unchecked),
+            ("Moved to Trash", cleanup.removed),
+        ] {
+            if count == 0 {
+                continue;
+            }
+            viewer
+                .lines
+                .push(Line::from(format!("{group} · {count}")).style(visual::HEADING));
+            let mut index = 0;
+            for item in &cleanup.items {
+                let result = cleanup.results.get(&item.path);
+                let status = match result {
+                    Some(Ok(())) => "Moved to Trash",
+                    Some(Err(_)) => "Not moved",
+                    None => "Unconfirmed",
+                };
+                if status != group {
+                    continue;
+                }
+                index += 1;
+                viewer.lines.extend(self.chat_details(item, index));
+                if let Some(Err(reason)) = result {
+                    viewer
+                        .lines
+                        .push(Line::from(ai::display_text(reason)).yellow());
+                    viewer.lines.push(Line::default());
+                }
+            }
+        }
+        viewer.footer = vec![
+            Line::from("Restore moved files with Finder's Put Back."),
+            Line::from("Unmoved chats stay selected. Esc returns to the list."),
+        ];
+        viewer
     }
 }
