@@ -568,12 +568,12 @@ pub fn start_docker() -> io::Result<()> {
 
 /// Runs `docker system prune -a -f`: removes stopped containers, networks
 /// no container uses, every image no container uses, and the build cache,
-/// permanently. Volumes are kept. Returns the space Docker says it reclaimed.
+/// permanently. Volumes are kept. Returns the reported space, or `None` if missing.
 ///
 /// # Errors
 ///
 /// Returns an error if Docker is not installed, or the prune failed.
-pub fn docker_prune() -> io::Result<String> {
+pub fn docker_prune() -> io::Result<Option<String>> {
     let docker = docker_program()
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Docker is not installed"))?;
     let output = Command::new(docker)
@@ -583,10 +583,14 @@ pub fn docker_prune() -> io::Result<String> {
         return Err(failed(&output));
     }
     let text = String::from_utf8_lossy(&output.stdout);
-    Ok(text
-        .lines()
+    Ok(prune_space(&text).map(str::to_string))
+}
+
+fn prune_space(text: &str) -> Option<&str> {
+    text.lines()
         .find_map(|line| line.strip_prefix("Total reclaimed space:"))
-        .map_or_else(|| "0B".to_string(), |space| space.trim().to_string()))
+        .map(str::trim)
+        .filter(|space| !space.is_empty())
 }
 
 #[cfg(test)]
@@ -595,6 +599,26 @@ mod tests {
         is_not_running, is_runtime_id, is_volume_name, parse_devices, parse_docker_containers,
         parse_docker_usage, parse_runtimes, parse_unused_volumes,
     };
+
+    #[test]
+    fn prune_space_keeps_zero_distinct_from_missing_output() {
+        for text in [
+            "",
+            "Deleted Images:\nabc",
+            "Reclaimed: 2GB",
+            "Total reclaimed space: \n",
+        ] {
+            assert_eq!(super::prune_space(text), None);
+        }
+        assert_eq!(
+            super::prune_space("Total reclaimed space: 0B\n"),
+            Some("0B")
+        );
+        assert_eq!(
+            super::prune_space("Deleted Images:\nabc\nTotal reclaimed space:  1.2GB \n"),
+            Some("1.2GB")
+        );
+    }
 
     #[test]
     fn reads_running_containers_with_and_without_compose_projects() {
