@@ -1,25 +1,27 @@
 # Docs Guide
 
-* Which doc answers which question, and how to write them.
-* For anyone reading or changing the neet docs.
+* Which doc to read or update.
+* Rules for keeping docs short and clear.
 
 ## Contents
 
-1. [The Docs](#the-docs)
-2. [Where Changes Go](#where-changes-go)
-3. [How To Write](#how-to-write)
+* [The Docs](#the-docs)
+* [Where Changes Go](#where-changes-go)
+* [How To Write](#how-to-write)
 
 ## The Docs
 
 | Doc | Answers |
 | --- | --- |
 | [Project README](../README.md) | What neet is, and how to install and open it. |
-| [FEATURES.md](FEATURES.md) | What neet does, what is planned, and what it will never do. |
-| [INTERFACE.md](INTERFACE.md) | How each screen is laid out, and which keys it uses. |
+| [FEATURES.md](FEATURES.md) | Current and planned features. |
+| [INTERFACE.md](INTERFACE.md) | Screens, keys, and actions. |
 | [SAFETY.md](SAFETY.md) | What neet may change, what it must refuse, and how it checks. |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | How the code is organized, and how a scan and a cleanup run. |
-| [ROADMAP.md](ROADMAP.md) | What is done, what comes next, and when each step counts as finished. |
-| [Wiki](https://github.com/ado11231/neet/wiki) | Where to find each doc and section. It only links here, so the docs stay in one place. |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Code layout, builds, and releases. |
+| [ROADMAP.md](ROADMAP.md) | Finished work and next steps. |
+| [CHANGELOG.md](CHANGELOG.md) | App release notes. |
+| [CHANGELOG-CORE.md](CHANGELOG-CORE.md) | Library release notes. |
+| [Wiki](https://github.com/ado11231/neet/wiki) | Links to these docs. |
 
 ## Where Changes Go
 
@@ -34,10 +36,13 @@
 
 ## How To Write
 
-1. Start with a title, then a few bullets on what the doc covers and who it is for, then a numbered Contents list.
-2. Use bullets, numbered steps, and tables. No paragraphs.
-3. Capitalize every word in headings.
-4. No em dashes. No hyphens in ordinary text. Hyphens are fine in code and file names.
-5. Use plain words and short sentences. Explain a term the first time it appears.
-6. Keep progress in the roadmap. Other docs describe how things are now. No dates.
-7. Never describe planned work as done.
+* Keep the existing doc files and sections.
+* Start guides with a full size title, two short bullets, then Contents.
+* The root README and changelogs do not need Contents.
+* Use bullets for lists and tables for comparisons. Do not number lists or headings.
+* Avoid single bullet lists. Use a short line for a table or code caption.
+* Capitalize words in headings.
+* Use short sentences and plain words. No em dashes.
+* Keep progress in the roadmap. Label planned work clearly.
+* Link to details in other docs instead of repeating them.
+* Get approval for each changed doc before committing it.
