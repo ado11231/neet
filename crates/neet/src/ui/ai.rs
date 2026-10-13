@@ -955,7 +955,10 @@ impl Screen for AiTools {
             ),
             ("Enter", "Read the selected file or conversation locally."),
             ("Space", "Select or deselect a chat."),
-            ("a / n", "Select all shown chats / clear every selection."),
+            (
+                "a / n",
+                "Select all shown chats / clear every selection. n also cancels chat removal.",
+            ),
             (
                 "d / Delete",
                 "Review moving selected chat files to Trash, including hidden selections.",

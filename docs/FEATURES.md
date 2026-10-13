@@ -131,7 +131,7 @@
 | --- | --- | --- |
 | Browse | Lists known Claude Code, Codex, and Gemini CLI settings, instructions, skills, and chats. Includes shared `.agents/skills` and the current project's files. Filters by tool, path, chat title, and project. Codex and Gemini filters include shared skills. | Done |
 | Read | Opens a local text preview. Chats show user and assistant messages. Credentials and databases are excluded. | Done |
-| Chat cleanup | Shows chat titles and recorded project paths. Tags missing project folders. Select one or all shown chats, review, then move their transcript files to Trash. | Done |
+| Chat cleanup | Shows chat titles and recorded project paths. Tags missing project folders. Select chats, review ready and skipped files, then move transcripts to Trash. Results list moved, failed, and unconfirmed files. | Done |
 | Link a skill | Links a local skill folder into a tool's user skills after showing the source, destination, and instructions. Keeps scripts and references in the source folder, which must remain in place. Selects the linked skill afterward. | Done |
 | Edit and restore | Edits a copy of a user `SKILL.md`, reviews the diff, and saves with a backup. Can review and restore the latest backup. Invalid drafts stay available to repair or discard. Bundled skills stay view only. | Done |
 | Finder | Reveals the selected file, including hidden files. | Done |

@@ -645,7 +645,9 @@
 * The selected path, scope, size, and available actions appear beside the list, or below it on narrow terminals. Opening Chats reads bounded local summaries. Other file contents are read only when opened. The scrollable preview includes the full path and scope on small terminals.
 * Chats show a saved title or first user message, the recorded project path, and a `Missing project` tag when that directory no longer exists. Unknown or unreadable paths are not tagged as missing. Search matches titles, paths, and tags.
 * Space selects a chat, `a` toggles all chats shown by the current filters, and `n` clears every selection. The status includes selections hidden by filters. `d` reviews all selected chats, including hidden selections, or the highlighted chat when none are selected.
-* The review lists each transcript path, title, project, count, and total size. `y` moves those files to Trash in the background. Changed, open, recently updated, or unreadable files are skipped. Results show failures and keep failed chats selected. Finder's Put Back restores moved files. Assistant indexes, related files, and cloud history remain.
+* The chat removal review keeps the count, size, skipped count, hidden selection count, and local cleanup limits above a scrolling file list. Ready and skipped chats have separate headings. Each entry shows its title, tool, size, project, and full transcript path.
+* The **Next** box keeps the close app advice, Finder's Put Back, and confirmation keys visible while scrolling. `y` moves the ready files to Trash in the background; `n` or `Esc` cancels. If no files are ready, it offers refresh advice and no move action.
+* Results keep the totals above a scrolling list of **Not moved**, **Unconfirmed**, and **Moved to Trash** files. Failed files show their reason. If cleanup stops early, check the Trash before retrying unconfirmed files. Unmoved chats stay selected. Finder's Put Back restores moved files. Assistant indexes, related files, and cloud history remain.
 * Chat previews show user and assistant messages from supported JSON and JSONL records. Tool calls and results are left out. Invalid records and preview limits are reported.
 * Linking a skill asks for a local folder containing `SKILL.md`. `Tab` picks the target tool. The review names the source and destination and shows the instructions. `y` creates a directory link. Codex uses the shared `.agents/skills` folder. The source folder must stay in place. After linking, the Skills list selects it. Restart the assistant or reload its skills afterward.
 * Editing opens a private copy in your editor. The diff must be confirmed with `y` before the original is backed up and replaced. Restore follows the same review.
@@ -659,7 +661,7 @@
 | `/` | Filter by path, tool, chat title, or project. `Enter` keeps the filter; `Esc` clears it while typing or browsing. |
 | `Enter` | Open the selected file or chat. |
 | `Space` | Select or deselect the highlighted chat. |
-| `a` / `n` | Toggle all shown chats / clear every chat selection. |
+| `a` / `n` | Toggle all shown chats / clear every chat selection. In a chat removal review, `n` cancels. |
 | `d` / `Delete` | Review moving selected chat files, or the highlighted chat, to Trash. |
 | `i` | Link a local skill folder. `Tab` or `Shift-Tab` chooses the tool while typing. |
 | `e` | Edit a user skill, or reopen a kept draft, then review. |
