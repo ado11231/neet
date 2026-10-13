@@ -923,9 +923,15 @@ pub struct DockerFound {
     docker: Docker,
     containers: Result<Vec<DockerContainer>, String>,
     /// Volumes no container uses, which the prune keeps unless picked
-    volumes: Vec<DockerVolume>,
+    volumes: Result<Vec<DockerVolume>, String>,
     /// The space Docker Desktop's disk image takes, if it has one
     image: Option<u64>,
+}
+
+impl DockerFound {
+    fn available_volumes(&self) -> &[DockerVolume] {
+        self.volumes.as_deref().unwrap_or_default()
+    }
 }
 
 /// Which question is open
@@ -939,7 +945,7 @@ enum Question {
 pub enum DockerDone {
     Pruned {
         /// The space Docker says it freed, or why the prune failed
-        space: Result<String, String>,
+        space: Result<Option<String>, String>,
         /// Each volume picked, and why it failed if it did
         volumes: Vec<(String, Result<(), String>)>,
         containers: Result<Vec<DockerContainer>, String>,
@@ -978,9 +984,9 @@ impl DockerSpace {
             let docker = tools::docker_usage()
                 .map_err(|error| format!("Docker could not say what it holds: {error}"))?;
             let volumes = if matches!(docker, Docker::Usage(_)) {
-                tools::unused_volumes().unwrap_or_default()
+                tools::unused_volumes().map_err(|error| error.to_string())
             } else {
-                Vec::new()
+                Ok(Vec::new())
             };
             let containers = if matches!(docker, Docker::Usage(_)) {
                 tools::docker_containers().map_err(|error| error.to_string())
@@ -1079,7 +1085,7 @@ impl DockerSpace {
     fn picked_volumes(&self) -> Vec<&DockerVolume> {
         self.stage.found().map_or_else(Vec::new, |found| {
             found
-                .volumes
+                .available_volumes()
                 .iter()
                 .zip(&self.chosen)
                 .filter(|(_, chosen)| **chosen)
@@ -1129,7 +1135,7 @@ impl DockerSpace {
         let Docker::Usage(usage) = &found.docker else {
             return;
         };
-        let volumes = found.volumes.clone();
+        let volumes = found.available_volumes().to_vec();
         let image = found.image;
         let usage_height = u16::try_from(usage.len() + 4).unwrap_or(u16::MAX);
         let [table, rest] =
@@ -1184,6 +1190,9 @@ impl DockerSpace {
                 vec![Span::raw("deleted for good, not moved to the Trash.")],
             ),
         ];
+        if let Some(Err(reason)) = self.stage.found().map(|found| &found.volumes) {
+            prune.extend(Self::volume_error_lines(reason));
+        }
         if let Some(note) = &self.note {
             prune.push(Line::default());
             prune.push(Line::from(note.clone()).fg(super::visual::ACCENT));
@@ -1237,7 +1246,7 @@ impl DockerSpace {
         if self
             .stage
             .found()
-            .is_some_and(|found| !found.volumes.is_empty())
+            .is_some_and(|found| !found.available_volumes().is_empty())
         {
             steps.push(step(
                 number,
@@ -1260,6 +1269,15 @@ impl DockerSpace {
             ));
         }
         (left, vec![total, steps])
+    }
+
+    fn volume_error_lines(reason: &str) -> Vec<Line<'static>> {
+        vec![
+            Line::default(),
+            Line::from("Unused volumes could not be checked.").yellow(),
+            Line::from(reason.to_string()),
+            Line::from("Press r to try again. Volumes will be kept."),
+        ]
     }
 
     fn prune_question(&self) -> Vec<Line<'static>> {
@@ -1343,6 +1361,27 @@ impl DockerSpace {
         self.stage = Stage::Working(Instant::now(), work);
     }
 
+    fn reset_done_lines(size: u64) -> Vec<Line<'static>> {
+        vec![
+            tick("Docker is reset".to_string()).bold(),
+            Line::default(),
+            Line::from(vec![
+                Span::raw("Its disk image, "),
+                Span::raw(format::size(size)).bold(),
+                Span::raw(", is in the Trash."),
+            ]),
+            Line::from("Empty the Trash to free the space."),
+            Line::from("Docker Desktop makes a new, empty disk image when it opens."),
+            Line::default(),
+            Line::from(vec![
+                Span::raw("Undo: ").green().bold(),
+                Span::raw(
+                    "move Docker.raw from the Trash back to its folder before opening Docker Desktop again.",
+                ),
+            ]),
+        ]
+    }
+
     fn done_lines(done: &DockerDone) -> (Vec<Line<'static>>, Color) {
         let mut lines = Vec::new();
         let mut color = Color::Green;
@@ -1353,7 +1392,7 @@ impl DockerSpace {
                 containers,
             } => {
                 match space {
-                    Ok(space) if space.trim() == "0B" => {
+                    Ok(Some(space)) if space.trim() == "0B" => {
                         color = Color::Yellow;
                         lines.push(Line::from("Prune freed no space").yellow().bold());
                         lines.push(Line::default());
@@ -1385,11 +1424,16 @@ impl DockerSpace {
                             }
                         }
                     }
-                    Ok(space) => {
+                    Ok(Some(space)) => {
                         lines.push(Line::from(vec![
                             Span::raw("✓ Docker freed ").green().bold(),
                             Span::raw(space.clone()).green().bold(),
                         ]));
+                    }
+                    Ok(None) => {
+                        color = Color::Yellow;
+                        lines.push(Line::from("Prune finished").bold());
+                        lines.push(Line::from("Docker did not report how much space it freed."));
                     }
                     Err(reason) => {
                         color = Color::Red;
@@ -1415,24 +1459,7 @@ impl DockerSpace {
                     ));
                 }
             }
-            DockerDone::Reset(Ok(size)) => {
-                lines.push(tick("Docker is reset".to_string()).bold());
-                lines.push(Line::default());
-                lines.push(Line::from(vec![
-                    Span::raw("Its disk image, "),
-                    Span::raw(format::size(*size)).bold(),
-                    Span::raw(", is in the Trash."),
-                ]));
-                lines.push(Line::from("Empty the Trash to free the space."));
-                lines.push(Line::from(
-                    "Docker Desktop makes a new, empty disk image when it opens.",
-                ));
-                lines.push(Line::default());
-                lines.push(Line::from(vec![
-                    Span::raw("Undo: ").green().bold(),
-                    Span::raw("move Docker.raw from the Trash back to its folder before opening Docker Desktop again."),
-                ]));
-            }
+            DockerDone::Reset(Ok(size)) => lines.extend(Self::reset_done_lines(*size)),
             DockerDone::Reset(Err(reason)) => {
                 color = Color::Red;
                 lines.push(cross(format!("Docker was not reset: {reason}")));
@@ -1692,7 +1719,7 @@ impl Screen for DockerSpace {
         let (usage, volumes) = match self.stage.found() {
             Some(found) => (
                 matches!(found.docker, Docker::Usage(_)),
-                found.volumes.len(),
+                found.available_volumes().len(),
             ),
             None => (false, 0),
         };
@@ -1753,6 +1780,10 @@ impl Screen for DockerSpace {
         if self.containers_open {
             return "↑↓ scroll · home/end first/last · c or esc back";
         }
+        let no_volumes = self
+            .stage
+            .found()
+            .is_none_or(|found| found.available_volumes().is_empty());
         let reset = self.image().is_some();
         match &self.stage {
             Stage::Asking(_) if self.question == Question::Reset => {
@@ -1764,7 +1795,7 @@ impl Screen for DockerSpace {
                 "c images in use · enter home · r look again · esc home"
             }
             Stage::Done(_) => "enter home · r look again · esc home",
-            Stage::Ready(found) => match (&found.docker, found.volumes.is_empty(), reset) {
+            Stage::Ready(found) => match (&found.docker, no_volumes, reset) {
                 (Docker::Usage(_), false, true) => {
                     "↑↓ move · space select · enter prune · x reset · r look again · esc back · ? help"
                 }
@@ -1965,7 +1996,7 @@ mod tests {
         DockerSpace::with(Stage::Ready(DockerFound {
             docker,
             containers: Ok(Vec::new()),
-            volumes,
+            volumes: Ok(volumes),
             image,
         }))
     }
@@ -2111,9 +2142,39 @@ mod tests {
     }
 
     #[test]
+    fn docker_volume_lookup_failure_is_visible_and_keeps_volumes() {
+        let mut screen = docker(Docker::Usage(Vec::new()), Vec::new(), None);
+        if let Stage::Ready(found) = &mut screen.stage {
+            found.volumes = Err("Docker stopped".to_string());
+        }
+        let text = render(&mut screen);
+        assert!(text.contains("Unused volumes could not be checked."));
+        assert!(text.contains("Docker stopped"));
+        assert!(text.contains("Press r to try again."));
+        press(&mut screen, KeyCode::Char(' '));
+        assert_eq!(screen.picked_volumes().len(), 0);
+        press(&mut screen, KeyCode::Enter);
+        assert!(render(&mut screen).contains("Volumes are kept."));
+    }
+
+    #[test]
+    fn docker_prune_without_a_size_does_not_claim_zero_or_failure() {
+        let mut screen = DockerSpace::with(Stage::Done(DockerDone::Pruned {
+            space: Ok(None),
+            containers: Ok(Vec::new()),
+            volumes: Vec::new(),
+        }));
+        let text = render(&mut screen);
+        assert!(text.contains("Prune finished"));
+        assert!(text.contains("Docker did not report how much space it freed."));
+        assert!(!text.contains("freed no space"));
+        assert!(!text.contains("prune failed"));
+    }
+
+    #[test]
     fn docker_done_shows_a_tick() {
         let mut screen = DockerSpace::with(Stage::Done(DockerDone::Pruned {
-            space: Ok("1.2GB".to_string()),
+            space: Ok(Some("1.2GB".to_string())),
             containers: Ok(Vec::new()),
             volumes: vec![("influxdb-storage".to_string(), Ok(()))],
         }));
@@ -2135,7 +2196,7 @@ mod tests {
             vec![("old-data".to_string(), Err("volume is in use".to_string()))],
         ] {
             let mut screen = DockerSpace::with(Stage::Done(DockerDone::Pruned {
-                space: Ok("0B".to_string()),
+                space: Ok(Some("0B".to_string())),
                 containers: Ok(vec![container("supabase-db")]),
                 volumes: volumes.clone(),
             }));
@@ -2162,7 +2223,7 @@ mod tests {
         for containers in [Ok(Vec::new()), Err("Docker stopped".to_string())] {
             let failed = containers.is_err();
             let mut screen = DockerSpace::with(Stage::Done(DockerDone::Pruned {
-                space: Ok("0B".to_string()),
+                space: Ok(Some("0B".to_string())),
                 volumes: Vec::new(),
                 containers,
             }));
