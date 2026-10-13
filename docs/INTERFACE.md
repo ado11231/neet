@@ -80,47 +80,13 @@
 
 ## Quick Clean
 
-```text
-+ Quick Clean -------------------------------------------+  + Space ---------------------------------------+
-|   Item                        Size              Found  |  | Largest items                                |
-|                                                Cleared |  |   20.8 GB  ~/Documents/rust/slingshot/target |
-|   Caches & logs            ~193 MB  ......        neet |  |    5.4 GB  ~/Documents/rust/neet/target      |
-| > Project build folders    31.5 GB  ######   26   neet |  |                                              |
-|   Installers in Downloads     none                neet |  | Overview                                     |
-|   Trash                     4.4 MB  ......  2,195  you |  | Project build folders   31.5 GB  ##########  |
-|   Docker disk image        11.0 GB  ###...     1   you |  | Simulators              17.3 GB  ######....  |
-|   Simulators               17.3 GB  ####..     2   you |  | Docker disk image       11.0 GB  ####......  |
-|   Temporary files           3.1 GB  #.....  6,033 macOS|  |                                              |
-+------- neet can clear ~31.7 GB . you can free 28.3 GB -+  | After cleanup                                |
-+ Project build folders ---------------------------------+  | ##########################====....  64% -> 51%|
-| How                                                    |  | Free now   86.9 GB of 245.1 GB               |
-| 1. Enter: list build folders.                          |  | Cleanup    ~31.7 GB by neet                  |
-| ...                                                    |  | By hand    28.3 GB by you                    |
-| About                                                  |  | Free after ~118.6 GB                         |
-| Project node_modules and Rust target folders. ...      |  |                                              |
-| Summary                                                |  |                                              |
-| Size       31.5 GB . 26 items                          |  |                                              |
-| Share      ######........ 52% of everything found      |  |                                              |
-| Cleared by neet, to the Trash, after you review it     |  |                                              |
-+--------------------------------------------------------+  +----------------------------------------------+
-```
-
-* One table of everything taking space that can be cleared, so you can start with the biggest wins.
-* **Rows,** always in this order, what neet clears first:
-  1. Caches & logs: what every Deep Clean rule found. Found counts the items in those rules, leaving out skipped paths.
-  2. Project build folders and installers in Downloads, from the scan. neet moves these to the Trash after you pick and review them.
-  3. The Trash, from the scan, which you empty yourself. macOS only lets a terminal read `~/.Trash` with Full Disk Access. Without it, the row says `no access` in yellow instead of `none`, and its Summary says how to turn it on.
-  4. The Docker disk image, from the scan, and simulators, asked of `xcrun simctl` when there are simulators on the Mac: runtimes, and simulators left without one. neet asks their own tools to remove them, which is permanent.
-  5. Temporary files, measured in `/private/var/folders`, which macOS clears. Simulators and temporary files are worked out in the background and show moonlight blue `scanning` until done.
-* **Columns:** the size and a bar of it against the largest row, both red from 5 GB and yellow from 1 GB, how many items, and who clears it: `neet` in green, `neet, permanently` in red, `you` in yellow, or `macOS` in moonlight blue. Temporary files are left to macOS, since deleting them by hand can break running apps.
-* The bottom edge adds up what neet can clear and what you can free yourself.
-* **The boxes run the full height.** Each side is a stack of small boxes, one for each section, titled with the section's name, such as **About** or **Overview**. The boxes share the height evenly, so a tall screen has no empty space below them. Boxes that do not fit are left out, the last first. From 45 rows, the table's rows stand a row apart.
-* **Below the table,** titled with the selected row: **Steps**, its numbered steps; **About**; **Location**, its folders in blue; **Impact**, what changes, and **Undo**: Put Back in green, or none in red for what is deleted for good; and **Summary**: its size and item count, a bar of its share of everything found, and who clears it, in the table's color. On a short screen, Where it is and After it is cleared are left out first.
-* **Space,** on the right: **Largest items**, as many as fit: rules for Caches & logs, folders and installers by path, items inside the Trash, and the Docker disk image, or why there is no list. Trash items are largest first, with Finder's `.DS_Store` file left out. **Overview**: every row that found something, largest first, with a bar in the color of who clears it. **After cleanup**: a gauge of the disk with the space the cleanup frees in green, then free space now, what neet can clear in green, what you clear by hand in yellow when there is any, and free space after. Space is hidden below 130 columns, and After cleanup moves to the bottom of the box under the table.
-* Build folders and installers that are empty, or already gone since the scan, are left out.
-* Below 120 columns, the selected path and age sit below the file table when at least 18 rows are available.
-* Until the scan finishes, the screen shows the loading box.
-* Nothing on this screen changes a file.
+* Lists caches and logs, build folders, installers, Trash, Docker, simulators, and temporary files.
+* Shows each group's size, count, largest items, and how it can be cleared.
+* Build folders and installers go through selection and review.
+* Docker and simulator removal is permanent and asks first.
+* Temporary files are left to macOS.
+* If Trash cannot be read, the screen says `no access` and explains Full Disk Access.
+* Looking changes nothing. Open a row to see its actions.
 
 | Key | Action |
 | --- | --- |
@@ -131,20 +97,10 @@
 
 ### Pick
 
-```text
-+ Project build folders ----------------------------------------------------------------+
-|             Size  Path                                                     Changed      |
-|                                                                                         |
-| > [✓]    20.8 GB  ~/Documents/rust/slingshot/target                       today        |
-|   [✓]     2.1 GB  ~/Documents/app/node_modules                            14 days ago  |
-|   [ ]   956.2 MB  ~/Documents/web/node_modules                            2 months ago |
-+ Selected . 2 items . 22.9 GB --------------- Everything goes to the Trash, where Put Back works +
-```
-
-* Lists every build folder, or every installer, largest first, each with a checkbox, its size, its path with the folder in blue, and when anything inside last changed. A change in the last 7 days is yellow, since you may be working in it. The path column is only as wide as the longest path, so the age sits beside it, and the table is only as tall as its rows.
-* **Below the table,** titled with the selected item's name, when there is room: its project or folder, size, when it changed, whether it is selected, and what it is, such as what `node_modules` or `target` holds and how it comes back. Then **Total**: what was found, what is selected, and how many items changed this week. **Steps**: the three steps. **Overview**: every item as a bar, green when selected. **After cleanup**: a gauge of the disk, free space now, what is selected, and free space after. Each is its own box. From 100 columns they sit in two columns: the item and Overview on the left, and Total, Steps, and After cleanup on the right.
-* Everything starts selected. Measuring and checking each item shows the loading box first.
-* An item the check refuses remains readable, with the reason in yellow. What is allowed is in [SAFETY.md](SAFETY.md#build-folders-and-installers).
+* Lists build folders or installers, largest first, with paths, sizes, and ages.
+* All allowed items start selected. Refused items show a reason.
+* Clear anything you want to keep, then review the selection.
+* Files go to Trash. See [allowed items](SAFETY.md#build-folders-and-installers).
 
 | Key | Action |
 | --- | --- |
@@ -154,16 +110,16 @@
 
 ### Docker And Simulators
 
-* These cannot go to the Trash, so neet asks their own tool to remove them. Removing ends in a red question that lists what goes and says it is permanent. Only `y` goes ahead. See [SAFETY.md](SAFETY.md#tools-neet-runs).
-* **Simulators:** a table of each runtime with a checkbox, its version, build, size, the day a simulator last used it, and how many simulators run on it. Simulators left without a runtime share one yellow `No runtime` row. None start selected. `Enter` asks, then removes each runtime with `xcrun simctl`, then the simulators on it, and the `No runtime` simulators if selected.
-* **Below the Simulators table,** titled with the selected runtime: its build, size, when it was last used, and the simulators on it by name, then **Warning: deleted for good, not moved to the Trash**, which every screen size keeps. Then **Removal**, **Total**: runtimes, simulators, and what is selected, in red, **Steps**: the three steps, and **After cleanup**: the disk now and after the selected runtimes go. Each is its own box. From 100 columns they sit in two columns: the runtime and Removal on the left, and the rest on the right.
-* **Docker:** a table of what `docker system df` reports: images, containers, volumes, and build cache, with counts, use, size, and a **Reported** column. The bottom label says these are Docker estimates and savings are unknown. Below it, the volumes no container uses, none selected, which `Space` adds to the prune. `Enter` asks, then runs it and removes the selected volumes.
-* **Below the Docker tables:** **Prune** says what goes, what stays, and that removal is permanent. **Reset** appears when there is a disk image. **Total** shows the disk image size, volumes picked, and that savings are unknown until prune finishes. **Steps** lists the keys. These boxes use two columns from 100 columns. Docker has no **After cleanup** forecast.
-* **Images in use:** `c` shows each running container, its image, and its Compose project when present. Arrow keys or `j` and `k` scroll. `Home` and `End` reach the first and last lines. `c` or `Esc` returns. A failed lookup shows its reason.
-* **No space freed:** the result names running containers that keep images in use. `c` opens the full list from a fresh check after prune. If that check fails, the result says so. Selected volume results stay separate.
-* **Reset Docker:** `x` asks, in a yellow box, to stop Docker Desktop and move its whole disk image to the Trash. See [Resetting Docker](SAFETY.md#resetting-docker).
-* If Docker Desktop is not running, a small box in the middle says so, with numbered steps: `o` opens it, then `r` asks Docker again. `x` resets Docker without opening it.
-* When done, a small box in the middle ticks off what went and how much space it freed.
+* Permanent actions ask in a red box. Only `y` confirms.
+* Simulators lists runtimes and their devices. Nothing starts selected.
+* Removing a runtime also removes its simulators. Devices without a runtime have a separate row.
+* Docker shows reported sizes and unused volumes. No volumes start selected.
+* Prune removes unused Docker data and the volumes you select.
+* Docker's sizes are estimates. Savings stay unknown until prune finishes.
+* `c` lists running containers, images, and Compose projects. Scroll with arrows or `j` and `k`; use `Home` and `End` to jump. `c` or `Esc` returns.
+* If prune frees no space, the result names running containers using images. Failed lookups stay visible. Volume results are listed separately.
+* Reset stops Docker Desktop and moves its whole disk image to Trash. See [reset and restore steps](SAFETY.md#resetting-docker).
+* If Docker is stopped, `o` opens it and `r` checks again. Reset also works while it is stopped.
 
 | Key | Action |
 | --- | --- |
@@ -179,42 +135,12 @@
 
 ## Deep Clean
 
-```text
-+ Deep Clean ------------------------------------------+  + Homebrew downloads --------------------+
-|        Rule                Risk     Items    Size    |  | Installers and bottles Homebrew        |
-|                                                      |  | downloaded. Installed programs stay.   |
-|   [✓]  npm cache           caution        3  4.7 GB  |  | Risk      caution  May need a ...      |
-| > [✓]  Homebrew downloads  caution       14  1.2 GB  |  | Folder    ~/Library/Caches/Homebrew    |
-|   [ ]  User logs           caution       27 83.0 MB  |  +----------------------------------------+
-|        Yarn cache          caution        .    none  |  + Found . 14 items . 1.2 GB -----------+
-+ Found 8.8 GB in 10 of 14 rules ----------------------+  |    1.1 GB  ##########  downloads       |
-+ Selected --------------------------------------------+  |   50.8 MB  ..........  bootsnap        |
-|    4.7 GB  npm cache                                 |  +--------------- Goes to the Trash ------+
-|    1.2 GB  Homebrew downloads                        |  + Skipped . 179 -------------------------+
-|                                                      |  | 179 items  a shortcut, kept            |
-|    6.0 GB  total . 17 items                          |  +----------------------------------------+
-|                                                      |  + Location -----------------------------+
-|                                                      |  |    4.7 GB  ##########  npm cache       |
-|                                                      |  |    1.2 GB  ###.......  Homebrew ...    |
-|                                                      |  |    8.8 GB  total . 6.0 GB selected     |
-+------------------------------------------------------+  +----------------------------------------+
-```
-
-* neet looks for everything the rules cover once, in the background, as soon as it opens. Deep Clean opens on that result, so going back and opening it again does not look again. If Deep Clean opens before the look is done, the loading box shows a timer. Nothing changes while it looks.
-* neet looks again after a cleanup, and when you press `r`, such as after removing files yourself.
-* **Left, top, 55% of the width:** a table of rules, largest first, with a checkbox, the rule's name, its risk level, how many items it found, and their size. Rules that found nothing are listed last with no checkbox, a `·` for items and `none` for size. The bottom edge shows what every rule found together.
-* **Left, bottom:** the Selected box. Each selected rule with its size, then the total. Before anything is selected, it says how selecting works. Below that, **Risk levels**, for the risks the rules use, and **Total**: everything found, what is selected, the next key to press, and that it goes to the Trash. Each is its own box, as in Quick Clean.
-* **Right:** the rule the arrow is on, in boxes that fit what they hold:
-  1. **Top,** titled with the rule's name: what it removes, its risk level and what that means, apps to close first by name, how recent files it keeps, and the folder it looks in, in blue. Labels share one width, and a value that wraps starts its next line under the value, not under the label.
-  2. **Found:** every path it found, largest first, with its size and a bar against the largest. When they share a folder, only their names are shown.
-  3. **Skipped:** only when something was skipped. Every path with the reason, the reasons lined up in one column. A reason shared by more than two paths is shown once, with how many. It takes at most a third of the height.
-  4. **Location:** every rule that found something, largest first, with a bar, green when selected. The rule the arrow is on is bold. The last line adds up everything found and what is selected. Below it, when there is room, **Risk**: each risk the rules use, with the space its rules found, a bar of it against everything found in the risk's color, and how many of its rules found something; and **Nothing found**: the rules that looked and found nothing, by name. On a narrow column Risk leaves out its bars so each risk stays on one line. On a screen of 34 rows or more, every box on the right keeps its size whichever rule is selected: the rule's box is as tall as the longest rule's text, Location keeps the bottom 45% of the column, and the found box fills the rest, with what was skipped as its own section below what was found. Otherwise it takes whatever room is left, and is left out when there is none.
-  5. If a list is too long, its last line says how many more there are.
-* When the terminal is narrower than 100 columns, the details go under the list, and the list's bottom edge shows the selected total instead.
-* A selected checkbox is a green `[✓]`. The arrow's row shows its name in bold, so the checkbox and risk keep their colors.
-* A note at the top of the details explains when a rule was not selected, or could not be. Rules that failed to load are listed there too.
-* **Retry** names the apps to quit and says to press `r` when files were skipped for an open app or changed during the scan under a rule with no age limit. It uses the rule's app names for changed files. Other skip reasons keep their own explanation.
-* `safe` rules start selected, unless their app is open.
+* Lists cleanup rules, risk levels, item counts, and sizes.
+* Details show what each rule removes, apps to close, found paths, and skip reasons.
+* Results are kept until cleanup finishes or you press `r`.
+* Safe rules start selected unless their app is open. See [risk levels](FEATURES.md#risk-levels).
+* Selecting an expert rule asks you to type its ID. A wrong ID selects nothing.
+* Busy app advice names the app to quit and says to press `r`.
 
 | Key | Action |
 | --- | --- |
@@ -224,27 +150,27 @@
 | `Enter` | Review the selected rules. Does nothing when none are selected. |
 | `r` | Look again. Your selection starts over. |
 
-* **Selecting an `expert` rule** opens a box that asks you to type the rule's ID. `Enter` checks it. A wrong ID selects nothing. `Esc` closes the box. While the box is open, every key but `Esc` is typed into it.
-
 ## Review, Confirm, And Move
 
-* Deep Clean, Pick, and Remove App all end in these same four steps.
+* Deep Clean, Pick, and Remove App share this flow.
+* Review every path, then confirm. Items are checked again before moving.
+* Files take space in Trash until it is emptied. Finder's Put Back restores them.
 
-| Step | Layout | Keys |
+| Screen | Shows | Keys |
 | --- | --- | --- |
-| Review | A scrolling list of every selected path, with its size and a bar against the largest. Paths are grouped by rule, or by folder for Remove App, and rules that found nothing are left out. The title shows the item count and total size. From 100 columns, small boxes beside it show the **Total** (size, items, groups, and that it goes to the Trash), an **Overview** bar for each group, the **Steps**, and **After cleanup**, the disk now and after. | Scroll with `Up` / `Down`, `PgUp` / `PgDn`, `g` / `G`. `Enter` goes on. `Esc` goes back. |
-| Confirm | A box, 60 columns wide, in the middle of the review. It shows the item count and total size, and that Finder moves them to the Trash. | `y` moves them. `n` or `Esc` goes back. |
-| Move | The loading box in the middle of the screen, with a progress bar and how many items have moved. The first time, macOS asks whether your terminal may control Finder. | No key works until every item is done. |
-| Result | A box in the middle of the screen, up to 72 columns wide. A green `✓` line says how many items moved, then the space they take in the Trash, and how to use Put Back. Every skipped item follows, with its reason below it. If nothing moved, the first line is yellow. | Scroll a long result with `Up` / `Down`. `Enter` or `Esc` goes back to Home. |
+| Review | Selected paths, sizes, and totals. | Arrows, `PgUp` / `PgDn`, `g` / `G` scroll. `Enter` continues. `Esc` goes back. |
+| Confirm | Count, size, and the move to Trash. | `y` moves. `n` or `Esc` cancels. |
+| Move | Progress and moved count. | Wait until it finishes. |
+| Result | Moved and skipped items, with reasons. | Arrows scroll. `Enter` or `Esc` returns Home. |
 
 ## Trash
 
-* Opened with `Enter` on the Trash row in Quick Clean.
-* **Left:** what is in the Trash, largest first: size, a bar against the largest, how many files it holds, and its name. Folders are moonlight blue with a `/`. The title shows the total size and item count.
-* **Right,** as small boxes: **Total** (size, items, and files in all), **Warning** in red, that emptying deletes everything for good and Put Back stops working, **Steps**, and **After cleanup**, the disk now and after. Below 100 columns they sit under the list.
-* `e` asks in a red box with the size and item count. `y` asks Finder to empty the Trash, with the loading box until it is done, then a green box with the space freed. See [Emptying The Trash](SAFETY.md#emptying-the-trash).
-* When macOS will not let neet read the Trash, a yellow box says how to turn on Full Disk Access, and `e` does nothing.
-* Other screens show the old numbers until neet scans again.
+* Open from Quick Clean to see Trash items, largest first.
+* `e` asks before emptying. Only `y` confirms permanent deletion.
+* Finder empties Trash on all disks, not just the items shown from your home folder.
+* Emptying cannot be undone. See [Trash safety](SAFETY.md#emptying-the-trash).
+* If macOS blocks the scan, enable Full Disk Access before emptying from neet.
+* Other screens keep their old scan totals until the next scan.
 
 | Key | Action |
 | --- | --- |
