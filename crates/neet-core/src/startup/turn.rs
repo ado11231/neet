@@ -207,13 +207,27 @@ impl Asked {
         self.save(home, now).map_err(|error| {
             format!("The state before could not be saved: {error}. Nothing was run.")
         })?;
+        self.run_commands(uid, launchctl)
+    }
+
+    fn run_commands(
+        &self,
+        uid: u32,
+        launchctl: &mut dyn FnMut(&[&str]) -> Result<Captured, String>,
+    ) -> Result<(), Failure> {
         let [first, second] = self.commands(uid);
         let run = |launchctl: &mut dyn FnMut(&[&str]) -> Result<Captured, String>,
                    args: &[String]| {
             let args: Vec<&str> = args.iter().map(String::as_str).collect();
             launchctl(&args)
         };
-        let first_done = run(launchctl, &first)?;
+        let first_done = run(launchctl, &first).map_err(|reason| Failure {
+            status: Status::Unknown,
+            reason: format!(
+                "launchctl {} did not finish: {reason}. Whether it changed is unknown.",
+                first[0]
+            ),
+        })?;
         if !first_done.success {
             return Err(format!(
                 "launchctl {} failed: {}",
@@ -222,27 +236,44 @@ impl Asked {
             )
             .into());
         }
-        let second_done = run(launchctl, &second)?;
-        if second_done.success {
+        let reason = match run(launchctl, &second) {
+            Ok(done) if done.success => return Ok(()),
+            Ok(done) => done.stderr.trim().to_string(),
+            Err(reason) => reason,
+        };
+        // Only a successful list can prove a service is absent.
+        let loaded =
+            launchctl(&["list"])
+                .ok()
+                .filter(|result| {
+                    result.success
+                        && result.stdout.lines().next().is_some_and(|line| {
+                            line.split_whitespace().eq(["PID", "Status", "Label"])
+                        })
+                })
+                .map(|result| super::gui_list(&result.stdout).contains_key(&self.label));
+        if matches!(
+            (self.turn, loaded),
+            (Turn::Off, Some(false)) | (Turn::On, Some(true))
+        ) {
             return Ok(());
         }
-        // Not loaded when turned off, or already loaded when turned on, is
-        // what was wanted.
-        let loaded = launchctl(&["print", &format!("gui/{uid}/{}", self.label)])
-            .is_ok_and(|captured| captured.success);
-        match (self.turn, loaded) {
-            (Turn::Off, false) | (Turn::On, true) => Ok(()),
-            (Turn::Off, true) => Err(format!(
-                "It is turned off, but still running: {}",
-                second_done.stderr.trim()
-            )
-            .into()),
-            (Turn::On, false) => Err(format!(
-                "It is turned on, but launchctl could not load it: {}",
-                second_done.stderr.trim()
-            )
-            .into()),
-        }
+        let changed = match self.turn {
+            Turn::Off => "It is turned off for future logins.",
+            Turn::On => "It is turned on for future logins.",
+        };
+        let current = match loaded {
+            Some(true) => "It is still loaded.",
+            Some(false) => "It is not loaded.",
+            None => "Whether it is loaded now is unknown.",
+        };
+        Err(Failure {
+            status: Status::Partial,
+            reason: format!(
+                "{changed} launchctl {} failed: {reason}. {current}",
+                second[0]
+            ),
+        })
     }
 
     /// Writes the state before, through a copy, so a half written file is
@@ -384,7 +415,10 @@ mod tests {
         let asked = ask(&item, &home).unwrap();
         let (result, ran) = run(&asked, &home, |args| match args[0] {
             "bootout" => failed("Boot-out failed: 3: No such process"),
-            "print" => failed("Could not find service"),
+            "list" => Captured {
+                stdout: "PID\tStatus\tLabel\n".to_string(),
+                ..ok()
+            },
             _ => ok(),
         });
         assert_eq!(result, Ok(()));
@@ -394,15 +428,91 @@ mod tests {
         let asked = ask(&item, &home).unwrap();
         let (result, _) = run(&asked, &home, |args| match args[0] {
             "bootstrap" => failed("Bootstrap failed: 5: Input/output error"),
+            "list" => Captured {
+                stdout: "PID\tStatus\tLabel\n-\t0\tcom.google.wake\n".to_string(),
+                ..ok()
+            },
             _ => ok(),
         });
         assert_eq!(result, Ok(()));
         let (result, _) = run(&asked, &home, |args| match args[0] {
             "bootstrap" => failed("Bootstrap failed: 5: Input/output error"),
-            "print" => failed("Could not find service"),
+            "list" => Captured {
+                stdout: "PID\tStatus\tLabel\n".to_string(),
+                ..ok()
+            },
             _ => ok(),
         });
-        assert!(result.unwrap_err().reason.contains("could not load it"));
+        let error = result.unwrap_err();
+        assert_eq!(error.status, Status::Partial);
+        assert!(error.reason.contains("not loaded"));
+    }
+
+    #[test]
+    fn failed_bootout_reports_the_change_and_current_state() {
+        let (_dir, home, item) = setup();
+        let asked = ask(&item, &home).unwrap();
+        for (lookup, expected) in [
+            (
+                Captured {
+                    stdout: "PID\tStatus\tLabel\n-\t0\tcom.google.wake\n".to_string(),
+                    ..ok()
+                },
+                "still loaded",
+            ),
+            (failed("Operation not permitted"), "unknown"),
+            (ok(), "unknown"),
+        ] {
+            let (result, ran) = run(&asked, &home, |args| match args[0] {
+                "bootout" => failed("could not stop it"),
+                "list" => Captured {
+                    stdout: lookup.stdout.clone(),
+                    stderr: lookup.stderr.clone(),
+                    success: lookup.success,
+                    code: lookup.code,
+                },
+                _ => ok(),
+            });
+            let error = result.unwrap_err();
+            assert_eq!(error.status, Status::Partial);
+            assert!(error.reason.contains("turned off for future logins"));
+            assert!(error.reason.contains("bootout failed: could not stop it"));
+            assert!(error.reason.contains(expected), "{error}");
+            assert_eq!(ran.len(), 3);
+        }
+    }
+
+    #[test]
+    fn command_errors_keep_partial_and_unknown_results() {
+        let (_dir, home, mut item) = setup();
+        for off in [false, true] {
+            item.off = off;
+            let asked = ask(&item, &home).unwrap();
+            for stage in ["first", "second", "lookup"] {
+                let mut calls = 0;
+                let error = asked
+                    .run_commands(501, &mut |args| {
+                        calls += 1;
+                        match args[0] {
+                            "disable" | "enable" if stage == "first" => Err("timed out".into()),
+                            "disable" | "enable" => Ok(ok()),
+                            "bootout" | "bootstrap" if stage == "second" => Err("timed out".into()),
+                            "list" if stage == "lookup" => Err("timed out".into()),
+                            _ => Ok(failed("Operation not permitted")),
+                        }
+                    })
+                    .unwrap_err();
+                if stage == "first" {
+                    assert_eq!(error.status, Status::Unknown);
+                    assert_eq!(calls, 1);
+                } else {
+                    assert_eq!(error.status, Status::Partial);
+                    assert!(error.reason.contains("future logins"));
+                    assert_eq!(calls, 3);
+                }
+                assert!(error.reason.contains("unknown"), "{error}");
+            }
+        }
     }
 
     #[test]
@@ -410,12 +520,9 @@ mod tests {
         let (_dir, home, item) = setup();
         let asked = ask(&item, &home).unwrap();
         let (result, ran) = run(&asked, &home, |_| failed("Operation not permitted"));
-        assert!(
-            result
-                .unwrap_err()
-                .reason
-                .contains("Operation not permitted")
-        );
+        let error = result.unwrap_err();
+        assert_eq!(error.status, Status::NotChanged);
+        assert!(error.reason.contains("Operation not permitted"));
         assert_eq!(ran, ["disable gui/501/com.google.wake"]);
     }
 
