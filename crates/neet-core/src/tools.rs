@@ -276,6 +276,53 @@ pub struct DockerVolume {
     pub size: String,
 }
 
+/// A running container whose image a prune keeps.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct DockerContainer {
+    pub name: String,
+    pub image: String,
+    /// Empty for containers outside a Compose project.
+    pub project: String,
+}
+
+fn parse_docker_containers(text: &str) -> io::Result<Vec<DockerContainer>> {
+    let mut containers: Vec<DockerContainer> = text
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            serde_json::from_str(line)
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+        })
+        .collect::<io::Result<_>>()?;
+    containers.sort_by(|a, b| (&a.project, &a.name).cmp(&(&b.project, &b.name)));
+    Ok(containers)
+}
+
+/// Lists running containers and their Compose projects. Nothing changes.
+///
+/// # Errors
+///
+/// Returns an error if Docker is missing, fails, times out, or gives bad output.
+pub fn docker_containers() -> io::Result<Vec<DockerContainer>> {
+    let docker = docker_program()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Docker is not installed"))?;
+    let format = r#"{"name":{{json .Names}},"image":{{json .Image}},"project":{{json (.Label "com.docker.compose.project")}}}"#;
+    let output = crate::run::capture(
+        Command::new(docker).args(["container", "ls", "--format", format]),
+        Duration::from_secs(10),
+    )?
+    .ok_or_else(|| io::Error::new(io::ErrorKind::TimedOut, "Docker did not answer in time"))?;
+    if !output.success {
+        let reason = output.stderr.trim();
+        return Err(io::Error::other(if reason.is_empty() {
+            "Docker could not list running containers"
+        } else {
+            reason
+        }));
+    }
+    parse_docker_containers(&output.stdout)
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct RawVolume {
@@ -548,9 +595,36 @@ pub fn docker_prune() -> io::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_not_running, is_runtime_id, is_volume_name, parse_devices, parse_docker_usage,
-        parse_runtimes, parse_unused_volumes,
+        is_not_running, is_runtime_id, is_volume_name, parse_devices, parse_docker_containers,
+        parse_docker_usage, parse_runtimes, parse_unused_volumes,
     };
+
+    #[test]
+    fn reads_running_containers_with_and_without_compose_projects() {
+        let text = r#"
+{"name":"supabase-db","image":"supabase/postgres:15","project":"supabase"}
+{"name":"redis","image":"redis:7","project":""}
+{"name":"supabase-api","image":"postgrest/postgrest:12","project":"supabase"}
+"#;
+        let containers = parse_docker_containers(text).expect("containers should parse");
+        assert_eq!(containers.len(), 3);
+        assert_eq!(containers[0].name, "redis");
+        assert_eq!(containers[0].project, "");
+        assert_eq!(containers[1].name, "supabase-api");
+        assert_eq!(containers[2].project, "supabase");
+        assert_eq!(containers[2].image, "supabase/postgres:15");
+    }
+
+    #[test]
+    fn bad_container_output_is_not_an_empty_list() {
+        assert_eq!(parse_docker_containers("\n").unwrap(), Vec::new());
+        for text in ["not json", r#"{"name":"db"}"#] {
+            assert_eq!(
+                parse_docker_containers(text).unwrap_err().kind(),
+                std::io::ErrorKind::InvalidData
+            );
+        }
+    }
 
     #[test]
     fn reads_runtimes_largest_first() {
