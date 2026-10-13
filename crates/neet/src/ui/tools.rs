@@ -4,7 +4,7 @@ use std::thread;
 use std::time::Instant;
 
 use neet_core::safety::CleanupRoots;
-use neet_core::tools::{self, Device, Docker, DockerUsage, DockerVolume, Runtime};
+use neet_core::tools::{self, Device, Docker, DockerContainer, DockerUsage, DockerVolume, Runtime};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
@@ -921,6 +921,7 @@ impl Screen for Simulators {
 /// What Docker holds, and what neet can do about it
 pub struct DockerFound {
     docker: Docker,
+    containers: Result<Vec<DockerContainer>, String>,
     /// Volumes no container uses, which the prune keeps unless picked
     volumes: Vec<DockerVolume>,
     /// The space Docker Desktop's disk image takes, if it has one
@@ -958,6 +959,8 @@ fn cleanup_roots() -> Result<CleanupRoots, String> {
 /// whole disk image to the Trash
 pub struct DockerSpace {
     stage: Stage<DockerFound, DockerDone>,
+    containers_open: bool,
+    containers_scroll: u16,
     question: Question,
     chosen: Vec<bool>,
     list: TableState,
@@ -978,12 +981,18 @@ impl DockerSpace {
             } else {
                 Vec::new()
             };
+            let containers = if matches!(docker, Docker::Usage(_)) {
+                tools::docker_containers().map_err(|error| error.to_string())
+            } else {
+                Ok(Vec::new())
+            };
             let image = cleanup_roots()
                 .ok()
                 .and_then(|roots| tools::docker_image(&roots))
                 .map(|(_, size)| size);
             Ok(DockerFound {
                 docker,
+                containers,
                 volumes,
                 image,
             })
@@ -993,11 +1002,70 @@ impl DockerSpace {
     fn with(stage: Stage<DockerFound, DockerDone>) -> Self {
         Self {
             stage,
+            containers_open: false,
+            containers_scroll: 0,
             question: Question::Prune,
             chosen: Vec::new(),
             list: TableState::default().with_selected(Some(0)),
             note: None,
         }
+    }
+
+    fn containers(&self) -> Option<&Result<Vec<DockerContainer>, String>> {
+        self.stage
+            .found()
+            .and_then(|found| matches!(found.docker, Docker::Usage(_)).then_some(&found.containers))
+    }
+
+    fn container_lines(containers: &Result<Vec<DockerContainer>, String>) -> Vec<Line<'static>> {
+        match containers {
+            Ok(containers) if containers.is_empty() => {
+                vec![Line::from("No running containers found.")]
+            }
+            Ok(containers) => {
+                let mut lines = vec![Line::from(
+                    "These containers keep their images in use. Prune keeps them.",
+                )];
+                for container in containers {
+                    lines.push(Line::default());
+                    lines.push(Line::from(container.name.clone()).bold());
+                    lines.push(Line::from(format!("Image: {}", container.image)));
+                    if !container.project.is_empty() {
+                        lines.push(Line::from(format!(
+                            "Compose project: {}",
+                            container.project
+                        )));
+                    }
+                }
+                lines
+            }
+            Err(reason) => vec![
+                Line::from("Running containers could not be checked.").yellow(),
+                Line::from(reason.clone()),
+                Line::from("Go back and press r to try again."),
+            ],
+        }
+    }
+
+    fn draw_containers(&mut self, frame: &mut Frame, area: Rect) {
+        let Some(containers) = self.containers() else {
+            return;
+        };
+        let lines = Self::container_lines(containers);
+        let block = super::visual::block()
+            .title(" Images in use ")
+            .title_bottom(" ↑↓ scroll · c or Esc back ")
+            .padding(Padding::horizontal(1));
+        let inner = block.inner(area);
+        let max_scroll = rows(&lines, inner.width).saturating_sub(inner.height);
+        self.containers_scroll = self.containers_scroll.min(max_scroll);
+        frame.render_widget(
+            Paragraph::new(lines)
+                .wrap(Wrap { trim: false })
+                .scroll((self.containers_scroll, 0))
+                .block(block),
+            area,
+        );
     }
 
     fn image(&self) -> Option<u64> {
@@ -1456,7 +1524,7 @@ fn usage_table(usage: &[DockerUsage], width: u16) -> Table<'static> {
         .block(
             super::visual::block()
                 .title(" Docker ")
-                .title_bottom(" Reported = Docker estimate; savings unknown ")
+                .title_bottom(" Reported = Docker estimate; savings unknown · c: in use ")
                 .padding(Padding::horizontal(1)),
         )
 }
@@ -1464,6 +1532,10 @@ fn usage_table(usage: &[DockerUsage], width: u16) -> Table<'static> {
 impl Screen for DockerSpace {
     fn draw(&mut self, frame: &mut Frame, area: Rect, _context: &Context) {
         self.stage.poll();
+        if self.containers_open {
+            self.draw_containers(frame, area);
+            return;
+        }
         let title = "Docker";
         match &self.stage {
             Stage::Looking(started, _) => Loading {
@@ -1544,6 +1616,26 @@ impl Screen for DockerSpace {
 
     fn handle_key(&mut self, key: KeyEvent, _context: &Context) -> Action {
         self.note = None;
+        if self.containers_open {
+            match key.code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.containers_scroll = self.containers_scroll.saturating_sub(1);
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.containers_scroll = self.containers_scroll.saturating_add(1);
+                }
+                KeyCode::Home => self.containers_scroll = 0,
+                KeyCode::End => self.containers_scroll = u16::MAX,
+                KeyCode::Char('c') | KeyCode::Esc => self.containers_open = false,
+                _ => {}
+            }
+            return Action::None;
+        }
+        if key.code == KeyCode::Char('c') && !self.stage.is_busy() && self.containers().is_some() {
+            self.containers_open = true;
+            self.containers_scroll = 0;
+            return Action::None;
+        }
         match &self.stage {
             Stage::Asking(_) => {
                 match key.code {
@@ -1612,6 +1704,10 @@ impl Screen for DockerSpace {
     }
 
     fn back(&mut self) -> Action {
+        if self.containers_open {
+            self.containers_open = false;
+            return Action::None;
+        }
         match self.stage {
             Stage::Asking(_) => {
                 self.stage.back_to_ready();
@@ -1624,6 +1720,9 @@ impl Screen for DockerSpace {
     }
 
     fn hints(&self) -> &'static str {
+        if self.containers_open {
+            return "↑↓ scroll · home/end first/last · c or esc back";
+        }
         let reset = self.image().is_some();
         match &self.stage {
             Stage::Asking(_) if self.question == Question::Reset => {
@@ -1660,6 +1759,7 @@ impl Screen for DockerSpace {
             ("Enter", "Ask before running docker system prune --all"),
             ("↑ ↓  j k", "Move between unused volumes"),
             ("Space", "Select a volume to remove with the prune"),
+            ("c", "Show running containers, images, and Compose projects"),
             ("x", "Ask before resetting Docker to the Trash"),
             ("o", "Open Docker Desktop"),
             ("r", "Ask Docker again"),
@@ -1831,9 +1931,79 @@ mod tests {
     fn docker(docker: Docker, volumes: Vec<DockerVolume>, image: Option<u64>) -> DockerSpace {
         DockerSpace::with(Stage::Ready(DockerFound {
             docker,
+            containers: Ok(Vec::new()),
             volumes,
             image,
         }))
+    }
+
+    fn container(name: &str) -> DockerContainer {
+        DockerContainer {
+            name: name.to_string(),
+            image: "supabase/postgres:15".to_string(),
+            project: "supabase".to_string(),
+        }
+    }
+
+    #[test]
+    fn docker_container_list_scrolls_and_keeps_actions_on_the_main_screen() {
+        use crate::ui::visual::tests as view;
+        let scan = ScanStatus::Failed(String::new());
+        let context = Context {
+            scan: &scan,
+            disk: None,
+            cleanable: None,
+            plan: None,
+        };
+        let mut screen = docker(Docker::Usage(Vec::new()), Vec::new(), None);
+        if let Stage::Ready(found) = &mut screen.stage {
+            found.containers = Ok((0..30).map(|i| container(&format!("db-{i}"))).collect());
+        }
+        for (width, height) in view::SIZES {
+            press(&mut screen, KeyCode::Char('c'));
+            let text = view::text(&view::render(
+                "docker-containers",
+                &mut screen,
+                &context,
+                width,
+                height,
+            ));
+            assert!(text.contains("db-0"));
+            assert!(text.contains("supabase/postgres:15"));
+            assert!(text.contains("Compose project: supabase"));
+            press(&mut screen, KeyCode::Enter);
+            press(&mut screen, KeyCode::Char('x'));
+            assert!(matches!(screen.stage, Stage::Ready(_)));
+            press(&mut screen, KeyCode::End);
+            let text = view::text(&view::render(
+                "docker-containers-end",
+                &mut screen,
+                &context,
+                width,
+                height,
+            ));
+            assert!(text.contains("db-29"));
+            assert!(matches!(screen.back(), Action::None));
+            assert!(!screen.containers_open);
+        }
+    }
+
+    #[test]
+    fn docker_container_lookup_failure_is_visible() {
+        let mut screen = docker(Docker::Usage(Vec::new()), Vec::new(), None);
+        if let Stage::Ready(found) = &mut screen.stage {
+            found.containers = Err("Docker did not answer in time".to_string());
+        }
+        press(&mut screen, KeyCode::Char('c'));
+        let text = render(&mut screen);
+        assert!(text.contains("Running containers could not be checked."));
+        assert!(text.contains("Docker did not answer in time"));
+        assert!(!text.contains("No running containers"));
+        press(&mut screen, KeyCode::Char('c'));
+        press(&mut screen, KeyCode::Enter);
+        press(&mut screen, KeyCode::Char('c'));
+        assert!(matches!(screen.stage, Stage::Asking(_)));
+        assert!(!screen.containers_open);
     }
 
     #[test]
