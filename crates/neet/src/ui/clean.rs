@@ -1,7 +1,7 @@
 use std::cmp::Reverse;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
 use std::time::{Instant, SystemTime};
 
@@ -23,6 +23,16 @@ use super::review::Review;
 
 /// A plan and the rules that could not be loaded, or why planning failed.
 type Outcome = Result<Planned, String>;
+
+fn poll_plan(result: &Receiver<Outcome>) -> Option<Outcome> {
+    match result.try_recv() {
+        Ok(outcome) => Some(outcome),
+        Err(TryRecvError::Empty) => None,
+        Err(TryRecvError::Disconnected) => Some(Err(
+            "The task ended without a result. Press r to try again.".to_string(),
+        )),
+    }
+}
 
 #[derive(Clone)]
 pub struct Planned {
@@ -81,7 +91,7 @@ impl Estimate {
 
     pub fn poll(&mut self) {
         if let Some(result) = &self.result
-            && let Ok(outcome) = result.try_recv()
+            && let Some(outcome) = poll_plan(result)
         {
             match outcome {
                 Ok(planned) => self.planned = Some(Arc::new(planned)),
@@ -224,7 +234,7 @@ impl Clean {
 
     fn poll(&mut self) {
         if let State::Planning { result, .. } = &self.state
-            && let Ok(outcome) = result.try_recv()
+            && let Some(outcome) = poll_plan(result)
         {
             match outcome {
                 Ok(planned) => self.show(planned),
@@ -1251,6 +1261,7 @@ impl Screen for Clean {
                 frame.render_widget(
                     Paragraph::new(format!("Deep Clean could not look for files. {reason}"))
                         .red()
+                        .wrap(Wrap { trim: true })
                         .block(block),
                     area,
                 );
@@ -1437,6 +1448,96 @@ mod tests {
                 plan: None,
             },
         );
+    }
+
+    #[test]
+    fn missing_cleanup_plans_stop_loading() {
+        let (sender, result) = mpsc::channel();
+        let mut estimate = Estimate {
+            result: Some(result),
+            started: Instant::now(),
+            planned: None,
+            failed: None,
+        };
+        estimate.poll();
+        assert!(estimate.result.is_some());
+        assert!(estimate.failed.is_none());
+        drop(sender);
+        estimate.poll();
+        estimate.poll();
+        assert!(estimate.result.is_none());
+        assert!(estimate.failed.is_some());
+        assert_eq!(estimate.size(), None);
+
+        let mut clean = Clean::new();
+        let scan = super::super::scan::ScanStatus::Failed(String::new());
+        let context = Context {
+            scan: &scan,
+            disk: None,
+            cleanable: None,
+            plan: Some(&estimate),
+        };
+        clean.adopt(&context);
+        assert!(render(&mut clean).contains("ended without a result"));
+        assert!(matches!(
+            clean.handle_key(
+                KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE),
+                &context
+            ),
+            Action::Replan
+        ));
+
+        let (sender, result) = mpsc::channel();
+        let mut clean = Clean::from_state(State::Planning {
+            started: Instant::now(),
+            result,
+        });
+        clean.poll();
+        assert!(matches!(clean.state, State::Planning { .. }));
+        drop(sender);
+        clean.poll();
+        assert!(render(&mut clean).contains("ended without a result"));
+        assert!(matches!(clean.back(), Action::Back));
+    }
+
+    #[test]
+    fn queued_cleanup_plans_survive_the_worker_exiting() {
+        let dir = fake_home();
+        for outcome in [
+            Ok(planned(&dir)),
+            Err("Cannot read the home folder.".to_string()),
+        ] {
+            let succeeded = outcome.is_ok();
+            let (sender, result) = mpsc::channel();
+            sender.send(outcome.clone()).unwrap();
+            drop(sender);
+            let mut estimate = Estimate {
+                result: Some(result),
+                started: Instant::now(),
+                planned: None,
+                failed: None,
+            };
+            estimate.poll();
+            estimate.poll();
+            assert!(estimate.result.is_none());
+            assert_eq!(estimate.planned.is_some(), succeeded);
+            assert_eq!(estimate.failed.is_some(), !succeeded);
+
+            let (sender, result) = mpsc::channel();
+            sender.send(outcome).unwrap();
+            drop(sender);
+            let mut clean = Clean::from_state(State::Planning {
+                started: Instant::now(),
+                result,
+            });
+            clean.poll();
+            clean.poll();
+            if succeeded {
+                assert!(matches!(clean.state, State::Ready(_)));
+            } else {
+                assert!(render(&mut clean).contains("Cannot read the home folder."));
+            }
+        }
     }
 
     #[test]
