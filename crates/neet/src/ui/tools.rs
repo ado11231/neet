@@ -1050,7 +1050,7 @@ impl DockerSpace {
         lines
     }
 
-    fn draw_usage(&mut self, frame: &mut Frame, area: Rect, context: &Context) {
+    fn draw_usage(&mut self, frame: &mut Frame, area: Rect) {
         let Some(found) = self.stage.found() else {
             return;
         };
@@ -1082,22 +1082,14 @@ impl DockerSpace {
             rest
         };
 
-        let freed: u64 = usage
-            .iter()
-            .filter_map(|line| docker_size(&line.reclaimable))
-            .sum();
-        let (left, right) = self.usage_boxes(image, freed, context, rest.width / 2);
+        let (left, right) = self.usage_boxes(image);
         super::visual::side_by_side(frame, rest, "Prune", left, right);
     }
 
-    /// The boxes under the tables: what prune deletes and keeps, the reset,
-    /// the totals, the steps, and the disk after a prune
+    /// What prune keeps and deletes, the disk image size, and the steps.
     fn usage_boxes(
         &self,
         image: Option<u64>,
-        freed: u64,
-        context: &Context,
-        width: u16,
     ) -> (Vec<Vec<Line<'static>>>, Vec<Vec<Line<'static>>>) {
         let mut prune = vec![
             labeled(
@@ -1152,7 +1144,7 @@ impl DockerSpace {
             |label: &'static str, value: Span<'static>| labeled(label, Color::Reset, vec![value]);
         let mut total = vec![
             Line::from("Total").style(super::visual::HEADING),
-            field("Can free", Span::raw(format::size(freed)).yellow().bold()),
+            field("Can free", Span::raw("Unknown until prune finishes")),
         ];
         if let Some(image) = image {
             total.push(field("Disk image", Span::raw(format::size(image))));
@@ -1195,8 +1187,7 @@ impl DockerSpace {
                 ],
             ));
         }
-        let after = super::visual::after_cleanup(context.disk.as_ref(), freed, "Prune", width);
-        (left, vec![total, steps, after])
+        (left, vec![total, steps])
     }
 
     fn prune_question(&self) -> Vec<Line<'static>> {
@@ -1408,31 +1399,13 @@ fn volume_table(
         .row_highlight_style(super::visual::SELECTED)
 }
 
-/// `docker system df`, as a table
-/// Bytes from a size as Docker writes it, such as `1.2GB` or `512kB (40%)`
-fn docker_size(text: &str) -> Option<u64> {
-    let first = text.split_whitespace().next()?;
-    let split = first.find(|c: char| c.is_ascii_alphabetic())?;
-    let (number, unit) = first.split_at(split);
-    let number: f64 = number.parse().ok()?;
-    let scale: f64 = match unit {
-        "B" => 1.0,
-        "kB" | "KB" => 1e3,
-        "MB" => 1e6,
-        "GB" => 1e9,
-        "TB" => 1e12,
-        _ => return None,
-    };
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    Some((number * scale) as u64)
-}
-
+/// `docker system df`, as a table of reported estimates.
 fn usage_table(usage: &[DockerUsage], width: u16) -> Table<'static> {
     let counts = format::column_width("Count", usage.iter().map(|line| line.total_count.clone()));
     let active = format::column_width("In use", usage.iter().map(|line| line.active.clone()));
     let sizes = format::column_width("Size", usage.iter().map(|line| line.size.clone()));
     let reclaim = format::column_width(
-        "Reclaimable",
+        "Reported",
         usage.iter().map(|line| line.reclaimable.clone()),
     );
     // Each column as wide as what it holds, so the numbers sit beside the
@@ -1473,7 +1446,7 @@ fn usage_table(usage: &[DockerUsage], width: u16) -> Table<'static> {
             Cell::from(Line::from("Count").right_aligned()),
             Cell::from(Line::from("In use").right_aligned()),
             Cell::from(Line::from("Size").right_aligned()),
-            Cell::from(Line::from("Reclaimable").right_aligned()),
+            Cell::from(Line::from("Reported").right_aligned()),
         ])
         .style(super::visual::HEADING)
         .bottom_margin(1);
@@ -1483,12 +1456,13 @@ fn usage_table(usage: &[DockerUsage], width: u16) -> Table<'static> {
         .block(
             super::visual::block()
                 .title(" Docker ")
+                .title_bottom(" Reported = Docker estimate; savings unknown ")
                 .padding(Padding::horizontal(1)),
         )
 }
 
 impl Screen for DockerSpace {
-    fn draw(&mut self, frame: &mut Frame, area: Rect, context: &Context) {
+    fn draw(&mut self, frame: &mut Frame, area: Rect, _context: &Context) {
         self.stage.poll();
         let title = "Docker";
         match &self.stage {
@@ -1542,7 +1516,7 @@ impl Screen for DockerSpace {
                     Docker::NotRunning => {
                         message(frame, area, title, self.not_running_lines(), Color::Yellow);
                     }
-                    Docker::Usage(_) => self.draw_usage(frame, area, context),
+                    Docker::Usage(_) => self.draw_usage(frame, area),
                 }
                 if matches!(self.stage, Stage::Asking(_)) {
                     match self.question {
@@ -1863,7 +1837,7 @@ mod tests {
     }
 
     #[test]
-    fn docker_shows_what_can_be_freed_and_asks_first() {
+    fn docker_shows_reported_estimates_and_asks_first() {
         let usage = DockerUsage {
             kind: "Images".to_string(),
             total_count: "9".to_string(),
@@ -1883,6 +1857,9 @@ mod tests {
 
         let text = render(&mut screen);
         assert!(text.contains("1.105GB (61%)"));
+        assert!(text.contains("Reported = Docker estimate; savings unknown"));
+        assert!(text.contains("Unknown until prune finishes"));
+        assert!(!text.contains("After cleanup"));
         assert!(text.contains("influxdb-storage"));
         assert!(text.contains("Keeps") && text.contains("Deletes"), "{text}");
 
@@ -1989,7 +1966,7 @@ mod tests {
             assert!(view::text(&buffer).contains("deleted for good"));
             let buffer = view::render("docker", &mut docker, &context, width, height);
             view::aligned(&buffer, "Count", "1234567");
-            view::aligned(&buffer, "Reclaimable", "1.105GB (61%)");
+            view::aligned(&buffer, "Reported", "1.105GB (61%)");
             assert!(view::text(&buffer).contains("influxdb-storage"));
         }
         press(&mut sims, KeyCode::Char(' '));
