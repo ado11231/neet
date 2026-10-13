@@ -398,11 +398,15 @@ impl Screen for Trash {
     }
 
     fn back(&mut self) -> Action {
-        if matches!(self.stage, Stage::Asking(_)) {
-            self.stage.back_to_ready();
-            return Action::None;
+        match self.stage {
+            Stage::Asking(_) => {
+                self.stage.back_to_ready();
+                Action::None
+            }
+            Stage::Working(..) => Action::None,
+            Stage::Done(_) => Action::Home,
+            _ => Action::Back,
         }
-        Action::Back
     }
 
     fn is_dialog(&self) -> bool {
@@ -412,7 +416,8 @@ impl Screen for Trash {
     fn hints(&self) -> &'static str {
         match self.stage {
             Stage::Asking(_) => "y empty for good · n or esc go back",
-            Stage::Done(_) => "enter home",
+            Stage::Working(..) => "emptying, please wait",
+            Stage::Done(_) => "enter or esc home",
             _ => "↑↓ move · e empty the Trash · o open in Finder · esc back · ? help",
         }
     }
@@ -423,7 +428,10 @@ impl Screen for Trash {
             ("e", "Empty the Trash, after a question"),
             ("y", "In the question: empty it for good"),
             ("o", "Open the Trash in Finder, to put things back"),
-            ("Esc", "Go back"),
+            (
+                "Esc",
+                "Go back, or return Home when done. Wait while emptying.",
+            ),
         ]
     }
 }
@@ -506,5 +514,28 @@ mod tests {
         assert!(text.contains("Full Disk Access"), "{text}");
         press(&mut trash, KeyCode::Char('e'));
         assert!(!trash.is_dialog());
+    }
+
+    #[test]
+    fn emptying_keeps_the_screen_open_until_the_result_arrives() {
+        for result in [Ok(3_005_000), Err("Finder refused".to_string())] {
+            let failed = result.is_err();
+            let mut trash = screen(false);
+            let (sender, receiver) = std::sync::mpsc::channel();
+            trash.stage = Stage::Working(Instant::now(), receiver);
+
+            assert!(matches!(trash.back(), Action::None));
+            assert!(trash.is_dialog());
+            assert!(render(&mut trash).contains("Emptying the Trash"));
+            sender.send(result).unwrap();
+            let text = render(&mut trash);
+            assert!(text.contains(if failed {
+                "Finder refused"
+            } else {
+                "The Trash is empty"
+            }));
+            assert!(!trash.is_dialog());
+            assert!(matches!(trash.back(), Action::Home));
+        }
     }
 }
