@@ -2,7 +2,6 @@
 //! them, and empties the Trash through Finder when you ask. See how a
 //! cleanup runs, and Emptying the Trash, in `docs/SAFETY.md`.
 
-use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -103,12 +102,31 @@ pub fn empty() -> io::Result<()> {
 /// Returns an error if the file has no name, or could not be moved, such as
 /// when the Trash is on another disk.
 pub fn move_into_trash(path: &Path, trash: &Path) -> io::Result<PathBuf> {
+    move_into_trash_with(path, trash, &rename_without_replacing)
+}
+
+fn rename_without_replacing(path: &Path, target: &Path) -> io::Result<()> {
+    use rustix::fs::{CWD, RenameFlags, renameat_with};
+
+    renameat_with(CWD, path, CWD, target, RenameFlags::NOREPLACE).map_err(Into::into)
+}
+
+fn move_into_trash_with(
+    path: &Path,
+    trash: &Path,
+    rename: &impl Fn(&Path, &Path) -> io::Result<()>,
+) -> io::Result<PathBuf> {
     let name = path
         .file_name()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "the path has no name"))?;
     let mut target = trash.join(name);
     let mut number = 2;
-    while fs::symlink_metadata(&target).is_ok() {
+    loop {
+        match rename(path, &target) {
+            Ok(()) => return Ok(target),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error),
+        }
         let stem = path.file_stem().unwrap_or(name).to_string_lossy();
         let renamed = match path.extension() {
             Some(extension) => format!("{stem} {number}.{}", extension.to_string_lossy()),
@@ -117,8 +135,6 @@ pub fn move_into_trash(path: &Path, trash: &Path) -> io::Result<PathBuf> {
         target = trash.join(renamed);
         number += 1;
     }
-    fs::rename(path, &target)?;
-    Ok(target)
 }
 
 #[cfg(test)]
@@ -142,5 +158,68 @@ mod tests {
         assert!(!data.join("Docker.raw").exists());
         assert_eq!(fs::read_to_string(trash.join("Docker.raw")).unwrap(), "old");
         assert_eq!(fs::read_to_string(moved).unwrap(), "new");
+    }
+
+    #[test]
+    fn keeps_a_file_that_arrives_just_before_the_move() {
+        let dir = tempfile::tempdir().unwrap();
+        let trash = dir.path().join(".Trash");
+        fs::create_dir(&trash).unwrap();
+        let source = dir.path().join("Docker.raw");
+        fs::write(&source, "new").unwrap();
+        let occupied = trash.join("Docker.raw");
+        let moved = super::move_into_trash_with(&source, &trash, &|from, to| {
+            if to == occupied {
+                fs::write(to, "arrived during the move")?;
+            }
+            super::rename_without_replacing(from, to)
+        })
+        .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(&occupied).unwrap(),
+            "arrived during the move"
+        );
+        assert_eq!(moved, trash.join("Docker 2.raw"));
+        assert_eq!(fs::read_to_string(moved).unwrap(), "new");
+        assert!(!source.exists());
+    }
+
+    #[test]
+    fn skips_broken_links_and_folders_with_the_same_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let trash = dir.path().join(".Trash");
+        fs::create_dir(&trash).unwrap();
+        let source = dir.path().join("Docker.raw");
+        fs::write(&source, "new").unwrap();
+        let link = trash.join("Docker.raw");
+        let missing = dir.path().join("missing");
+        std::os::unix::fs::symlink(&missing, &link).unwrap();
+        let folder = trash.join("Docker 2.raw");
+        fs::create_dir(&folder).unwrap();
+
+        let moved = move_into_trash(&source, &trash).unwrap();
+
+        assert_eq!(moved, trash.join("Docker 3.raw"));
+        assert_eq!(fs::read_link(link).unwrap(), missing);
+        assert!(folder.is_dir());
+        assert_eq!(fs::read_to_string(moved).unwrap(), "new");
+    }
+
+    #[test]
+    fn a_failed_move_keeps_the_source_and_does_not_try_other_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("Docker.raw");
+        fs::write(&source, "keep").unwrap();
+        let calls = std::cell::Cell::new(0);
+        let error = super::move_into_trash_with(&source, dir.path(), &|_, _| {
+            calls.set(calls.get() + 1);
+            assert_eq!(calls.get(), 1);
+            Err(std::io::ErrorKind::PermissionDenied.into())
+        })
+        .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+        assert_eq!(fs::read_to_string(source).unwrap(), "keep");
     }
 }
