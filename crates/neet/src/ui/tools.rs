@@ -942,6 +942,7 @@ pub enum DockerDone {
         space: Result<String, String>,
         /// Each volume picked, and why it failed if it did
         volumes: Vec<(String, Result<(), String>)>,
+        containers: Result<Vec<DockerContainer>, String>,
     },
     /// The space the disk image took, or why it was not moved
     Reset(Result<u64, String>),
@@ -1012,6 +1013,9 @@ impl DockerSpace {
     }
 
     fn containers(&self) -> Option<&Result<Vec<DockerContainer>, String>> {
+        if let Stage::Done(DockerDone::Pruned { containers, .. }) = &self.stage {
+            return Some(containers);
+        }
         self.stage
             .found()
             .and_then(|found| matches!(found.docker, Docker::Usage(_)).then_some(&found.containers))
@@ -1321,7 +1325,12 @@ impl DockerSpace {
                             (name, result)
                         })
                         .collect();
-                    DockerDone::Pruned { space, volumes }
+                    let containers = tools::docker_containers().map_err(|error| error.to_string());
+                    DockerDone::Pruned {
+                        space,
+                        volumes,
+                        containers,
+                    }
                 })
             }
             Question::Reset => spawn(|| {
@@ -1338,22 +1347,43 @@ impl DockerSpace {
         let mut lines = Vec::new();
         let mut color = Color::Green;
         match done {
-            DockerDone::Pruned { space, volumes } => {
+            DockerDone::Pruned {
+                space,
+                volumes,
+                containers,
+            } => {
                 match space {
-                    Ok(space) if space.starts_with("0B") && volumes.is_empty() => {
+                    Ok(space) if space.trim() == "0B" => {
                         color = Color::Yellow;
-                        lines.push(Line::from("Docker had nothing to free").yellow().bold());
+                        lines.push(Line::from("Prune freed no space").yellow().bold());
                         lines.push(Line::default());
-                        lines.push(Line::from(
-                            "What is left belongs to running containers, or sits in volumes.",
-                        ));
-                        lines.push(Line::from(vec![
-                            Span::raw("To clear all of it, press "),
-                            key("r"),
-                            Span::raw(", then "),
-                            key("x"),
-                            Span::raw(" to reset Docker."),
-                        ]));
+                        match containers {
+                            Ok(containers) if containers.is_empty() => {
+                                lines.push(Line::from("No running containers found."));
+                                lines.push(Line::from("Docker found nothing unused to prune."));
+                            }
+                            Ok(containers) => {
+                                lines.push(Line::from("Running containers keep images in use:"));
+                                for container in containers.iter().take(2) {
+                                    let name = if container.project.is_empty() {
+                                        container.name.clone()
+                                    } else {
+                                        format!(
+                                            "{} (Compose: {})",
+                                            container.name, container.project
+                                        )
+                                    };
+                                    lines.push(Line::from(format::shorten_middle(&name, 60)));
+                                }
+                                lines.push(Line::from(
+                                    "Press c for all names, images, and projects.",
+                                ));
+                            }
+                            Err(_) => {
+                                lines.push(Line::from("Running containers could not be checked."));
+                                lines.push(Line::from("Press c for details, or r to check again."));
+                            }
+                        }
                     }
                     Ok(space) => {
                         lines.push(Line::from(vec![
@@ -1381,7 +1411,7 @@ impl DockerSpace {
                 if color == Color::Green {
                     lines.push(Line::default());
                     lines.push(Line::from(
-                        "Docker's disk image gives the space back to macOS over a few minutes.",
+                        "Docker reports space freed inside its disk image. macOS may update later.",
                     ));
                 }
             }
@@ -1730,6 +1760,9 @@ impl Screen for DockerSpace {
             }
             Stage::Asking(_) => "y remove permanently · n or esc back",
             Stage::Working(..) => "Working…",
+            Stage::Done(DockerDone::Pruned { .. }) => {
+                "c images in use · enter home · r look again · esc home"
+            }
             Stage::Done(_) => "enter home · r look again · esc home",
             Stage::Ready(found) => match (&found.docker, found.volumes.is_empty(), reset) {
                 (Docker::Usage(_), false, true) => {
@@ -2081,6 +2114,7 @@ mod tests {
     fn docker_done_shows_a_tick() {
         let mut screen = DockerSpace::with(Stage::Done(DockerDone::Pruned {
             space: Ok("1.2GB".to_string()),
+            containers: Ok(Vec::new()),
             volumes: vec![("influxdb-storage".to_string(), Ok(()))],
         }));
         let text = render(&mut screen);
@@ -2091,6 +2125,57 @@ mod tests {
         let text = render(&mut screen);
         assert!(text.contains("✓ Docker is reset"));
         assert!(text.contains("9.4 GB"));
+    }
+
+    #[test]
+    fn zero_prune_names_containers_even_when_a_volume_was_selected() {
+        for volumes in [
+            Vec::new(),
+            vec![("old-data".to_string(), Ok(()))],
+            vec![("old-data".to_string(), Err("volume is in use".to_string()))],
+        ] {
+            let mut screen = DockerSpace::with(Stage::Done(DockerDone::Pruned {
+                space: Ok("0B".to_string()),
+                containers: Ok(vec![container("supabase-db")]),
+                volumes: volumes.clone(),
+            }));
+            let text = render(&mut screen);
+            assert!(text.contains("Prune freed no space"));
+            assert!(text.contains("supabase-db (Compose: supabase)"));
+            assert!(!text.contains("reset Docker"));
+            if let Some((_, result)) = volumes.first() {
+                assert!(text.contains(if result.is_ok() {
+                    "Volume old-data removed"
+                } else {
+                    "volume is in use"
+                }));
+            }
+            press(&mut screen, KeyCode::Char('c'));
+            assert!(render(&mut screen).contains("Image: supabase/postgres:15"));
+            assert!(matches!(screen.back(), Action::None));
+            assert!(matches!(press(&mut screen, KeyCode::Enter), Action::Home));
+        }
+    }
+
+    #[test]
+    fn zero_prune_distinguishes_no_containers_from_a_failed_lookup() {
+        for containers in [Ok(Vec::new()), Err("Docker stopped".to_string())] {
+            let failed = containers.is_err();
+            let mut screen = DockerSpace::with(Stage::Done(DockerDone::Pruned {
+                space: Ok("0B".to_string()),
+                volumes: Vec::new(),
+                containers,
+            }));
+            let text = render(&mut screen);
+            assert_eq!(text.contains("No running containers found."), !failed);
+            assert_eq!(text.contains("could not be checked"), failed);
+            press(&mut screen, KeyCode::Char('c'));
+            if failed {
+                assert!(render(&mut screen).contains("Docker stopped"));
+            } else {
+                assert!(render(&mut screen).contains("No running containers found."));
+            }
+        }
     }
 
     #[test]
@@ -2138,6 +2223,8 @@ mod tests {
             view::aligned(&buffer, "Count", "1234567");
             view::aligned(&buffer, "Reported", "1.105GB (61%)");
             assert!(view::text(&buffer).contains("influxdb-storage"));
+            assert!(view::text(&buffer).contains("savings unknown"));
+            assert!(view::text(&buffer).contains("c: in use"));
         }
         press(&mut sims, KeyCode::Char(' '));
         press(&mut sims, KeyCode::Enter);
