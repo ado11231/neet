@@ -111,6 +111,7 @@
   5. A Trash screen lists what is in the Trash and empties it after a red question.
   6. Home starts on Disk, then the cleanups, with SSH last.
   7. Deep Clean names the apps to quit and says to press `r` for busy app files. Other skip reasons keep their own explanation.
+  8. AI chat cleanup keeps totals and actions visible while scrolling. It separates ready and skipped files, removes empty move prompts, and lists files with unconfirmed results after an interrupted cleanup.
 
 | Item | Done When |
 | --- | --- |
