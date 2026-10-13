@@ -250,6 +250,7 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
+        let busy = self.stack.iter().any(|screen| screen.is_dialog());
         let context = Context {
             scan: self.scan.status(),
             disk: self.disk.space(),
@@ -260,7 +261,7 @@ impl App {
         let action = match key.code {
             KeyCode::Esc => screen.back(),
             _ if screen.takes_text() => screen.handle_key(key, &context),
-            KeyCode::Char('q') if !screen.is_dialog() => Action::Quit,
+            KeyCode::Char('q') if !busy => Action::Quit,
             KeyCode::Char('?') => Action::Open(Box::new(Help::new(screen.help()))),
             _ => screen.handle_key(key, &context),
         };
@@ -365,5 +366,39 @@ mod tests {
         let mut app = App::new(ScanTask::failed("not scanned in tests"), None);
         press(&mut app, KeyCode::Char('?'));
         assert_eq!(app.depth(), 2);
+    }
+
+    struct Busy(std::rc::Rc<std::cell::Cell<bool>>);
+
+    impl Screen for Busy {
+        fn draw(&mut self, _: &mut Frame, _: Rect, _: &Context) {}
+        fn handle_key(&mut self, _: KeyEvent, _: &Context) -> Action {
+            Action::None
+        }
+        fn hints(&self) -> &'static str {
+            ""
+        }
+        fn help(&self) -> &'static [(&'static str, &'static str)] {
+            &[]
+        }
+        fn is_dialog(&self) -> bool {
+            self.0.get()
+        }
+    }
+
+    #[test]
+    fn help_keeps_quit_blocked_until_the_underlying_work_finishes() {
+        let busy = std::rc::Rc::new(std::cell::Cell::new(true));
+        let mut app = App::new(ScanTask::failed("not scanned in tests"), None);
+        app.apply(Action::Open(Box::new(Busy(busy.clone()))));
+        for depth in 2..=4 {
+            assert_eq!(app.depth(), depth);
+            press(&mut app, KeyCode::Char('q'));
+            assert!(!app.should_quit());
+            press(&mut app, KeyCode::Char('?'));
+        }
+        busy.set(false);
+        press(&mut app, KeyCode::Char('q'));
+        assert!(app.should_quit());
     }
 }
