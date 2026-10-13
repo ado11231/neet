@@ -229,7 +229,10 @@
 * These cannot go to the Trash, so neet asks their own tool to remove them. Removing ends in a red question that lists what goes and says it is permanent. Only `y` goes ahead. See [SAFETY.md](SAFETY.md#tools-neet-runs).
 * **Simulators:** a table of each runtime with a checkbox, its version, build, size, the day a simulator last used it, and how many simulators run on it. Simulators left without a runtime share one yellow `No runtime` row. None start selected. `Enter` asks, then removes each runtime with `xcrun simctl`, then the simulators on it, and the `No runtime` simulators if selected.
 * **Below the Simulators table,** titled with the selected runtime: its build, size, when it was last used, and the simulators on it by name, then **Warning: deleted for good, not moved to the Trash**, which every screen size keeps. Then **Removal**, **Total**: runtimes, simulators, and what is selected, in red, **Steps**: the three steps, and **After cleanup**: the disk now and after the selected runtimes go. Each is its own box. From 100 columns they sit in two columns: the runtime and Removal on the left, and the rest on the right.
-* **Docker:** a table of what `docker system df` reports: images, containers, volumes, and build cache, with how many, how many are in use, their size, and how much can be freed, in yellow. Each column is only as wide as what it holds. Below it, the volumes no container uses, none selected, which `Space` adds to the prune. Below that, small boxes in two columns from 100 columns: **Prune**, in colored labels, what `docker system prune --all` deletes, what it keeps, and that it is for good; **Reset**, when there is a disk image; **Total**, what prune can free, the disk image, and the volumes picked; **Steps**; and **After cleanup**. `Enter` asks, then runs it and removes the selected volumes.
+* **Docker:** a table of what `docker system df` reports: images, containers, volumes, and build cache, with counts, use, size, and a **Reported** column. The bottom label says these are Docker estimates and savings are unknown. Below it, the volumes no container uses, none selected, which `Space` adds to the prune. `Enter` asks, then runs it and removes the selected volumes.
+* **Below the Docker tables:** **Prune** says what goes, what stays, and that removal is permanent. **Reset** appears when there is a disk image. **Total** shows the disk image size, volumes picked, and that savings are unknown until prune finishes. **Steps** lists the keys. These boxes use two columns from 100 columns. Docker has no **After cleanup** forecast.
+* **Images in use:** `c` shows each running container, its image, and its Compose project when present. Arrow keys or `j` and `k` scroll. `Home` and `End` reach the first and last lines. `c` or `Esc` returns. A failed lookup shows its reason.
+* **No space freed:** the result names running containers that keep images in use. `c` opens the full list from a fresh check after prune. If that check fails, the result says so. Selected volume results stay separate.
 * **Reset Docker:** `x` asks, in a yellow box, to stop Docker Desktop and move its whole disk image to the Trash. See [Resetting Docker](SAFETY.md#resetting-docker).
 * If Docker Desktop is not running, a small box in the middle says so, with numbered steps: `o` opens it, then `r` asks Docker again. `x` resets Docker without opening it.
 * When done, a small box in the middle ticks off what went and how much space it freed.
@@ -239,12 +242,12 @@
 | `↑` `↓` | Move between runtimes, or between Docker's unused volumes. |
 | `Space` | Select or clear a runtime, the `No runtime` row, or a volume. |
 | `Enter` | Ask before removing, or before the prune. |
+| `c` | On Docker or its prune result, show containers keeping images in use. |
 | `x` | On Docker, ask before resetting it to the Trash. |
 | `o` | On Docker, open Docker Desktop. |
 | `r` | On Docker, ask Docker again. |
 | `y` | In the question, go ahead. |
 | `n` or `Esc` | In the question, go back. |
-| `o` / `r` | On Docker, open Docker Desktop, or ask again. |
 
 ## Deep Clean
 

@@ -215,10 +215,12 @@ min_age_days = 0
 | Docker volumes | `docker volume rm -- <name>`, once per volume you select | A volume no container uses, with its data. Docker refuses if a container uses it. |
 
 * Before any of these runs, neet:
-  1. Lists exactly what the tool reports: each runtime with its version, build, size, when it was last used, and the simulators on it; simulators left without a runtime; or Docker's images, containers, volumes, and build cache with what can be reclaimed, and each volume no container uses.
+  1. Lists exactly what the tool reports: each runtime with its version, build, size, when it was last used, and the simulators on it; simulators left without a runtime; or Docker's images, containers, volumes, and build cache with Docker's reported estimates, and each volume no container uses.
   2. Starts with nothing selected for runtimes, simulators, and volumes.
   3. Asks in a red box that lists what goes and says the removal is permanent and does not go to the Trash. Only `y` goes ahead.
 * Only IDs made of letters, digits, and hyphens are passed to `simctl`, so they can never be `all` or an option. Only volume names made of letters, digits, `_`, `.`, and `-`, starting with a letter or digit, are passed to `docker`, after `--`.
+* Docker's reported reclaimable space is an estimate, not promised savings. neet does not use it to predict free disk space after cleanup.
+* `docker container ls` reads running container names, images, and Compose project labels before and after prune, with a ten second limit. This check changes nothing. A failed lookup stays visible and is not treated as an empty list.
 * None of these commands uses admin rights. neet never starts Docker on its own; `o` opens Docker Desktop only when you press it.
 
 ### Resetting Docker

@@ -112,6 +112,7 @@
   6. Home starts on Disk, then the cleanups, with SSH last.
   7. Deep Clean names the apps to quit and says to press `r` for busy app files. Other skip reasons keep their own explanation.
   8. AI chat cleanup keeps totals and actions visible while scrolling. It separates ready and skipped files, removes empty move prompts, and lists files with unconfirmed results after an interrupted cleanup.
+  9. Docker labels reported reclaimable space as an estimate and drops the free space forecast. A scrollable list names running containers, images, and Compose projects. Zero space results use a fresh container check and keep volume results separate.
 
 | Item | Done When |
 | --- | --- |
