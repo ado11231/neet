@@ -1,13 +1,5 @@
-//! Programs that start on their own: launch agents and daemons, and the
-//! helpers apps keep inside themselves and ask macOS to run in the
-//! background. Only reads. See Startup Items in `docs/SAFETY.md`.
-//!
-//! Plists are read with `plutil`, whether each is turned on and runs with
-//! `launchctl`, and who signed each program with `codesign --display`. None
-//! of them runs a listed program, and none asks for admin rights. Apps that
-//! open at login are not listed: macOS shows that list only to an admin.
-//!
-//! [`turn`] turns your own launch agents off and back on.
+//! Lists startup items without starting them or asking for admin rights.
+//! The `turn` module changes user launch agents after review. See `docs/SAFETY.md`.
 
 pub mod turn;
 

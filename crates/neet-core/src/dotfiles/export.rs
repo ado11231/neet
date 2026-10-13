@@ -1,8 +1,5 @@
-//! Export: a review for secrets, then a commit and a push of chezmoi's
-//! source files. Without chezmoi's folder, it starts one as a new Git
-//! repository, in chezmoi's layout. See Export in `docs/SAFETY.md`.
-//!
-//! The review is not a promise that nothing secret remains.
+//! Reviews selected dotfiles for secrets, then commits and asks before pushing.
+//! Secret checks cannot catch everything. See `docs/SAFETY.md`.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};

@@ -1,8 +1,5 @@
-//! Space only its own tool can free: simulator runtimes and devices,
-//! through `xcrun simctl`, and Docker's images, containers, and volumes,
-//! through `docker`. None of it can go to the Trash, so removing it is
-//! permanent. Resetting Docker is the one exception: its disk image goes to
-//! the Trash. See Tools neet Runs in `docs/SAFETY.md`.
+//! Simulator and Docker tools delete permanently after review.
+//! Docker reset moves its disk image to Trash. See `docs/SAFETY.md`.
 
 use std::collections::HashMap;
 use std::io;

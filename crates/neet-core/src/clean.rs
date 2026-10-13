@@ -1,9 +1,5 @@
-//! Dry run plans, and running them. See how a cleanup runs in
-//! `docs/SAFETY.md`.
-//!
-//! Every item in a plan passed
-//! [`CleanupRoots::validate_deletable`](crate::safety::CleanupRoots::validate_deletable).
-//! [`run`] checks it again right before the move.
+//! Plans reviewed cleanups and rechecks each approved item before moving it.
+//! See `docs/SAFETY.md` for path limits and the Trash flow.
 
 use std::fs;
 use std::io;
