@@ -555,10 +555,38 @@ fn skipped_lines(rule: &RulePlan, home: &Path, width: usize) -> Vec<Line<'static
 /// Width of the bar beside each item found
 const ITEM_BAR: usize = 10;
 
+/// Advice for app activity, without changing the reason each path was skipped.
+fn retry_hint(rule: &RulePlan) -> Option<String> {
+    let mut apps = Vec::new();
+    for skipped in &rule.skipped {
+        match &skipped.reason {
+            SkipReason::AppOpen(app) => apps.push(app.as_str()),
+            // With no age limit, TooNew means a write happened during the scan.
+            SkipReason::TooNew if rule.rule.min_age_days == 0 => {
+                apps.extend(rule.rule.requires_quit.iter().map(String::as_str));
+            }
+            _ => {}
+        }
+    }
+    apps.sort_unstable();
+    apps.dedup();
+    let apps: Vec<String> = apps.into_iter().map(app_name).collect();
+    (!apps.is_empty()).then(|| format!("Quit {}, then press r to look again.", apps.join(" & ")))
+}
+
 /// What the selected rule removes, its risk, and what it needs, for the box
 /// at the top of the details, with values wrapped to `width`
 fn about(rule: &RulePlan, home: &Path, width: usize) -> Vec<Line<'static>> {
     let mut lines = vec![Line::from(rule.rule.description.clone()), Line::default()];
+    if let Some(hint) = retry_hint(rule) {
+        lines.extend(field_wrapped(
+            "Retry",
+            Vec::new(),
+            &hint,
+            Style::default().yellow(),
+            width,
+        ));
+    }
     lines.extend(field_wrapped(
         "Risk",
         vec![tier_span(rule.rule.tier).bold(), Span::raw("  ")],
@@ -1479,6 +1507,101 @@ mod tests {
             .find(|rule| rule.rule.id == id)
             .expect("rule should be planned")
             .selected
+    }
+
+    #[test]
+    fn busy_chrome_files_show_how_to_retry_at_every_screen_size() {
+        use crate::ui::visual::tests as view;
+        let dir = fake_home();
+        let roots = CleanupRoots::new(dir.path()).unwrap();
+        let chrome = rules::load(&roots, None)
+            .rules
+            .into_iter()
+            .find(|rule| rule.id == "chrome-cache")
+            .unwrap();
+        let started = SystemTime::now() - Duration::from_secs(60);
+        let cache = dir.path().join("Library/Caches/Google/Chrome/Default");
+        fs::create_dir_all(&cache).unwrap();
+        fs::write(cache.join("busy"), "cache").unwrap();
+        let plan = clean::plan(&[chrome], &roots, started);
+        assert!(matches!(
+            plan.rules[0].skipped[0].reason,
+            SkipReason::TooNew
+        ));
+        let mut screen = Clean::ready(Planned {
+            plan,
+            errors: Vec::new(),
+            home: roots.home().to_path_buf(),
+        });
+        let scan = crate::ui::scan::ScanStatus::Failed(String::new());
+        let context = Context {
+            scan: &scan,
+            disk: None,
+            cleanable: None,
+            plan: None,
+        };
+        for (width, height) in view::SIZES.into_iter().chain([(160, 46)]) {
+            let text = view::text(&view::render("clean", &mut screen, &context, width, height));
+            assert!(
+                text.contains("Quit Chrome, then press r"),
+                "{width}x{height}\n{text}"
+            );
+            assert!(text.contains("look again."), "{width}x{height}\n{text}");
+            assert!(!text.contains("com.google.Chrome"), "{text}");
+        }
+    }
+
+    #[test]
+    fn retry_advice_only_names_apps_linked_to_busy_skips() {
+        use neet_core::clean::Skipped;
+        let dir = fake_home();
+        let mut rule = planned(&dir)
+            .plan
+            .rules
+            .into_iter()
+            .find(|rule| rule.rule.id == "chrome-cache")
+            .unwrap();
+        rule.rule.requires_quit.push("com.apple.dt.Xcode".into());
+        rule.skipped = vec![Skipped {
+            path: dir.path().join("cache"),
+            reason: SkipReason::AppOpen("com.google.Chrome".into()),
+        }];
+        assert_eq!(
+            retry_hint(&rule).as_deref(),
+            Some("Quit Chrome, then press r to look again.")
+        );
+        rule.skipped.push(rule.skipped[0].clone());
+        assert_eq!(
+            retry_hint(&rule).as_deref(),
+            Some("Quit Chrome, then press r to look again.")
+        );
+        rule.skipped[0].reason = SkipReason::TooNew;
+        assert_eq!(
+            retry_hint(&rule).as_deref(),
+            Some("Quit Xcode & Chrome, then press r to look again.")
+        );
+        rule.skipped.truncate(1);
+        rule.rule.min_age_days = 7;
+        assert!(retry_hint(&rule).is_none());
+        rule.rule.min_age_days = 0;
+        rule.rule.requires_quit.clear();
+        assert!(retry_hint(&rule).is_none());
+        rule.rule.requires_quit.push("com.google.Chrome".into());
+        for reason in [
+            SkipReason::Link,
+            SkipReason::Overlaps,
+            SkipReason::Replaced,
+            SkipReason::Unreadable(std::io::Error::from(std::io::ErrorKind::PermissionDenied)),
+        ] {
+            rule.skipped[0].reason = reason;
+            assert!(retry_hint(&rule).is_none());
+            let reason = skip_reason(&rule.skipped[0].reason, Some(0));
+            assert!(
+                skipped_lines(&rule, dir.path(), 100)[0]
+                    .to_string()
+                    .contains(&reason)
+            );
+        }
     }
 
     #[test]

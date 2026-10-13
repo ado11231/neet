@@ -59,6 +59,7 @@
 | Check before moving | Checks each item again right before it moves. Anything that changed, or whose app opened, is skipped. | Done |
 | Risk levels | Marks each rule `safe`, `caution`, or `expert`, which decides whether it starts selected. | Done |
 | Open app check | A rule cannot be selected while its app is open. | Done |
+| Busy app advice | When app files change during the scan, Deep Clean names the apps to quit and says to press `r` to look again. Other skip reasons stay as they are. | Done |
 | Recent file check | A rule can skip anything changed in the last few days. | Done |
 | Your own rules | Loads extra rules from `~/.config/neet/rules/`. They can never reach outside the allowed folders, and never start selected. | Done |
 | Project build folders | Moves build folders in your code projects, `target/` beside a `Cargo.toml` and `node_modules/`, to the Trash from Quick Clean. You pick which, then review. | Done |

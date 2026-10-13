@@ -110,6 +110,7 @@
   4. Every built screen got a clarity pass: Quick Clean, Deep Clean, Remove App, Large Files, and Disk use small titled boxes, one label width, plain words, and lists only as tall as their rows.
   5. A Trash screen lists what is in the Trash and empties it after a red question.
   6. Home starts on Disk, then the cleanups, with SSH last.
+  7. Deep Clean names the apps to quit and says to press `r` for busy app files. Other skip reasons keep their own explanation.
 
 | Item | Done When |
 | --- | --- |
