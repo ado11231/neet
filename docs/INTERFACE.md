@@ -251,33 +251,11 @@
 
 ### Edit
 
-```text
-+ Change to .zshrc --------------------------------------------------------------------------------+
-| Writes   dot_zshrc in chezmoi, then chezmoi apply ~/.zshrc                                       |
-| Backup   first, in ~/.local/state/neet/backups/dotfiles                                          |
-| Check    zsh -n  passed                                                                          |
-| Changes  +1 -1                                                                                   |
-+--------------------------------------------------------------------------------------------------+
-+ Diff --------------------------------------------------------------------------------------------+
-| line 1                                                                                           |
-|   # ~/.zshrc                                                                                     |
-|                                                                                                  |
-| - export EDITOR=nvim                                                                             |
-| + export EDITOR=hx                                                                               |
-|   export PATH=$HOME/bin:$PATH                                                                    |
-|                                                                                                  |
-|   HISTSIZE=50000                                                                                 |
-```
-
-* `e` opens a copy of the file in your editor: `$VISUAL`, then `$EDITOR`, then `nano`. neet waits until it closes.
-* With chezmoi, the copy is of the source file, and a file that changed must be saved, or the saved version used, first.
-* When the editor closes with changes, the review shows:
-  1. **Writes:** the file, or the source file and then `chezmoi apply` for it. When neet may not run chezmoi, it says to run `chezmoi apply` yourself.
-  2. **Backup:** where the old version goes.
-  3. **Check:** passed in green, failed in red with its message, or why there is no check.
-  4. **Changes** and the **Diff:** removed lines in red, added lines in green, with three lines around each change. A file that may hold a token hides its diff.
-* A file that fails its check cannot be written. `e` goes back to the editor with your changes.
-* Afterwards, a box says what was written, or why nothing was.
+* Opens a copy in `$VISUAL`, `$EDITOR`, or `nano`.
+* Review shows the destination, backup, check result, and diff.
+* Failed checks block saving. `e` returns to the editor.
+* With chezmoi, neet edits the source copy and applies it when allowed.
+* Files that may hold tokens hide the diff.
 
 | Key | Action |
 | --- | --- |
@@ -288,30 +266,12 @@
 
 ### Export
 
-```text
-+ Export ---------------------------------------------------------------------------------------+
-| Review for secrets, then pick what goes in.                                                    |
-|                                                                                                |
-|   [x] dot_zshrc                   nothing found                                                |
-| > [ ] dot_npmrc                   1 line that may be secret                                    |
-|         line 1  npm token  npm_****                                                            |
-|                                                                                                |
-| Commit   1 file . "Update zshrc"                                                               |
-| Push     to origin/main, after a question                                                       |
-|                                                                                                |
-| This is a review, not a promise that nothing secret remains.                                   |
-+------------------------------------------------------------------------------------------------+
-```
-
-* `x` looks at the repository chezmoi's folder is in. It lists the source files of listed dotfiles that have changes not yet committed. Each one shows what the review for secrets found, and the selected file shows each finding's line, kind, and first four characters.
-* Export scrolls to keep the selected file visible. The commit summary and message field have their own space below the list.
-* Files with findings, and files that may hold a token, start left out. `Space` puts a file in or takes it out.
-* **Commit** shows how many files go in, and the message. It names the files, such as `Update zshrc and gitconfig`, until you change it with `m`.
-* `y` commits only those files. Then a box asks whether to push, and names the remote branch. Only `y` pushes. A push is never forced, and if the remote has commits you do not, nothing is pushed and the note says to pull first.
-* With nothing to commit but commits not yet pushed, `x` goes straight to the push question.
-* **Without chezmoi**, the Your dotfiles box says `x` starts a repository. `x` opens the same review, titled **Start your dotfiles**, listing every listed dotfile on this Mac by its home path. Links that lead out of your home folder, or into a protected folder, are left out. The Review box adds a **Start** line naming the folder, and a **GitHub** line in place of Push. The message starts as `Start dotfiles`.
-* `y` writes the chosen files into chezmoi's folder, named as `chezmoi add` names them, with a README and a `.chezmoiignore` that keeps the README out of your home folder, then runs `git init` and commits. The screen then reads the folder as chezmoi's, so every file shows saved or not saved.
-* With no remote, and `gh` installed, a box asks whether to make a private GitHub repository named `dotfiles` and push to it. Only `y` makes it. Without `gh`, a note says how to add a remote yourself.
+* Lists changed dotfiles and possible secrets. Files with findings start left out.
+* Review the files and commit message. Secret checks cannot catch everything.
+* `y` commits only selected files, then asks separately before pushing to the named branch.
+* Without chezmoi, export can start a local dotfiles repository from selected files.
+* With no remote, neet can offer to create a private GitHub repository if `gh` is installed.
+* Nothing is pushed without confirmation. See [Export safety](SAFETY.md#export).
 
 | Key | Action |
 | --- | --- |
@@ -323,61 +283,46 @@
 
 ### Configure
 
-```text
-+ Git settings . ~/.gitconfig ------------------------------------------------------------------+
-|   Setting               Value            About                                                 |
-|   user.name             You              Name on your commits.                                 |
-|   user.email            you@example.com  Email on your commits.                                |
-|   init.defaultBranch    not set          Branch name for new repositories.                     |
-|   core.editor           not set          Editor for commit messages.                           |
-| > pull.rebase           true             Rebase instead of merge when pulling.                 |
-|   push.autoSetupRemote  not set          Push a new branch without naming the remote.          |
-+------------------------------------------------------------------------------------------------+
-+ Changes ---------------------------------------------------------------------------------------+
-| user.email  you@example.com                                                                    |
-| pull.rebase  true                                                                              |
-+------------------------------------------------------------------------------------------------+
-```
-
-* `c` opens the settings Configure knows for the file's program: Git, for `.gitconfig` and `.config/git/config`; tmux, for `.tmux.conf` and `.config/tmux/tmux.conf`; Starship, for `.config/starship.toml`; kitty, for `.config/kitty/kitty.conf`; Ghostty, for `.config/ghostty/config` and `.config/ghostty/config.ghostty`; mise, for `.config/mise/config.toml`; and zsh, for `.zshrc`, where neet writes only between its `# >>> neet >>>` marker lines, and the screen says so. Other files say to use `e`. The settings for each are listed in [SAFETY.md](SAFETY.md#configure).
-* Each setting shows its value in the file, or **not set**, and what it does. A value about to change is yellow. Rows start right under the header. The Setting and Value columns are as wide as their longest entry, and About takes the rest, wrapping onto a second line when it does not fit.
-* `Enter` changes the selected setting. Settings with a few choices, such as on and off, or vi and emacs, step through each, then not set. Text and number settings, such as a font size of `13.5`, open a box to type in, where `Enter` keeps it, `Esc` cancels, and an empty value means not set. A value the setting does not take, such as a word for a number, stays in the box with the reason in red.
-* **Changes** lists every change so far. `y` makes them all on the copy, then opens the same review as [Edit](#edit), with the check and the diff. `Esc` drops them all.
-* As with editing, a file that changed must be saved, or the saved version used, first.
+* Changes known settings for Git, tmux, Starship, kitty, Ghostty, mise, and zsh.
+* zsh changes stay between neet's marker lines in `.zshrc`.
+* `Enter` changes a value. Invalid values show a reason.
+* `y` opens the normal edit review with a check and diff. `Esc` drops the changes.
+* Other settings use the editor. See [supported settings](SAFETY.md#configure).
 
 ### Backups
 
-* `b` lists the file's backups in a box, newest first, each with the time it was saved, in UTC, and its size.
-* `Enter` shows the restore question: the time of the backup, that the file as it is now is backed up first, and the diff from now to the backup. Only `y` goes ahead.
-* With chezmoi, a restored file may then differ from its saved copy. `r` saves it there.
+* `b` lists backups, newest first, with the saved time in UTC and size.
+* `Enter` shows what restore will change. Only `y` restores.
+* Restore backs up the current file first.
+* With chezmoi, `r` saves the restored version in its source copy.
 
 ### Save Or Use The Saved Version
 
-* `r` and `p` show the same layout as the review: what is saved or replaced, the backup, and the diff. Only `y` goes ahead.
-* `r` makes chezmoi's source file match the file in your home folder, with `chezmoi re-add`, or by writing the source file when neet may not run chezmoi.
-* `p` puts chezmoi's version back with `chezmoi apply`. When neet may not run chezmoi, it says which command to run instead.
+* `r` saves your current file in chezmoi's source copy.
+* `p` replaces your file with chezmoi's saved copy.
+* Both show the change and backup before `y` confirms.
+* If neet cannot safely run chezmoi, it shows the command to run yourself.
 
 ### Add To Your Dotfiles
 
-* `a` shows the same layout: the source file it adds, such as `dot_tmux.conf`, how, and the whole file as new lines. Only `y` goes ahead.
-* It runs `chezmoi add` for that one file, or writes the source file itself, named as chezmoi would, when neet may not run chezmoi.
-* The file in your home folder stays as it is. The new source file waits for [Export](#export).
-* Not for a file `.chezmoiignore` leaves out, a view only file, or a link, which another tool may manage.
+* `a` reviews adding a listed file to chezmoi. Only `y` confirms.
+* The home file stays unchanged. The new source copy waits for Export.
+* Ignored files, view only files, and links cannot be added.
 
 ## AI Tools
 
-* Home key `8` opens AI Tools. Files, Chats, and Skills share one list with a tool filter and path search. Rows lead with the file, skill name, or chat title. Codex and Gemini filters include shared `.agents/skills`.
-* The selected path, scope, size, and available actions appear beside the list, or below it on narrow terminals. Opening Chats reads bounded local summaries. Other file contents are read only when opened. The scrollable preview includes the full path and scope on small terminals.
-* Chats show a saved title or first user message, the recorded project path, and a `Missing project` tag when that directory no longer exists. Unknown or unreadable paths are not tagged as missing. Search matches titles, paths, and tags.
-* Space selects a chat, `a` toggles all chats shown by the current filters, and `n` clears every selection. The status includes selections hidden by filters. `d` reviews all selected chats, including hidden selections, or the highlighted chat when none are selected.
-* The chat removal review keeps the count, size, skipped count, hidden selection count, and local cleanup limits above a scrolling file list. Ready and skipped chats have separate headings. Each entry shows its title, tool, size, project, and full transcript path.
-* The **Next** box keeps the close app advice, Finder's Put Back, and confirmation keys visible while scrolling. `y` moves the ready files to Trash in the background; `n` or `Esc` cancels. If no files are ready, it offers refresh advice and no move action.
-* Results keep the totals above a scrolling list of **Not moved**, **Unconfirmed**, and **Moved to Trash** files. Failed files show their reason. If cleanup stops early, check the Trash before retrying unconfirmed files. Unmoved chats stay selected. Finder's Put Back restores moved files. Assistant indexes, related files, and cloud history remain.
-* Chat previews show user and assistant messages from supported JSON and JSONL records. Tool calls and results are left out. Invalid records and preview limits are reported.
-* Linking a skill asks for a local folder containing `SKILL.md`. `Tab` picks the target tool. The review names the source and destination and shows the instructions. `y` creates a directory link. Codex uses the shared `.agents/skills` folder. The source folder must stay in place. After linking, the Skills list selects it. Restart the assistant or reload its skills afterward.
-* Editing opens a private copy in your editor. The diff must be confirmed with `y` before the original is backed up and replaced. Restore follows the same review.
-* A failed load keeps the typed path and shows the error. A failed edit or save keeps the draft: `e` reopens it, and `Esc` discards it. If the original changed, copy your work before discarding the draft and open the skill again.
-* Refresh keeps the selected file when it is still listed.
+* Files, Chats, and Skills share tool and search filters.
+* Opening a file shows its path and preview. Chats show supported user and assistant messages.
+* Chats have titles, project paths, and a tag for missing projects. An unknown path is not treated as missing.
+* Select chats, then press `d` to review. Hidden selections are included.
+* Review separates ready and skipped files. Totals and confirmation keys stay visible while scrolling.
+* `y` moves ready transcripts to Trash. If none are ready, the review offers no move action.
+* Results list moved, failed, and unconfirmed files. Check Trash before retrying unconfirmed files.
+* Finder's Put Back restores transcripts. Assistant indexes, related files, and cloud history remain.
+* Linking a skill reviews its source, destination, and instructions. Keep its source folder in place and reload the assistant afterward.
+* Editing or restoring a user skill shows a diff and saves a backup after confirmation.
+* A failed edit keeps the draft. Use `e` to repair it or `Esc` to discard it.
+* Tool settings and bundled skills stay view only. See [AI Tools safety](SAFETY.md#ai-tools).
 
 | Key | Action |
 | --- | --- |
@@ -399,11 +344,11 @@
 
 ## Planned Screens
 
-* Draft layouts for later features. They may change before they are built.
+These screens are not built. Keys and layouts are still undecided.
 
-| Screen | Layout | Keys |
-| --- | --- | --- |
-| Space Breakdown | A list of parts that add up to the disk's used space: the scan, skipped folders, apps, macOS, snapshots, purgeable space, and anything unexplained. Opened with `b` on Home. | `Enter` opens a folder in Disk. |
-| SSH | Sections for hosts, keys, agent keys, known hosts, and permission problems. | Fix permissions, add or remove agent keys, remove known hosts. |
-| PATH | Each folder in search order, with how many programs it holds, where it was added, and any problem. A preview shows the programs it holds. | `w` finds which copy of a program runs. `K` / `J` move a folder. `a` adds, `x` removes, `Enter` saves with a backup. |
-| Settings | Sections for power mode, graphics switching, refresh rate, Game Mode, what keeps the Mac awake, and wake settings. | Each change shows what it will do first, and can be undone. |
+| Screen | Plan |
+| --- | --- |
+| Space Breakdown | Explain used space outside the home scan. |
+| SSH | Inspect hosts and keys, and review permission or known host changes. |
+| PATH | Show shell search folders and review edits with backups. |
+| Settings | Power and display controls with undo, plus saved choices. |
