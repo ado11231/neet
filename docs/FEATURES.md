@@ -1,23 +1,20 @@
 # Features
 
-* Everything neet does today, everything planned, and what it will never do.
-* For anyone deciding what to build next, or checking what neet can do.
-* For screens and keys, read [INTERFACE.md](INTERFACE.md). For the safety rules, read [SAFETY.md](SAFETY.md). For progress, read [ROADMAP.md](ROADMAP.md).
+* Current features and their limits.
+* Planned features are marked clearly.
 
 ## Contents
 
-1. [Status](#status)
-2. [Disk](#disk)
-3. [Cleanup](#cleanup)
-4. [Apps](#apps)
-5. [Dotfiles](#dotfiles)
-6. [AI Tools](#ai-tools)
-7. [Startup](#startup)
-8. [The Program](#the-program)
-9. [Planned Features](#planned-features)
-10. [Open Questions](#open-questions)
-11. [Never Planned](#never-planned)
-12. [Terms](#terms)
+* [Status](#status)
+* [Disk](#disk)
+* [Cleanup](#cleanup)
+* [Apps](#apps)
+* [Dotfiles](#dotfiles)
+* [AI Tools](#ai-tools)
+* [Startup](#startup)
+* [The Program](#the-program)
+* [Planned Features](#planned-features)
+* [Terms](#terms)
 
 ## Status
 
@@ -28,17 +25,17 @@
 
 ## Disk
 
-* Shows where your disk space goes. Looking never changes a file.
+Shows where your disk space goes. Looking never changes a file.
 
 | Feature | What It Does | Status |
 | --- | --- | --- |
-| Home folder scan | Scans your home folder in the background as soon as neet opens. It does not follow links, and does not enter other disks. | Done |
-| Real sizes | Measures the space each file really takes on disk, and counts a file with several names only once. | Done |
-| Disk gauge | Shows how full the disk is, from the disk's own totals, updated every 5 seconds. Also says how much more free space Finder shows, and why. | Done |
-| Skipped folders | Lists the folders the scan could not read, with the reason, and explains how to turn on Full Disk Access. | Done |
-| Disk browser | Browses folders largest first, with a bar for each item's share of its folder. Beside it: the selected item, whether neet cleans it, what is inside, and how full the whole disk is. First on the Home menu. | Done |
-| Large Files | Lists files above a size you choose, optionally only ones unchanged for a while, and shows them in Disk. | Done |
-| Space breakdown | Explains why the disk's used space is larger than the scan: apps, macOS itself, Time Machine snapshots, and space macOS can free on its own. View only. | Proposed |
+| Home folder scan | Scans in the background without following links or entering other disks. | Done |
+| Real sizes | Counts disk space used by files, and files with several names only once. | Done |
+| Disk gauge | Shows used and free space, plus why Finder may show more free space. | Done |
+| Skipped folders | Lists unreadable folders and Full Disk Access help. | Done |
+| Disk browser | Browse folders by size, with selected file details. View only. | Done |
+| Large Files | Filter files by size and last change, then show one in Disk. | Done |
+| Space breakdown | Explain used disk space outside the home scan. View only. | Proposed |
 | Treemap | A view where each folder's area shows its size. | Proposed |
 
 * Sizes are estimates. On APFS, the file system macOS uses, copied files can share space, so a cleanup may free less than it shows.
@@ -51,22 +48,22 @@
 
 | Feature | What It Does | Status |
 | --- | --- | --- |
-| Quick Clean | One table of everything that can be cleared: what the rules found, project build folders, and installers in Downloads, which neet clears, and the Trash, the Docker disk image, simulator runtimes, and temporary files, with how to remove each yourself. Looking never changes a file. | Done |
-| Preview | Finds everything the cleanup rules cover, with sizes, and changes nothing. | Done |
-| Review and confirm | Lists every path, then asks with the item count and total size. It cannot be skipped. | Done |
-| Move to the Trash | Moves items through Finder, so Put Back restores them. Space is freed when you empty the Trash. | Done |
-| Empty the Trash | Lists what is in the Trash, largest first, and empties it through Finder after a red question. The one thing neet deletes for good on its own screen. | Done |
-| Check before moving | Checks each item again right before it moves. Anything that changed, or whose app opened, is skipped. | Done |
-| Risk levels | Marks each rule `safe`, `caution`, or `expert`, which decides whether it starts selected. | Done |
+| Quick Clean | Overview of caches, build folders, installers, Trash, Docker, simulators, and temporary files. Open a row for its actions. | Done |
+| Preview | Shows paths and sizes without changing files. | Done |
+| Review and confirm | Lists every path, count, and size before asking. Required for every cleanup. | Done |
+| Move to the Trash | Finder moves items so Put Back can restore them. Empty Trash to free space. | Done |
+| Empty the Trash | Lists Trash items and asks before permanent deletion through Finder. | Done |
+| Check before moving | Skips changed files and files whose app opened after review. | Done |
+| Risk levels | Marks each rule safe, caution, or expert. | Done |
 | Open app check | A rule cannot be selected while its app is open. | Done |
-| Busy app advice | When app files change during the scan, Deep Clean names the apps to quit and says to press `r` to look again. Other skip reasons stay as they are. | Done |
+| Busy app advice | Names the app to quit before refreshing. Other skip reasons keep their own explanation. | Done |
 | Recent file check | A rule can skip anything changed in the last few days. | Done |
-| Your own rules | Loads extra rules from `~/.config/neet/rules/`. They can never reach outside the allowed folders, and never start selected. | Done |
-| Project build folders | Moves build folders in your code projects, `target/` beside a `Cargo.toml` and `node_modules/`, to the Trash from Quick Clean. You pick which, then review. | Done |
-| Simulators and Docker | From Quick Clean, runs `xcrun simctl` to remove the runtimes you pick with their simulators, and simulators left without a runtime, or `docker system prune --all` with the unused volumes you pick, after a red question. Permanent, not the Trash. | Done |
-| Docker space details | Shows Docker's reported estimates without promising savings. Lists running containers, their images, and Compose projects. A prune that frees no space names what is still in use. | Done |
-| Reset Docker | Stops Docker Desktop and moves its whole disk image to the Trash, after a question. Moving it back from the Trash restores it. | Done |
-| Installers in Downloads | Moves `.dmg`, `.pkg`, `.iso`, and `.xip` files in Downloads to the Trash from Quick Clean. You pick which, then review. | Done |
+| Your own rules | Loads rules from `~/.config/neet/rules/`. Fixed path limits still apply. None start selected. | Done |
+| Project build folders | Review selected `target` folders beside `Cargo.toml`, and `node_modules`, before moving to Trash. | Done |
+| Simulators and Docker | Review runtime and device removal, or Docker prune and selected unused volumes. Permanent, with a warning first. | Done |
+| Docker space details | Labels estimates and lists running containers, images, and Compose projects. Explains when prune frees no space. | Done |
+| Reset Docker | Stops Docker Desktop and moves its disk image to Trash. Restore it by hand before reopening Docker. | Done |
+| Installers in Downloads | Review selected `.dmg`, `.pkg`, `.iso`, and `.xip` files before moving to Trash. | Done |
 
 ### Risk Levels
 
@@ -99,55 +96,54 @@
 | Saved window state | `~/Library/Saved Application State` | `caution` | | 30 days |
 
 * Playwright browsers do not come back on their own. Run `npx playwright install` to get them back.
-* User logs can include old copies of your wireless networks, which macOS once wrote to `~/Library/Logs` for diagnostics. Your saved networks are kept elsewhere, in a folder neet never touches, so moving these copies does not change how your Mac connects.
+* User logs can include old wireless network reports. The saved network settings are elsewhere and stay untouched.
 
 ## Apps
 
 | Feature | What It Does | Status |
 | --- | --- | --- |
-| Remove App | Lists your apps, then shows an app with the files it keeps in your Library folder. Caches and logs start selected. Anything that may be your data, settings, or shared with other apps starts unselected. Refuses Apple's apps, and any app that is open. | Done |
+| Remove App | Review an app and its Library files. Data, settings, and shared files start unselected. Apple and open apps are refused. | Done |
 
-* What Remove App may find and remove is in [SAFETY.md](SAFETY.md#app-removal).
+What Remove App may find and remove is in [SAFETY.md](SAFETY.md#app-removal).
 
 ## Dotfiles
 
 | Feature | What It Does | Status |
 | --- | --- | --- |
-| List | Shows your settings files, such as `~/.zshrc` and `~/.gitconfig`, grouped by program, each saved, changed, or not saved, with a preview. `Enter` shows what you can do with one. | Done |
-| chezmoi status | Reads chezmoi's folder without running it, and shows whether each file matches its source file. | Done |
-| Edit | Opens a copy in your editor, then checks it, shows the diff, and writes it after a backup. With chezmoi, writes the source file, then applies it. | Done |
-| Save or use the saved version | For a file that changed since it was saved: saves this version in chezmoi, or puts chezmoi's back. | Done |
-| Add to your dotfiles | For a listed file chezmoi does not manage: shows it whole, then adds it with `chezmoi add`. | Done |
-| Backups and restore | Keeps every old version in `~/.local/state/neet/backups/dotfiles`, and restores one after showing what it changes. | Done |
-| Diff | Shows how a file differs from its source file in chezmoi, or what changed since its last backup. | Done |
-| Configure | Changes a program's settings one at a time, then reviews them like an edit. Git, tmux, Starship, kitty, Ghostty, mise, and zsh, in a block neet owns at the end of `.zshrc`; more programs to come. | Done |
-| Export | Reviews chezmoi's changed source files for secrets, refuses changes made after review, commits the ones you pick, and pushes to the reviewed branch when you press `y`. | Done |
+| List | Lists settings files by program, with status and preview. Enter shows actions. | Done |
+| chezmoi status | Compares files with saved copies without running chezmoi. | Done |
+| Edit | Edit a copy, check it, review the diff, and save with a backup. Applies the chezmoi source when allowed. | Done |
+| Save or use the saved version | Save your file in chezmoi or restore its saved copy. | Done |
+| Add to your dotfiles | Review and add a listed file to chezmoi. | Done |
+| Backups and restore | Keeps old versions under `~/.local/state/neet/backups/dotfiles`. Restore after review. | Done |
+| Diff | Compare with the chezmoi source or latest backup. | Done |
+| Configure | Review settings for Git, tmux, Starship, kitty, Ghostty, mise, and zsh. zsh edits stay in a marked block. | Done |
+| Export | Review files for secrets, commit selected files, then ask before pushing. Can start a private dotfiles repository. | Done |
 | Start a repository | Without chezmoi, writes the dotfiles you pick into a new repository in chezmoi's folder and layout, commits them, and offers to make a private GitHub repository with `gh`. | Done |
 
-* What may change, and how, is in [SAFETY.md](SAFETY.md#dotfiles). neet runs chezmoi only when its templates and hooks cannot run a program.
+What may change, and how, is in [SAFETY.md](SAFETY.md#dotfiles). neet runs chezmoi only when its templates and hooks cannot run a program.
 
 ## AI Tools
 
 | Feature | What It Does | Status |
 | --- | --- | --- |
-| Browse | Lists known Claude Code, Codex, and Gemini CLI settings, instructions, skills, and chats. Includes shared `.agents/skills` and the current project's files. Filters by tool, path, chat title, and project. Codex and Gemini filters include shared skills. | Done |
-| Read | Opens a local text preview. Chats show user and assistant messages. Credentials and databases are excluded. | Done |
-| Chat cleanup | Shows chat titles and recorded project paths. Tags missing project folders. Select chats, review ready and skipped files, then move transcripts to Trash. Results list moved, failed, and unconfirmed files. | Done |
-| Link a skill | Links a local skill folder into a tool's user skills after showing the source, destination, and instructions. Keeps scripts and references in the source folder, which must remain in place. Selects the linked skill afterward. | Done |
-| Edit and restore | Edits a copy of a user `SKILL.md`, reviews the diff, and saves with a backup. Can review and restore the latest backup. Invalid drafts stay available to repair or discard. Bundled skills stay view only. | Done |
+| Browse | Known Claude Code, Codex, and Gemini files, chats, and skills, including shared and current project files. | Done |
+| Read | Text previews and supported chat messages. Credentials and databases stay excluded. | Done |
+| Chat cleanup | Select chats by title and project, review, then move transcripts to Trash. Results show failures and unknown outcomes. | Done |
+| Link a skill | Review a local skill folder, then link it into the chosen tool. Keep the source folder in place. | Done |
+| Edit and restore | Review user skill edits and backups. Keep failed drafts for repair. Bundled skills stay view only. | Done |
 | Finder | Reveals the selected file, including hidden files. | Done |
 
-* Settings and instruction files are view only. Chat cleanup removes local transcript files only; assistant indexes, related files, and cloud history remain. Resume, archive, remote skill downloads, skill removal, and plugin catalogs are not supported.
-* Discovery checks known folders, not every project on disk. It stops at 20,000 entries and reports skipped paths. Previews stop at 512 KiB.
-* See [AI Tools safety](SAFETY.md#ai-tools) for file locations and limits.
+* Settings and instructions are view only. Chat cleanup leaves assistant indexes, related files, and cloud history. Resume, archive, skill removal, and plugin discovery are still planned.
+* Only known folders are searched. See [AI Tools safety](SAFETY.md#ai-tools) for paths and read limits.
 
 ## Startup
 
 | Feature | What It Does | Status |
 | --- | --- | --- |
-| List | Lists programs that start on their own, without admin rights: your launch agents, launch agents and daemons installed for every user, and helpers apps asked macOS to run in the background. Each shows its program, whether it runs now, whether it is turned off, and who signed it. macOS's own items are only counted. | Done |
-| Open at login | macOS shows apps that open at login only to an admin, so they are not listed. `o` opens System Settings, where they are. | Done |
-| Turn off and back on | `t` turns one of your own launch agents off, or back on, after a question, with `launchctl disable` and `enable`. The state before is saved, so it can be undone after neet closes. | Done |
+| List | Lists user agents, shared agents and daemons, and app helpers. Shows current state and signature. | Done |
+| Open at login | Open System Settings to see and change login apps. | Done |
+| Turn off and back on | Review changes to your own launch agents. Saves the old state and leaves the plist alone. | Done |
 
 * What is read, and what may change, is in [SAFETY.md](SAFETY.md#startup-items). Items installed for every user, and Apple's, stay view only.
 * If a plist changes after it was listed, neet refuses the turn action. Press `r` to look again before trying it.
@@ -157,16 +153,16 @@
 
 | Feature | What It Does | Status |
 | --- | --- | --- |
-| Home menu | Opens on a menu of every feature, Disk first. Features not built yet are marked `soon` and skipped. | Done |
+| Home menu | Disk first. Features not built yet are marked soon. | Done |
 | Help | `?` lists the keys for the current screen. | Done |
 | Command line | `neet` opens the app. The only options are `--help` and `--version`. | Done |
 | Refuse to run as root | Stops with an explanation if started with `sudo`. | Done |
-| Install | Ready made programs for Apple silicon and Intel, an install script, and `cargo install neet`. | Done |
-| Homebrew | `brew install neet`. | Proposed |
+| Install | Mac downloads, an installer, and `cargo install neet`. | Done |
+| Homebrew | A Homebrew install option. | Proposed |
 
 ## Planned Features
 
-* These features are not built yet. Each needs checking on real Macs.
+These features are not built yet. Each needs checking on real Macs.
 
 | Area | What It Would Do |
 | --- | --- |
@@ -176,34 +172,6 @@
 | Space breakdown | Explain the gap between the disk's used space and the scan. |
 | Treemap | Show folder sizes as areas. |
 | Saved preferences | Remember your choices between runs. |
-
-## Open Questions
-
-* These must be answered before the feature is built. None of them may weaken a safety rule.
-
-| Feature | Question |
-| --- | --- |
-| Mail downloads | Mail keeps attachments in its own folder. Can that folder be cleaned without losing your only copy of an attachment? |
-| System logs | Can they be cleaned without admin rights? |
-| Power and display | Which settings exist on each Mac, and does switching back a refresh rate always work? |
-| Space breakdown | Which numbers does macOS report reliably for volumes, snapshots, and purgeable space? |
-| Shell PATH | How can neet find where each folder was added, and should edits go in a block neet owns? |
-| Treemap and preferences | How should they work, and what should be saved? |
-
-## Never Planned
-
-| Feature | Why |
-| --- | --- |
-| Deleting files permanently | Everything goes to the Trash, so it can be put back. Emptying the Trash is the one exception, only when you ask, after a red question. |
-| Cleaning without a review | You always see every path first. |
-| Removing Apple's apps | macOS needs them. |
-| Deleting duplicate files automatically | Only you know which copy matters. |
-| Freeing memory | macOS already manages memory. |
-| Turning off System Integrity Protection | It protects macOS itself. |
-| Changing `nvram` | A mistake can stop the Mac from starting. |
-| Showing, creating, or deleting SSH keys | Use `ssh-keygen` for that. |
-| Syncing dotfiles on its own, or pulling and merging | neet commits and pushes only when you press `y`. Use chezmoi or Git to pull changes from another Mac. |
-| Mac settings unrelated to speed, battery, or sleep | Out of scope. |
 
 ## Terms
 
