@@ -5,9 +5,11 @@ use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 
-use super::{AiTools, Kind, Review, Viewer, format};
+use super::{AiTools, Item, Kind, Review, Viewer, ai, format, visual};
 use neet_core::ai::remove::Removal;
 use neet_core::ai::summary::Summary;
+use ratatui::style::Stylize;
+use ratatui::text::Line;
 
 type MoveResult = (PathBuf, Result<(), String>);
 
@@ -32,6 +34,28 @@ impl Cleanup {
 }
 
 impl AiTools {
+    fn chat_details(&self, item: &Item, index: usize) -> Vec<Line<'static>> {
+        let title = item
+            .chat
+            .as_ref()
+            .map_or("Untitled chat", |chat| chat.title.as_str());
+        vec![
+            Line::from(format!("{index}. {}", ai::display_text(title))).bold(),
+            Line::from(format!(
+                "{} · {}",
+                item.provider.name(),
+                format::size(item.size)
+            )),
+            Line::from(
+                item.chat
+                    .as_ref()
+                    .map_or_else(|| "Project unknown".into(), Summary::project_label),
+            ),
+            Line::from(self.shown_path(&item.path)).fg(visual::ACCENT),
+            Line::default(),
+        ]
+    }
+
     pub(super) fn review_chat_removal(&mut self) {
         let items: Vec<_> = if self.marked.is_empty() {
             self.selected()
@@ -53,39 +77,78 @@ impl AiTools {
         let mut removals = Vec::new();
         let mut details = Vec::new();
         let mut skipped = Vec::new();
+        let visible: std::collections::BTreeSet<_> = self
+            .rows()
+            .into_iter()
+            .map(|item| item.path.clone())
+            .collect();
+        let hidden = items
+            .iter()
+            .filter(|item| !visible.contains(&item.path))
+            .count();
         let mut size: u64 = 0;
         for item in items {
             match Removal::prepare(&self.locations, &item) {
                 Ok(removal) => {
-                    let title = item
-                        .chat
-                        .as_ref()
-                        .map_or("Untitled chat", |chat| chat.title.as_str());
-                    details.push(format!(
-                        "{} · {}\n{}\n{}",
-                        title,
-                        item.provider.name(),
-                        self.shown_path(&item.path),
-                        item.chat
-                            .as_ref()
-                            .map_or_else(String::new, Summary::project_label)
-                    ));
+                    details.extend(self.chat_details(&item, removals.len() + 1));
                     size = size.saturating_add(item.size);
                     removals.push(removal);
                 }
-                Err(error) => skipped.push(format!("{}: {error}", self.shown_path(&item.path))),
+                Err(error) => skipped.push((item, error.to_string())),
             }
         }
         let count = removals.len();
-        let mut text = format!(
-            "Move {count} chat files ({}) to Trash?\n\nClose the assistants first. Recently updated, open, or changed files are skipped.\nRestore files with Finder's Put Back.\n\nThis removes local transcript files only. Assistant indexes, related files, and cloud history remain.\n\ny moves the listed files. Esc cancels.\n\n{}",
-            format::size(size),
-            details.join("\n\n")
-        );
-        if !skipped.is_empty() {
-            let _ = write!(text, "\n\nSkipped before review:\n{}", skipped.join("\n"));
+        let mut viewer = Viewer::new("Review chat removal".into(), "");
+        viewer.summary = vec![
+            Line::from(if count == 0 {
+                "No chat files ready to move.".into()
+            } else {
+                format!("Move {count} chat files to Trash?")
+            })
+            .yellow()
+            .bold(),
+            Line::from(format!(
+                "{} ready · {} · {} skipped · {hidden} hidden by filters",
+                count,
+                format::size(size),
+                skipped.len()
+            )),
+            Line::from(
+                "Local transcripts only. Assistant indexes, related files, and cloud history remain.",
+            ),
+        ];
+        if count > 0 {
+            viewer
+                .lines
+                .push(Line::from("Ready to move").style(visual::HEADING));
+            viewer.lines.extend(details);
         }
-        self.viewer = Some(Viewer::new("Review chat removal".into(), &text));
+        if !skipped.is_empty() {
+            viewer
+                .lines
+                .push(Line::from("Skipped before review").yellow().bold());
+            for (index, (item, reason)) in skipped.iter().enumerate() {
+                viewer.lines.extend(self.chat_details(item, index + 1));
+                viewer
+                    .lines
+                    .push(Line::from(ai::display_text(reason)).yellow());
+                viewer.lines.push(Line::default());
+            }
+        }
+        viewer.footer = if count == 0 {
+            vec![Line::from(
+                "Nothing will be moved. Press Esc, then r to refresh the chat list.",
+            )]
+        } else {
+            vec![
+                Line::from("Close assistants first. Open, recent, or changed files are skipped."),
+                Line::from("Restore files with Finder's Put Back."),
+                Line::from("y move to Trash · n / Esc cancel")
+                    .yellow()
+                    .bold(),
+            ]
+        };
+        self.viewer = Some(viewer);
         if !removals.is_empty() {
             self.review = Some(Review::Chats(removals));
         }

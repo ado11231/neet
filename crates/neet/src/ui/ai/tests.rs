@@ -344,11 +344,40 @@ fn removal_review_includes_hidden_selections_and_escape_cancels() {
     assert!(text.contains("Move 2 chat files"), "{text}");
     assert!(text.contains("rollout-other.jsonl"), "{text}");
     assert!(text.contains("indexes, related files"), "{text}");
+    assert!(text.contains("1 hidden by filters"), "{text}");
     screen.back();
     assert!(other.exists());
     assert!(screen.cleanup.is_none());
     assert!(screen.review.is_none());
     assert_eq!(screen.marked.len(), 2);
+}
+
+#[test]
+fn removal_with_no_ready_files_offers_refresh_instead_of_confirmation() {
+    let (_dir, mut screen) = setup();
+    press(&mut screen, KeyCode::Tab);
+    finish_refresh(&mut screen);
+    let path = screen.selected().unwrap().path;
+    write(&path, "changed since the list was read");
+    press(&mut screen, KeyCode::Char('d'));
+    let text = render(&mut screen, 100, 30);
+    assert!(text.contains("No chat files ready to move"), "{text}");
+    assert!(text.contains("0 ready"), "{text}");
+    assert!(text.contains("1 skipped"), "{text}");
+    assert!(!text.contains("y move to Trash"), "{text}");
+    assert!(screen.review.is_none());
+    press(&mut screen, KeyCode::Char('y'));
+    assert!(screen.cleanup.is_none());
+    assert!(path.exists());
+    screen.back();
+    press(&mut screen, KeyCode::Char('r'));
+    finish_refresh(&mut screen);
+    press(&mut screen, KeyCode::Char('d'));
+    assert!(screen.review.is_some());
+    press(&mut screen, KeyCode::Char('n'));
+    assert!(screen.review.is_none());
+    assert!(screen.viewer.is_none());
+    assert!(path.exists());
 }
 
 #[test]

@@ -45,6 +45,8 @@ struct Viewer {
     lines: Vec<Line<'static>>,
     scroll: u16,
     source: Option<PathBuf>,
+    summary: Vec<Line<'static>>,
+    footer: Vec<Line<'static>>,
 }
 
 impl Viewer {
@@ -57,11 +59,44 @@ impl Viewer {
                 .collect(),
             scroll: 0,
             source: None,
+            summary: Vec::new(),
+            footer: Vec::new(),
         }
     }
     fn draw(&mut self, frame: &mut Frame, area: Rect) {
+        let area = if self.summary.is_empty() {
+            area
+        } else {
+            let width = area.width.saturating_sub(4);
+            let [top, body, bottom] = Layout::vertical([
+                Constraint::Length(visual::wrapped_rows(&self.summary, width) + 2),
+                Constraint::Min(3),
+                Constraint::Length(visual::wrapped_rows(&self.footer, width) + 2),
+            ])
+            .areas(area);
+            for (area, title, lines) in [
+                (top, self.title.as_str(), &self.summary),
+                (bottom, "Next", &self.footer),
+            ] {
+                frame.render_widget(
+                    Paragraph::new(lines.clone())
+                        .wrap(Wrap { trim: false })
+                        .block(
+                            visual::block()
+                                .title(format!(" {title} "))
+                                .padding(Padding::horizontal(1)),
+                        ),
+                    area,
+                );
+            }
+            body
+        };
         let block = visual::block()
-            .title(format!(" {} ", ai::display_text(&self.title)))
+            .title(if self.summary.is_empty() {
+                format!(" {} ", ai::display_text(&self.title))
+            } else {
+                " Chat files ".to_string()
+            })
             .padding(Padding::horizontal(1));
         let inner = block.inner(area);
         let max = visual::wrapped_rows(&self.lines, inner.width).saturating_sub(inner.height);
@@ -773,6 +808,9 @@ impl Screen for AiTools {
                 KeyCode::Home => viewer.scroll = 0,
                 KeyCode::End => viewer.scroll = u16::MAX,
                 KeyCode::Char('y') => self.apply_review(),
+                KeyCode::Char('n') if matches!(self.review, Some(Review::Chats(_))) => {
+                    self.back();
+                }
                 KeyCode::Char('o') if viewer.source.is_some() => self.reveal(),
                 _ => {}
             }
@@ -883,6 +921,8 @@ impl Screen for AiTools {
             "Enter review · Tab tool · Esc cancel"
         } else if self.editing.is_some() {
             "e reopen draft · ↑↓ scroll · Esc discard · ? help"
+        } else if matches!(self.review, Some(Review::Chats(_))) {
+            "↑↓ scroll · PgUp/PgDn page · y move to Trash · n / Esc cancel"
         } else if self.review.is_some() {
             "↑↓ scroll · PgUp/PgDn page · y confirm · Esc cancel · ? help"
         } else if self
