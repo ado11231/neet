@@ -149,6 +149,7 @@
 
 * What is read, and what may change, is in [SAFETY.md](SAFETY.md#startup-items). Items installed for every user, and Apple's, stay view only.
 * If a plist changes after it was listed, neet refuses the turn action. Press `r` to look again before trying it.
+* If a turn action only partly finishes, the result says what changed and what failed. Saved attempts stay separate from completed changes.
 
 ## The Program
 

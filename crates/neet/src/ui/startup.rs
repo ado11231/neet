@@ -504,9 +504,15 @@ impl Startup {
                 Turn::Off => "off",
                 Turn::On => "back on",
             };
+            let (label, result) = match saved.status {
+                Status::NotChanged => ("Attempt", "nothing changed"),
+                Status::Unknown => ("Attempt", "result not confirmed"),
+                Status::Partial => ("Attempt", "only part finished"),
+                Status::Complete => ("Changed", "finished"),
+            };
             lines.push(field(
-                "Changed",
-                Span::raw(format!("neet turned it {turned} on {day}")),
+                label,
+                Span::raw(format!("Turn {turned} on {day}: {result}")),
             ));
         }
         lines.push(Line::default());
@@ -585,13 +591,13 @@ impl Startup {
             .filter(|item| item.off)
             .filter_map(|item| {
                 let saved = self.saved.get(item.label.as_deref()?)?;
-                (saved.turned == Turn::Off)
+                (saved.turned == Turn::Off && saved.status == Status::Complete)
                     .then(|| (item.name.as_str(), saved.at.get(..10).unwrap_or(&saved.at)))
             })
             .collect();
         off.sort_unstable();
         if off.is_empty() {
-            lines.push(Line::from("neet has not turned anything off."));
+            lines.push(Line::from("No completed turn off actions are recorded."));
         } else {
             lines.push(Line::from("Turned off by neet, t turns each back on:"));
             for (name, day) in off {
@@ -1063,6 +1069,46 @@ mod tests {
             KeyEvent::new(code, ratatui::crossterm::event::KeyModifiers::NONE),
             &context,
         );
+    }
+
+    #[test]
+    fn saved_attempts_are_distinct_from_completed_changes() {
+        let mut listing = sample();
+        listing.items[1].off = true;
+        let item = listing.items[1].clone();
+        let mut screen = Startup::from_listing(PathBuf::from("/home"), listing);
+        for (status, expected) in [
+            (Status::NotChanged, "nothing changed"),
+            (Status::Unknown, "result not confirmed"),
+            (Status::Partial, "only part finished"),
+            (Status::Complete, "finished"),
+        ] {
+            screen.saved.insert(
+                item.name.clone(),
+                Saved {
+                    label: item.name.clone(),
+                    plist: item.file.clone(),
+                    was_off: false,
+                    was_loaded: true,
+                    turned: Turn::Off,
+                    status,
+                    at: "2026-10-13".into(),
+                },
+            );
+            let details = screen
+                .details(&item, 100)
+                .iter()
+                .map(Line::to_string)
+                .collect::<String>();
+            assert!(details.contains(expected), "{details}");
+            assert_eq!(details.contains("Attempt"), status != Status::Complete);
+            let summary = screen
+                .turning()
+                .iter()
+                .map(Line::to_string)
+                .collect::<String>();
+            assert_eq!(summary.contains(&item.name), status == Status::Complete);
+        }
     }
 
     #[test]

@@ -55,7 +55,7 @@ impl std::fmt::Display for Failure {
 
 impl std::error::Error for Failure {}
 
-/// The state before neet turned an item, saved in
+/// The state before a turn attempt and its result, saved in
 /// `~/.local/state/neet/startup/<label>.json`
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Saved {
@@ -63,8 +63,11 @@ pub struct Saved {
     pub plist: PathBuf,
     pub was_off: bool,
     pub was_loaded: bool,
-    /// Which way neet turned it
+    /// Which way neet tried to turn it
     pub turned: Turn,
+    /// Old records and interrupted attempts have an unknown result.
+    #[serde(default)]
+    pub status: Status,
     /// When, in UTC, such as `2026-10-08T16-30-12.123Z`
     pub at: String,
 }
@@ -204,10 +207,23 @@ impl Asked {
                 .to_string()
                 .into());
         }
-        self.save(home, now).map_err(|error| {
+        self.save(home, now, Status::Unknown).map_err(|error| {
             format!("The state before could not be saved: {error}. Nothing was run.")
         })?;
-        self.run_commands(uid, launchctl)
+        let result = self.run_commands(uid, launchctl);
+        let status = result
+            .as_ref()
+            .map_or_else(|error| error.status, |()| Status::Complete);
+        self.save(home, now, status).map_err(|error| Failure {
+            status,
+            reason: format!(
+                "{} The result could not be saved: {error}. The state before is still saved.",
+                result
+                    .as_ref()
+                    .map_or_else(|error| error.reason.as_str(), |()| "The change finished.")
+            ),
+        })?;
+        result
     }
 
     fn run_commands(
@@ -278,7 +294,7 @@ impl Asked {
 
     /// Writes the state before, through a copy, so a half written file is
     /// never left
-    fn save(&self, home: &Path, now: SystemTime) -> std::io::Result<()> {
+    fn save(&self, home: &Path, now: SystemTime, status: Status) -> std::io::Result<()> {
         let folder = folder(home);
         fs::create_dir_all(&folder)?;
         let saved = Saved {
@@ -287,6 +303,7 @@ impl Asked {
             was_off: self.was_off,
             was_loaded: self.was_loaded,
             turned: self.turn,
+            status,
             at: crate::rewrite::stamp(now),
         };
         let text = serde_json::to_string_pretty(&saved).map_err(std::io::Error::other)?;
@@ -367,6 +384,92 @@ mod tests {
             },
         );
         (result, ran.into_inner())
+    }
+
+    #[test]
+    fn saves_each_result_with_the_state_before() {
+        let (_dir, home, mut item) = setup();
+        for off in [false, true] {
+            item.off = off;
+            let asked = ask(&item, &home).unwrap();
+            for (failure, status) in [
+                (1, Status::NotChanged),
+                (2, Status::Partial),
+                (4, Status::Unknown),
+                (0, Status::Complete),
+            ] {
+                let mut calls = 0;
+                let result = asked.apply_with(
+                    &home,
+                    501,
+                    SystemTime::now(),
+                    &|_| item.label.clone(),
+                    &mut |_| {
+                        calls += 1;
+                        assert_eq!(saved(&home, &asked.label).unwrap().status, Status::Unknown);
+                        if failure == 4 {
+                            return Err("timed out".to_string());
+                        }
+                        Ok(if calls == failure || calls == 3 {
+                            failed("denied")
+                        } else {
+                            ok()
+                        })
+                    },
+                );
+                assert_eq!(result.is_ok(), status == Status::Complete);
+                let saved = saved(&home, &asked.label).unwrap();
+                assert_eq!(saved.status, status);
+                assert_eq!(saved.was_off, off);
+                assert!(saved.was_loaded);
+                assert_eq!(saved.plist, item.file);
+                assert_eq!(saved.turned, asked.turn);
+            }
+        }
+    }
+
+    #[test]
+    fn a_failed_result_save_keeps_the_state_before() {
+        let (_dir, home, item) = setup();
+        let asked = ask(&item, &home).unwrap();
+        let error = asked
+            .apply_with(
+                &home,
+                501,
+                SystemTime::now(),
+                &|_| item.label.clone(),
+                &mut |args| {
+                    if args[0] == "disable" {
+                        fs::create_dir(folder(&home).join(".com.google.wake.json.new")).unwrap();
+                    }
+                    Ok(ok())
+                },
+            )
+            .unwrap_err();
+        assert_eq!(error.status, Status::Complete);
+        assert!(error.reason.contains("The change finished"));
+        assert!(error.reason.contains("result could not be saved"));
+        let saved = saved(&home, &asked.label).unwrap();
+        assert_eq!(saved.status, Status::Unknown);
+        assert!(!saved.was_off);
+        assert!(saved.was_loaded);
+        assert_eq!(saved.plist, item.file);
+    }
+
+    #[test]
+    fn old_saved_records_do_not_claim_a_completed_change() {
+        let (_dir, home, item) = setup();
+        let asked = ask(&item, &home).unwrap();
+        assert!(run(&asked, &home, |_| ok()).0.is_ok());
+        let path = folder(&home).join("com.google.wake.json");
+        let mut record: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        record.as_object_mut().unwrap().remove("status");
+        fs::write(path, serde_json::to_vec(&record).unwrap()).unwrap();
+        let saved = saved(&home, &asked.label).unwrap();
+        assert_eq!(saved.status, Status::Unknown);
+        assert_eq!(saved.plist, item.file);
+        assert!(saved.was_loaded);
     }
 
     #[test]

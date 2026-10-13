@@ -431,6 +431,8 @@ min_age_days = 0
 * `disable` and `enable` are what keep the change after a restart. macOS keeps them in its own list, outside the plist.
 * Turning off something that was not loaded is not an error, and neither is turning on something that is already loaded.
 * Before any command runs, the state before is saved in `~/.local/state/neet/startup/<label>.json`: the plist, whether it was turned off, and whether it was loaded. It stays after neet closes, so you can always turn it back the way it was.
+* The saved record starts with an unknown result. After the commands, it records whether nothing changed, only part finished, or the turn finished. Older records also show an unknown result.
+* If only `disable` or `enable` succeeds, the result says the setting for future logins changed and names the command that failed. A failed state lookup leaves the current state unknown.
 * The plist is never changed, moved, or removed. Nothing here uses `sudo`, and no command may show a prompt.
 * neet refuses, and runs nothing, when:
   1. The item is not in `~/Library/LaunchAgents`, has no label, its label starts with `com.apple.`, or its label has a `/` in it.
