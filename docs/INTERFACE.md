@@ -181,41 +181,10 @@
 
 ## Large Files
 
-```text
-+ Filters --------------------------------------------------------------+  + Docker.raw -------------------------------------+
-| Size       10 MB   50 MB  [100 MB]  500 MB   1 GB   5 GB  s changes size |  | Folder    ~/Library/.../com.docker.docker        |
-| Unchanged  [any age]  30 days  3 months  6 months  1 year  a changes age |  | Size      11.0 GB                                |
-+-----------------------------------------------------------------------+  | Share     59% of the files found                 |
-+ Large Files ----------------------------------------------------------+  | Changed   28 days ago                            |
-|        Size            Last changed   Name          Folder           |  | Type      Virtual disk                           |
-| >   11.0 GB  ########  28 days ago    Docker.raw    ~/Library/...    |  |                                                  |
-|      4.3 GB  ###.....   2 months ago  weights.bin   ~/Library/...    |  | Used by a virtual machine or Docker. Free it     |
-|      3.1 GB  ##......   6 months ago  Xcode_16.dmg  ~/Downloads      |  | from the app that made it.                       |
-|                                                                      |  +------------------------- Enter shows it in Disk +
-|                                                                      |  + Total -------------------------------------------+
-|                                                                      |  | Found     18.4 GB . 3 files                      |
-|                                                                      |  | Showing   100 MB or more, any age                |
-|                                                                      |  +--------------------------------------------------+
-|                                                                      |  + Location ----------------------------------------+
-|                                                                      |  |   11.0 GB  ##########  ~/Library/Containers      |
-|                                                                      |  |    3.1 GB  ###.......  ~/Downloads               |
-|                                                                      |  +--------------------------------------------------+
-|                                                                      |  + Types -------------------------------------------+
-|                                                                      |  |   11.0 GB  ##########  Virtual disk       1 file |
-+ Found 3 files . 18.4 GB ---------------------------------------------+  +--------------------------------------------------+
-```
-
-* Large Files only shows files. Nothing is moved from here: `Enter` shows the file in Disk.
-* **Filters, top:** both filters, with every choice listed and the current one green in brackets, and the key that changes each lined up on the right. When the box is too narrow for every choice, it shows only the current ones. Starts at 100 MB and any age.
-* **Large Files:** a table of files from the scan, with no gap under its header. Folders are not listed.
-  1. Its size, and a bar of it against the largest file, both red from 5 GB and yellow from 1 GB.
-  2. When it last changed, such as ` 3 days ago`. The number is right aligned, so the ones line up with the ones of `39 days ago` and every unit starts in the same place. Files unchanged for a year or more have a magenta date.
-  3. Its name and folder. The name column is only as wide as the longest name, up to 40 columns, and the folder gets the rest. A long name is shortened in the middle, so its extension shows. A long folder keeps its start, such as `~/Library`, and its last folders.
-  4. The bottom edge reads `Found N files · size`. Up to 1,000 are listed, and the edge says when only the largest are shown.
-  5. When no file matches, the box says so in the middle, with the keys to widen the filters.
-* **Right, from 120 columns,** in small boxes as on the other screens: the selected file, titled with its name: its folder in blue, size, share of the files found, when it changed, its type from the extension, and a plain hint for common types, such as installers, archives, videos, program code, caches, and virtual disks. Then **Total**: everything found, and the filters in words. Then **Location**: the files added up by folder, largest first, with `~/Library` split one level further, since most large files are there. Under it, when there is room, **Types**: the files added up by type, with how many of each. Files of no known type count as **Other**. Bars are 10 wide with two spaces around them, and labels share one width, as on the other screens.
-* Below 120 columns, a box titled with the file's name sits below the file table when at least 18 rows are available: its folder, its size, and when it changed and its type.
-* Until the scan finishes, the screen shows the loading box.
+* Lists files from the scan by size and when they last changed.
+* Starts at 100 MB and any age. Lists up to 1,000 files and says when more exist.
+* Details show the selected file, totals by folder, and file types.
+* This screen is view only. `Enter` shows the file in Disk.
 
 | Key | Action |
 | --- | --- |
@@ -227,54 +196,11 @@
 
 ## Remove App
 
-```text
-+ Remove App --------------------------------------------------------------------------------+
-|   Name             Size                Folder          App ID                               |
-| > Discord      500.4 MB  ##..........  /Applications   com.hnc.Discord                      |
-|   Docker         2.6 GB  #######.....  /Applications   com.docker.docker                    |
-|   Slingshot    585.7 KB  ............  ~/Applications  dev.slingshot.menubar                |
-|   Xcode [blocked] 4.3 GB               /Applications   blocked: part of macOS               |
-+ 15 apps can be removed . 9.1 GB --------------------------- By name . s sorts by size +
-+ Discord -------------------------------------++ Total -------------------------------------+
-| Location  /Applications/Discord.app          || Apps      16                               |
-| Size      500.4 MB                           || Removable 15                               |
-| App ID    com.hnc.Discord                    || Blocked   1                                |
-| Status    can be removed                     || Size      9.1 GB                           |
-|                                              |+--------------------------------------------+
-| Press Enter to see the app & the files ...   |+ Folders -----------------------------------+
-+----------------------------------------------+| /Applications   14 apps, for every user    |
-+ Largest -------------------------------------+| ~/Applications  2 apps, only yours         |
-|    2.6 GB  ##########  Docker                 |+--------------------------------------------+
-|  500.4 MB  ##........  Discord                |+ Steps -------------------------------------+
-|                                              || 1. Press Enter on an app to see its files. |
-+----------------------------------------------++--------------------------------------------+
-
-+ Discord ----------------------------------------------------------------- Goes to the Trash +
-|   ✓         Size  Name                   Folder                          Kind              |
-| > [✓]   500.4 MB  Discord.app            /Applications                   the app           |
-|   [✓]     1.1 MB  com.hnc.Discord        ~/Library/Caches                made again        |
-|   [ ]     4.1 KB  com.hnc.Discord.plist  ~/Library/Preferences           settings          |
-|   [ ]     1.1 GB  discord                ~/Library/Application Support   matched by name   |
-+ Selected . 2 items . 501.5 MB -----------------------------------------------------------+
-+ Discord.app ---------------------------------++ Total -------------------------------------+
-| Folder    /Applications                      || Found     1.6 GB . 6 items                 |
-| Size      500.4 MB                           || Selected  501.5 MB . 2 items               |
-| Kind      the app                            || App ID    com.hnc.Discord                  |
-| Selected  yes                                |+--------------------------------------------+
-|                                              |+ Steps / After cleanup ...                  |
-| The app itself.                              ||                                            |
-+----------------------------------------------++--------------------------------------------+
-```
-
-* **App list:** a table of each app in `/Applications` and `~/Applications`, with its name, its size, a bar of its size against the largest app, its folder, and its app ID (the name macOS uses to identify it). Apps neet can remove come first. Apps it will not remove are listed after them, marked `[blocked]`, with the reason in plain words in yellow: `part of macOS`, `a shortcut to another app`, or `neet can't tell which app it is`.
-* **Colors:** sizes and bars are red from 5 GB and yellow from 1 GB, and bars are green below that. `/Applications` and app IDs use moonlight blue; `~/Applications` is magenta.
-* Sizes are measured in the background from the moment neet starts, four apps at a time, and kept while neet runs, so the screen usually opens with every size and bar. An app not measured yet shows `…`. Press `s` to list the largest first, and again to go back to names.
-* The table is only as tall as its rows, with no gap under its header. The bottom edge shows how many apps can be removed and how much space they take, with the sort order or a note on the top edge.
-* **Below the app list,** in small boxes as in Quick Clean, side by side from 100 columns: the app the arrow is on (Location, Size, App ID, and Status: can be removed, open, or blocked, with what to do next), **Largest**, the ten largest apps with bars; then **Total** (apps, removable, blocked, size), **Folders** (what each Applications folder holds, in the list's colors), and **Steps**. On a screen too short for the boxes, a Selected box under the list keeps the path and app ID instead.
-* **App files:** opening an app finds and measures its files, with the loading box and a timer. Then a table, only as tall as its rows, lists the app and each file, with a checkbox under a blue `✓` header, size, name, folder, and its kind: `the app`, `made again` in green, or one to check first in yellow, such as `may be your data`.
-* **Below the file list:** the file the arrow is on (Folder, Size, Kind, Selected, and a plain sentence on why it starts selected or not), **Overview**, every file's size with a bar, green when selected; then **Total** (found, selected, app ID), **Steps**, and **After cleanup**, the disk now and after.
-* The bottom edge shows the selected total, in green once something is selected.
-* What is found, and what starts selected, is in [SAFETY.md](SAFETY.md#app-removal).
+* Lists apps in `/Applications` and `~/Applications`, with sizes and blocked reasons.
+* Sizes load in the background and stay available while neet runs.
+* Open an app to see its files. Caches start selected; personal data and settings do not.
+* An open app must be quit first. Apple apps and app links are refused.
+* Review selected files before moving them to Trash. See [App Removal](SAFETY.md#app-removal).
 
 | Key | Action |
 | --- | --- |
@@ -283,40 +209,14 @@
 | `Space` | On the file list, select or clear a file. |
 | `s` | On the app list, sort by size or by name. |
 
-* An app that is open cannot be opened here. The note says to quit it first.
-
 ## Startup
 
-```text
- Startup ------------------------------------------------------------ 15 items . 6 running
-+ Programs -------------------------------++ DockerHelper ----------------------------------+
-|   Allowed in the background             || Kind     a helper inside an app               |
-| >   DockerHelper        o waiting       || App      Docker                               |
-|     com.ollama.ollama   o waiting       || Label    com.docker.helper                    |
-|   Your launch agents                    || Helper   /Applications/.../DockerHelper.app   |
-|     com.google.Goog...  o waiting       || Signed   Docker Inc                           |
-|     com.google.keyst... . not loaded !  || Starts   when you log in                      |
-|   Launch daemons                        || Now      waiting, and starts when it is needed|
-|     com.docker.vmnetd   * running       ||                                               |
-+-----------------------------------------+| View only. Press o to turn it off in System   |
-+ Legend ---------------------------------+| Settings, under Allow in the Background.      |
-| * running     running now               |+-----------------------------------------------+
-| o waiting     starts when it is needed  |+ Open at login --------------------------------+
-| . not loaded  not running               || macOS shows apps that open at login only to   |
-| off           turned off                || an admin, so they are not listed here.        |
-| !             something is wrong        || o opens them in System Settings.              |
-+-----------------------------------------++-----------------------------------------------+
-```
-
-* Startup opens with a loading box while it reads, about a second, then lists every program that starts on its own, grouped by kind: **Allowed in the background** (helpers inside apps that the app asked macOS to run), **Your launch agents**, **Launch agents for every user**, and **Launch daemons**. Its read and change rules are in [SAFETY.md](SAFETY.md#startup-items).
-* Each row shows the name and whether it runs: **● running** in green, **○ waiting** in blue for one launchd starts when needed, **· not loaded**, or **off** in yellow when it is turned off. A yellow **!** means something is wrong with it, such as an empty plist or a missing program.
-* The top line counts the items, how many run, and how many are turned off.
-* The box beside the list shows the selected item: its kind, app, label, program, plist or helper, who signed it, when it starts, and what it is doing now, then any problem and whether `t` can turn it off or back on.
-* Below it, **Open at login** says those apps are not listed, since macOS shows them only to an admin, and how many items belong to macOS and are only counted. **By kind** counts each kind, and how many of each run.
-* Under 96 columns, the selected item shows under the list.
-* `t` reviews turning one of your own launch agents off or back on. The question names the item and action. `y` confirms; `n` or `Esc` cancels. Other items stay view only.
-* A failed turn shows **Not changed**, **Partly changed**, or **Change not confirmed**, with the reason. If the turn finished but its result could not be saved, it shows **Changed** with the save error.
-* Saved history shows **Attempt** for failed, partial, or unknown results, and **Changed** for completed turns. Only completed turns appear under **Turned off by neet**.
+* Groups startup items by kind and shows whether each is running, waiting, not loaded, or off.
+* Details show the program, source file, signature, and any problem.
+* `t` reviews turning your own launch agent off or back on. `y` confirms; `n` or `Esc` cancels.
+* Other items stay view only. Apps that open at login are reached through System Settings.
+* Results say whether nothing changed, part changed, or the change could not be confirmed.
+* Saved history separates attempts from completed changes. See [Startup safety](SAFETY.md#startup-items).
 
 | Key | Action |
 | --- | --- |
@@ -327,44 +227,12 @@
 
 ## Dotfiles
 
-```text
- Dotfiles ----------------------------------------------------------------- 4 saved . 1 changed . 1 not saved
-+ Files -----------------------------------------------------++ .gitconfig ----------------------------------+
-|   Shell                                                    || Path     ~/.gitconfig                        |
-|     .zshrc           ✓ saved                               || Saved as dot_gitconfig                       |
-|     .zprofile        ✓ saved                               || Changed  today                               |
-|   Git                                                      || Backups  0                                   |
-| >   .gitconfig       ! changed                             ||                                              |
-|   SSH                                                      || ! Changed since it was saved. Enter saves    |
-|     .ssh/config      . view only                           || this version or uses the saved one.          |
-|   Terminal                                                 |+----------------------------------------------+
-|     .tmux.conf       + not saved                           |+ Preview -------------------------------------+
-|     starship.toml    ✓ saved                               || [user]                                       |
-|   Tools                              + .gitconfig ------------------+ = Home Version                      |
-|     .npmrc           ✓ saved . secret| > Save my version        r   |                                     |
-+--------------------------------------|   Use the saved version  p   |                                     |
-+ Your dotfiles -----------------------|   Show the changes       d   |                                     |
-| Repo     you/dotfiles . main         +------------------------------+                                     |
-| Export   nothing waiting                                   ||                                              |
-| Push     up to date                                        ||                                              |
-| Folder   ~/.local/share/chezmoi                            ||                                              |
-+------------------------------------------------------------++----------------------------------------------+
-```
-
-* What may change, and how, is in [SAFETY.md](SAFETY.md#dotfiles).
-* "Saved" means saved in your dotfiles: chezmoi keeps a copy of the file, its source file, in a Git repository.
-* **Top line:** how many files are saved, changed, and not saved. It says so when chezmoi is not found.
-* **Files:** the listed files that exist, grouped by shell, Git, SSH, editors, terminal, and tools. `.` shows the missing ones too. Files in `~/.config` are shown without it. Each has a status:
-  1. **✓ saved** in green: it matches its saved copy.
-  2. **! changed** in yellow: it differs from its saved copy.
-  3. **\+ not saved** in blue: chezmoi has no copy of it yet.
-  4. **· view only** in yellow, with the reason in the details, **· left out** when `.chezmoiignore` names it, and **· not on this Mac**.
-  5. **secret** in red after the status: it may hold a token, so its preview is hidden and it starts left out of exports.
-* **Your dotfiles**, below the list down to the bottom, when there is room. First: the repository and branch, whether files wait to be exported or pushed, and chezmoi's folder, and why neet will not run chezmoi when it will not. Then **Legend**, for the marks the list shows. Then **Backups**, how many neet keeps of the listed files, the newest, and where they are. Like Quick Clean, each is its own box. When room is short, Backups goes first, then the legend.
-* **The list** is 45% of the width, between 48 and 64 columns, so its rows are never mostly empty.
-* **Right, from 96 columns,** taking the rest of the width: the selected file: its path, where a link leads, its saved copy, when it changed, and how many backups it has. Below, what its status means and what to do. Under that, the start of the file. A file that may hold a token never shows its preview.
-* Below 96 columns, the details sit under the list, and the preview is hidden.
-* **`Enter`** opens a small menu of only what can be done with the selected file, each with its key. A file that changed offers **Save my version**, **Use the saved version**, and **Show the changes**. One that is saved offers **Edit**, and **Configure** for Git, tmux, Starship, kitty, Ghostty, mise, and `.zshrc` files. One that is not saved also offers **Add to your dotfiles**. The keys also work straight from the list.
+* Lists known settings files, grouped by program, with a preview and backups.
+* A file can be saved, changed, not saved, view only, ignored, or missing.
+* Saved means it matches chezmoi's copy. Files marked secret hide their preview and start left out of exports.
+* `Enter` shows the actions for the selected file. Action keys also work from the list.
+* If a file changed, save it or use the saved version before editing.
+* See [file limits and checks](SAFETY.md#dotfiles).
 
 | Key | Action |
 | --- | --- |
