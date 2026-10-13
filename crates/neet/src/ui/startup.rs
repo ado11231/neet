@@ -8,7 +8,7 @@ use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::Instant;
 
-use neet_core::startup::turn::{self, Asked, Saved, Turn};
+use neet_core::startup::turn::{self, Asked, Failure, Saved, Status, Turn};
 use neet_core::startup::{self, Item, Kind, Listing, Runs, Signed};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
@@ -61,6 +61,21 @@ struct Note {
     title: &'static str,
     lines: Vec<Line<'static>>,
     color: Color,
+}
+
+impl Note {
+    fn failure(error: Failure) -> Self {
+        Self {
+            title: match error.status {
+                Status::NotChanged => "Not changed",
+                Status::Unknown => "Change not confirmed",
+                Status::Partial => "Partly changed",
+                Status::Complete => "Changed",
+            },
+            lines: vec![Line::from(error.reason).red()],
+            color: Color::Red,
+        }
+    }
 }
 
 /// Lists programs that start on their own, and turns your own launch agents
@@ -215,14 +230,7 @@ impl Startup {
                 ],
                 color: Color::Green,
             },
-            Err(reason) => Note {
-                title: "Not changed",
-                lines: vec![Line::from(vec![
-                    Span::raw("✗ ").red().bold(),
-                    Span::raw(reason).red(),
-                ])],
-                color: Color::Red,
-            },
+            Err(error) => Note::failure(error),
         });
         self.reselect = Some(asked.plist.clone());
         self.look();
@@ -1055,6 +1063,28 @@ mod tests {
             KeyEvent::new(code, ratatui::crossterm::event::KeyModifiers::NONE),
             &context,
         );
+    }
+
+    #[test]
+    fn failure_titles_match_what_changed() {
+        for (status, title) in [
+            (Status::NotChanged, "Not changed"),
+            (Status::Unknown, "Change not confirmed"),
+            (Status::Partial, "Partly changed"),
+            (Status::Complete, "Changed"),
+        ] {
+            let mut screen = Startup::from_listing(PathBuf::from("/home"), sample());
+            screen.note = Some(Note::failure(Failure {
+                status,
+                reason: "launchctl could not finish".to_string(),
+            }));
+            let text = render(&mut screen, 100, 30);
+            assert!(text.contains(title), "{text}");
+            assert!(text.contains("launchctl could not finish"), "{text}");
+            if status != Status::NotChanged {
+                assert!(!text.contains("Not changed"), "{text}");
+            }
+        }
     }
 
     #[test]
