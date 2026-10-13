@@ -1,101 +1,85 @@
 # Roadmap
 
-* What is done, what comes next, and when each step counts as finished.
-* For anyone tracking progress or picking the next piece of work.
-* A milestone is only marked done after its checks pass.
+* Finished work and passed checks.
+* Remaining features, bugs, and tests.
 
 ## Contents
 
-1. [Overview](#overview)
-2. [Done](#done)
-3. [Next](#next)
-4. [Later](#later)
+* [Overview](#overview)
+* [Done](#done)
+* [Next](#next)
+* [Later](#later)
 
 ## Overview
 
-| # | Milestone | Status |
-| --- | --- | --- |
-| 1 | Foundation | Done |
-| 2 | Scanner | Done |
-| 3 | Home And Disk | Done |
-| 4 | Cleanup Rules | Done |
-| 5 | Cleanup | Done |
-| 6 | Large Files And Remove App | Done |
-| 7 | First Release | Done |
-| 8 | Clarity Pass | Next |
-| 9 | Later Features | Later |
+* The app is published as v0.1.0 on crates.io and GitHub Releases.
+* Newer work on `master` will ship in the next release.
+* [Issues](https://github.com/ado11231/neet/issues) track only remaining work and bugs.
+* A feature is done only when its checks pass.
 
 ## Done
 
-### 1. Foundation
+### Foundation
 
-* A Rust workspace with the `neet` program and the `neet-core` library.
-* MIT and Apache 2.0 licenses.
-* CI for formatting, Clippy, tests, the minimum Rust version, and builds for Apple silicon and Intel.
-* Branches, pull requests, a protected `master`, Dependabot, and release-plz.
+* Rust app and library, with MIT and Apache 2.0 licenses.
+* CI checks formatting, Clippy, tests, Rust 1.88, and both Mac builds.
+* Releases provide crates, Mac downloads, checksums, and an installer.
 
-### 2. Scanner
+### Scanner
 
-* Scans the home folder on several threads, without following links or entering other disks.
-* Measures the real space each file takes, and counts a file with several names once.
-* Records folders it could not read, and marks the scan incomplete.
-* **Checked:** tests cover links, empty parts of files, nested and unreadable folders, and another disk. A real home folder of 1.4 million items scans in 17 to 19 seconds.
+* Background home scan, real disk sizes, and skipped path reports.
+* Tests cover links, unreadable folders, shared file names, and other disks.
+* A 1.4 million item home scan took 17 to 19 seconds.
 
-### 3. Home And Disk
+### Home And Disk
 
-* The Home menu, with the art, a disk gauge, and scan progress.
-* The Disk browser, with sizes, share bars, a preview, and sorting.
-* The Skipped screen, with Full Disk Access help.
-* `?` help, `Esc`, and `q` on every screen. `--help` and `--version`.
-* **Checked:** the screen keeps responding during a scan, and marks an incomplete scan.
+* Home menu, disk totals, folder browser, and Full Disk Access help.
+* Finder's free space is explained separately from the scan.
 
-### 4. Cleanup Rules
+### Cleanup Rules
 
-* The path check, the allowed folders, and the protected folders.
-* The rule format, 14 built in rules, and your own rules.
-* A preview of what each rule finds, with sizes and recent file checks.
-* The Clean screen.
-* **Checked:** every built in rule loads and finds only allowed items, without changing a file.
+* Built in and user rules with fixed path limits and risk levels.
+* Rules preview paths and explain skipped files without changing anything.
 
-### 5. Cleanup
+### Cleanup
 
-* Review, confirm, and move to the Trash through Finder.
-* A check of every item right before it moves: same file, app closed, not changed recently.
-* Quick Clean lists project build folders and installers, then moves only the ones you pick after review.
-* Typed confirmation for `expert` rules, and no selecting a rule while its app is open.
-* `d` to clean one item from Disk.
-* What Clean can free, on Home.
-* **Checked:** the cleanup tests pass, and on macOS 26.5 a test item moved to the Trash and came back with Put Back. That run found two bugs in the Finder step, both fixed.
+* Review, confirmation, checks before moving, Trash, and results.
+* Build folders and installers can be selected in Quick Clean.
+* Docker and simulator tools ask before permanent removal.
+* Trash can be emptied after a separate warning.
 
-### 6. Large Files And Remove App
+### Large Files And Remove App
 
-* Done before the first release.
-* The scan records when each file last changed.
-* Large Files, with size and age filters.
-* The App Removal rules in [SAFETY.md](SAFETY.md#app-removal), and their own path check.
-* Remove App, using the same review and move as Clean.
-* **Checked:**
-  1. The filters use the existing scan, and take about 4 ms on 1.4 million items.
-  2. Anything that may be your data, settings, or shared starts unselected.
-  3. Apple's apps, links, and open apps are refused.
-  4. An app owned by root, RunCat, moved to the Trash and came back with Put Back.
+* Size and age filters, cached app sizes, and reviewed app removal.
+* App data and settings start unselected. Apple apps, links, and open apps are refused.
 
-### 7. First Release
+### First Release
 
-* Published as v0.1.0, on crates.io and as a GitHub release.
-* neet refuses to run as root, and explains why.
-* dist builds ready made programs for Apple silicon and Intel on each release, with an install script.
-* The README explains how to install neet and turn on Full Disk Access.
-* release-plz publishes to crates.io when its release pull request is merged.
-* Homebrew is left for later. It needs its own tap repository until neet is known enough for Homebrew's main list.
-* **Checked** on Apple silicon with macOS 26.5:
-  1. The scan matches `du` to within 0.0003% over 115.65 GB, and the disk gauge matches `diskutil`.
-  2. With Full Disk Access off, Home says macOS blocked 147 paths and shows the home folder as at least 105.0 GB. Skipped names the terminal and lists the steps.
-  3. All 63 items and 189 skips the built in rules found were read. One question moved to the Clarity Pass: user logs offers a file of wireless networks.
-  4. Put Back passed in milestone 5.
-  5. Clean, Disk, and Remove App all list every path in the review and ask before anything moves. `n` and `Esc` go back, and `d` refuses items outside the cleanup folders with a reason.
-  6. The install script, `cargo install neet`, and the Intel download were tried from the published release.
-* **Intel:** there is no Intel Mac to test on. CI runs every test as Intel code under Rosetta, and the Intel release build starts and opens Home under Rosetta. Rosetta is not a real Intel Mac, so a report from an Intel user is welcome.
+* The installer, `cargo install neet`, and Intel download were checked.
+* On Apple silicon with macOS 26.5, scan size matched `du` within 0.0003% over 115.65 GB.
+* Full Disk Access refusals, cleanup reviews, and cancellation were checked by hand.
+* Trash and Put Back passed for a test file and an app owned by root.
+* Intel builds and tests passed under Rosetta. A real Intel Mac check remains in [#122](https://github.com/ado11231/neet/issues/122).
+
+### Dotfiles
+
+* Edit, save, apply, add, configure, backup, restore, and export are built.
+* Tests reject changed review files, links, hooks, and push destinations.
+* Every action passed by hand on real dotfiles and in temporary folders with chezmoi 2.72.2.
+
+### Startup And AI Tools
+
+* Startup lists items and turns user launch agents off and back on.
+* Changed plists are refused. Partial changes and failed checks stay visible.
+* AI Tools browses files and chats, reviews transcript cleanup, and manages local skill links and edits.
+* Tests cover file checks, backups, failed cleanup, draft recovery, and narrow screens.
+
+### Clarity Pass
+
+* Screens use short labels, shared styles, and visible cleanup warnings.
+* Busy app advice names the app to quit before refreshing.
+* Chat cleanup keeps totals and actions visible while scrolling.
+* Docker labels estimates and shows containers keeping images in use.
 
 ## Next
 
