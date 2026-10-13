@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
 use std::time::SystemTime;
 
@@ -45,6 +45,7 @@ const STATUS_WIDTH: u16 = 20;
 enum RepoState {
     Reading(Receiver<Option<Repo>>),
     Read(Option<Repo>),
+    Failed,
 }
 
 /// One row of the file table
@@ -201,11 +202,14 @@ impl Dotfiles {
     }
 
     fn poll(&mut self) {
-        if let RepoState::Reading(receiver) = &self.repo
-            && let Ok(repo) = receiver.try_recv()
-        {
-            self.repo = RepoState::Read(repo);
-        }
+        let RepoState::Reading(receiver) = &self.repo else {
+            return;
+        };
+        self.repo = match receiver.try_recv() {
+            Ok(repo) => RepoState::Read(repo),
+            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Disconnected) => RepoState::Failed,
+        };
     }
 
     /// A path from the home folder as `~/...`
@@ -370,6 +374,13 @@ impl Dotfiles {
             ];
         };
         let mut lines = match &self.repo {
+            RepoState::Failed => vec![
+                field(
+                    "Repo",
+                    Span::raw("Could not read the Git repository.").red(),
+                ),
+                Line::from("Go back and open Dotfiles again to try again."),
+            ],
             RepoState::Reading(_) => vec![field("Repo", Span::raw("looking…"))],
             RepoState::Read(None) => vec![field("Repo", Span::raw("not in a Git repository"))],
             RepoState::Read(Some(repo)) => {
@@ -1903,6 +1914,54 @@ mod tests {
             plan: None,
         };
         screen.handle_key(KeyEvent::new(code, KeyModifiers::NONE), &context);
+    }
+
+    #[test]
+    fn a_missing_dotfiles_repo_stops_loading() {
+        let (_dir, mut screen) = screen();
+        let (sender, receiver) = mpsc::channel();
+        screen.repo = RepoState::Reading(receiver);
+        screen.poll();
+        assert!(matches!(screen.repo, RepoState::Reading(_)));
+        drop(sender);
+        screen.poll();
+        screen.poll();
+
+        let text = render(&mut screen, 140, 40);
+        assert!(text.contains("Could not read the Git repository"));
+        assert!(text.contains("open Dotfiles again"));
+        assert!(!text.contains("not in a Git repository"));
+        assert!(text.contains(".zshrc"));
+        assert!(matches!(screen.back(), Action::Back));
+    }
+
+    #[test]
+    fn a_queued_dotfiles_repo_survives_the_worker_exiting() {
+        let (_dir, mut screen) = screen();
+        for repo in [
+            None,
+            Some(Repo {
+                remote: Some("example".to_string()),
+                branch: Some("main".to_string()),
+                uncommitted: 2,
+                ahead_behind: Some((1, 0)),
+            }),
+        ] {
+            let found = repo.is_some();
+            let (sender, receiver) = mpsc::channel();
+            sender.send(repo).unwrap();
+            drop(sender);
+            screen.repo = RepoState::Reading(receiver);
+            screen.poll();
+            screen.poll();
+            let text = render(&mut screen, 140, 40);
+            if found {
+                assert!(text.contains("example · main"));
+                assert!(text.contains("2 files waiting"));
+            } else {
+                assert!(text.contains("not in a Git repository"));
+            }
+        }
     }
 
     #[test]
