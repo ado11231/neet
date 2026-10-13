@@ -457,6 +457,8 @@
 * Below it, **Open at login** says those apps are not listed, since macOS shows them only to an admin, and how many items belong to macOS and are only counted. **By kind** counts each kind, and how many of each run.
 * Under 96 columns, the selected item shows under the list.
 * `t` reviews turning one of your own launch agents off or back on. The question names the item and action. `y` confirms; `n` or `Esc` cancels. Other items stay view only.
+* A failed turn shows **Not changed**, **Partly changed**, or **Change not confirmed**, with the reason. If the turn finished but its result could not be saved, it shows **Changed** with the save error.
+* Saved history shows **Attempt** for failed, partial, or unknown results, and **Changed** for completed turns. Only completed turns appear under **Turned off by neet**.
 
 | Key | Action |
 | --- | --- |

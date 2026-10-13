@@ -123,7 +123,7 @@
 
 | Feature | Done When |
 | --- | --- |
-| Startup items | List and turn actions are built and checked on macOS 26.5. Changed plists are refused from the list through confirmation. Checks on macOS 13, 14, and 15 remain in [#22](https://github.com/ado11231/neet/issues/22). Partial command failures remain in [#108](https://github.com/ado11231/neet/issues/108). |
+| Startup items | List and turn actions are built and checked on macOS 26.5. Changed plists are refused from the list through confirmation. Turn results and saved history distinguish partial changes and unknown results. Checks on macOS 13, 14, and 15 remain in [#22](https://github.com/ado11231/neet/issues/22). |
 | Dotfiles | **Done.** Changes stay within the list in SAFETY.md. Backup, restore, check, configure, and export tests pass. With chezmoi, edits reach the source file, and nothing is pushed without `y`. |
 | SSH | Changes stay within `~/.ssh`, and known hosts and permissions can be undone. |
 | Shell PATH | Changes stay within the shell files, and can be undone from their backups. |
