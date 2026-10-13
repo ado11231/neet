@@ -282,6 +282,7 @@
 * When the terminal is narrower than 100 columns, the details go under the list, and the list's bottom edge shows the selected total instead.
 * A selected checkbox is a green `[✓]`. The arrow's row shows its name in bold, so the checkbox and risk keep their colors.
 * A note at the top of the details explains when a rule was not selected, or could not be. Rules that failed to load are listed there too.
+* **Retry** names the apps to quit and says to press `r` when files were skipped for an open app or changed during the scan under a rule with no age limit. It uses the rule's app names for changed files. Other skip reasons keep their own explanation.
 * `safe` rules start selected, unless their app is open.
 
 | Key | Action |
