@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
 use std::time::Instant;
 
@@ -54,6 +54,7 @@ enum Entry {
 enum State {
     Looking(Instant, Receiver<Listing>),
     Ready(Listing),
+    Failed,
 }
 
 /// News after `t`, until a key is pressed
@@ -143,23 +144,30 @@ impl Startup {
     }
 
     fn poll(&mut self) {
-        if let State::Looking(_, receiver) = &self.state
-            && let Ok(listing) = receiver.try_recv()
-        {
-            self.state = State::Ready(listing);
-            self.read_saved();
-            self.select_first();
-            if let Some(file) = self.reselect.take() {
-                let listing = self.listing();
-                let row = self.rows().iter().position(|row| match row {
-                    Entry::Item(index) => listing
-                        .and_then(|listing| listing.items.get(*index))
-                        .is_some_and(|item| item.file == file),
-                    Entry::Kind(_) | Entry::Gap => false,
-                });
-                if row.is_some() {
-                    self.table.select(row);
-                }
+        let State::Looking(_, receiver) = &self.state else {
+            return;
+        };
+        let listing = match receiver.try_recv() {
+            Ok(listing) => listing,
+            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Disconnected) => {
+                self.state = State::Failed;
+                return;
+            }
+        };
+        self.state = State::Ready(listing);
+        self.read_saved();
+        self.select_first();
+        if let Some(file) = self.reselect.take() {
+            let listing = self.listing();
+            let row = self.rows().iter().position(|row| match row {
+                Entry::Item(index) => listing
+                    .and_then(|listing| listing.items.get(*index))
+                    .is_some_and(|item| item.file == file),
+                Entry::Kind(_) | Entry::Gap => false,
+            });
+            if row.is_some() {
+                self.table.select(row);
             }
         }
     }
@@ -269,7 +277,7 @@ impl Startup {
     fn listing(&self) -> Option<&Listing> {
         match &self.state {
             State::Ready(listing) => Some(listing),
-            State::Looking(..) => None,
+            State::Looking(..) | State::Failed => None,
         }
     }
 
@@ -901,6 +909,19 @@ fn legend_line(mark: Span<'static>, meaning: &'static str) -> Line<'static> {
 impl Screen for Startup {
     fn draw(&mut self, frame: &mut Frame, area: Rect, _context: &Context) {
         self.poll();
+        if matches!(self.state, State::Failed) {
+            tools::message(
+                frame,
+                area,
+                "Startup",
+                vec![
+                    Line::from("The task ended without a result."),
+                    Line::from("Press r to try again, or Esc to go back."),
+                ],
+                Color::Red,
+            );
+            return;
+        }
         if let State::Looking(started, _) = &self.state {
             Loading {
                 title: "Startup",
@@ -930,6 +951,10 @@ impl Screen for Startup {
     }
 
     fn handle_key(&mut self, key: KeyEvent, _context: &Context) -> Action {
+        if matches!(self.state, State::Failed) && key.code == KeyCode::Char('r') {
+            self.look();
+            return Action::None;
+        }
         if self.listing().is_none() {
             return Action::None;
         }
@@ -970,7 +995,9 @@ impl Screen for Startup {
     }
 
     fn hints(&self) -> &'static str {
-        if self.asked.is_some() {
+        if matches!(self.state, State::Failed) {
+            "r look again · esc home · ? help"
+        } else if self.asked.is_some() {
             "y go ahead · n or esc go back"
         } else if self.note.is_some() {
             "any key go on"
@@ -1069,6 +1096,47 @@ mod tests {
             KeyEvent::new(code, ratatui::crossterm::event::KeyModifiers::NONE),
             &context,
         );
+    }
+
+    #[test]
+    fn a_missing_startup_list_stops_loading() {
+        let home = tempfile::tempdir().unwrap();
+        let mut screen = Startup::from_listing(home.path().into(), sample());
+        let (sender, receiver) = mpsc::channel();
+        screen.state = State::Looking(Instant::now(), receiver);
+        screen.poll();
+        assert!(matches!(screen.state, State::Looking(..)));
+        drop(sender);
+        screen.poll();
+        screen.poll();
+
+        let text = render(&mut screen, 100, 30);
+        assert!(text.contains("ended without a result"));
+        assert!(text.contains("Press r to try again"));
+        assert!(screen.listing().is_none());
+        press(&mut screen, KeyCode::Char('t'));
+        assert!(screen.asked.is_none());
+        assert!(matches!(screen.back(), Action::Back));
+    }
+
+    #[test]
+    fn a_queued_startup_list_keeps_the_selected_item() {
+        let home = tempfile::tempdir().unwrap();
+        let mut screen = Startup::from_listing(home.path().into(), Listing::default());
+        let listing = sample();
+        let selected = listing.items[2].file.clone();
+        screen.reselect = Some(selected.clone());
+        let (sender, receiver) = mpsc::channel();
+        sender.send(listing).unwrap();
+        drop(sender);
+        screen.state = State::Looking(Instant::now(), receiver);
+        screen.poll();
+        screen.poll();
+
+        assert_eq!(screen.listing().unwrap().items.len(), 5);
+        assert_eq!(screen.selected().unwrap().file, selected);
+        assert!(screen.reselect.is_none());
+        assert!(render(&mut screen, 100, 30).contains("com.google.keystone.agent"));
     }
 
     #[test]
