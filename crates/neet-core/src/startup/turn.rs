@@ -20,6 +20,41 @@ pub enum Turn {
     On,
 }
 
+/// How much of a turn action was confirmed
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Status {
+    NotChanged,
+    #[default]
+    Unknown,
+    Partial,
+    Complete,
+}
+
+/// A failed turn action, including any change already made
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Failure {
+    pub status: Status,
+    pub reason: String,
+}
+
+impl From<String> for Failure {
+    fn from(reason: String) -> Self {
+        Self {
+            status: Status::NotChanged,
+            reason,
+        }
+    }
+}
+
+impl std::fmt::Display for Failure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.reason)
+    }
+}
+
+impl std::error::Error for Failure {}
+
 /// The state before neet turned an item, saved in
 /// `~/.local/state/neet/startup/<label>.json`
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -139,7 +174,7 @@ impl Asked {
     /// # Errors
     ///
     /// Returns why, when nothing ran or a command failed.
-    pub fn apply(&self, home: &Path) -> Result<(), String> {
+    pub fn apply(&self, home: &Path) -> Result<(), Failure> {
         let uid = rustix::process::getuid().as_raw();
         let label_now = |path: &Path| {
             super::plist_json(path)
@@ -158,12 +193,16 @@ impl Asked {
         now: SystemTime,
         label_now: &dyn Fn(&Path) -> Option<String>,
         launchctl: &mut dyn FnMut(&[&str]) -> Result<Captured, String>,
-    ) -> Result<(), String> {
+    ) -> Result<(), Failure> {
         if !self.opened.is_unchanged().unwrap_or(false) {
-            return Err("Its plist changed since the question. Nothing was run.".to_string());
+            return Err("Its plist changed since the question. Nothing was run."
+                .to_string()
+                .into());
         }
         if label_now(self.opened.path()).as_deref() != Some(self.label.as_str()) {
-            return Err("Its plist names a different label now. Nothing was run.".to_string());
+            return Err("Its plist names a different label now. Nothing was run."
+                .to_string()
+                .into());
         }
         self.save(home, now).map_err(|error| {
             format!("The state before could not be saved: {error}. Nothing was run.")
@@ -180,7 +219,8 @@ impl Asked {
                 "launchctl {} failed: {}",
                 first[0],
                 first_done.stderr.trim()
-            ));
+            )
+            .into());
         }
         let second_done = run(launchctl, &second)?;
         if second_done.success {
@@ -195,11 +235,13 @@ impl Asked {
             (Turn::Off, true) => Err(format!(
                 "It is turned off, but still running: {}",
                 second_done.stderr.trim()
-            )),
+            )
+            .into()),
             (Turn::On, false) => Err(format!(
                 "It is turned on, but launchctl could not load it: {}",
                 second_done.stderr.trim()
-            )),
+            )
+            .into()),
         }
     }
 
@@ -280,7 +322,7 @@ mod tests {
         asked: &Asked,
         home: &Path,
         answer: impl Fn(&[&str]) -> Captured,
-    ) -> (Result<(), String>, Vec<String>) {
+    ) -> (Result<(), Failure>, Vec<String>) {
         let ran = RefCell::new(Vec::new());
         let label = |_: &Path| Some(asked.label.clone());
         let result = asked.apply_with(
@@ -360,7 +402,7 @@ mod tests {
             "print" => failed("Could not find service"),
             _ => ok(),
         });
-        assert!(result.unwrap_err().contains("could not load it"));
+        assert!(result.unwrap_err().reason.contains("could not load it"));
     }
 
     #[test]
@@ -368,7 +410,12 @@ mod tests {
         let (_dir, home, item) = setup();
         let asked = ask(&item, &home).unwrap();
         let (result, ran) = run(&asked, &home, |_| failed("Operation not permitted"));
-        assert!(result.unwrap_err().contains("Operation not permitted"));
+        assert!(
+            result
+                .unwrap_err()
+                .reason
+                .contains("Operation not permitted")
+        );
         assert_eq!(ran, ["disable gui/501/com.google.wake"]);
     }
 
@@ -441,7 +488,7 @@ mod tests {
                 let result = ask(&item, &home).and_then(|asked| {
                     let (result, commands) = run(&asked, &home, |_| ok());
                     ran = commands;
-                    result
+                    result.map_err(|error| error.reason)
                 });
                 let error = result.unwrap_err();
                 assert!(error.contains("changed since it was listed"), "{error}");
@@ -481,7 +528,12 @@ mod tests {
         let asked = ask(&item, &home).unwrap();
         fs::write(&item.file, "<plist>changed</plist>").unwrap();
         let (result, ran) = run(&asked, &home, |_| ok());
-        assert!(result.unwrap_err().contains("changed since the question"));
+        assert!(
+            result
+                .unwrap_err()
+                .reason
+                .contains("changed since the question")
+        );
         assert_eq!(ran, Vec::<String>::new());
         assert!(saved(&home, "com.google.wake").is_none());
 
@@ -498,7 +550,7 @@ mod tests {
                 Ok(ok())
             },
         );
-        assert!(result.unwrap_err().contains("different label"));
+        assert!(result.unwrap_err().reason.contains("different label"));
         assert_eq!(ran.into_inner(), 0);
     }
 }
