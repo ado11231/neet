@@ -1,7 +1,5 @@
 <h1 align="center">neet</h1>
 
-<p align="center">macOS terminal for cleaning, optimizing and managing your Mac</p>
-
 <p align="center">
   <a href="https://github.com/ado11231/neet/actions/workflows/ci.yml"><img src="https://github.com/ado11231/neet/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://crates.io/crates/neet"><img src="https://img.shields.io/crates/v/neet?logo=rust" alt="neet on crates.io"></a>
@@ -11,31 +9,33 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/home.svg" alt="The neet Home screen, with the feature menu, the This Mac disk gauge, and scan progress" width="860">
+  <img src="https://raw.githubusercontent.com/ado11231/neet/master/docs/images/home.svg" alt="The neet Home screen, with the feature menu, the This Mac disk gauge, and scan progress" width="860">
 </p>
 
 ## Install
 
-The install script downloads a ready made program for your Mac, Apple silicon or Intel, and puts it in `~/.cargo/bin`:
+* macOS 13 or later, on Apple silicon or Intel.
+* Download the latest release with the installer:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/ado11231/neet/releases/latest/download/neet-installer.sh | sh
 ```
 
-If you have [Rust](https://rustup.rs), you can build the published version instead:
+Or install the published crate with [Rust](https://rustup.rs):
 
 ```sh
-cargo install neet
+cargo install neet --locked
 ```
 
-Or install the code on `master`:
+For the newest code on `master`, including changes not yet released:
 
 ```sh
-cargo install --git https://github.com/ado11231/neet neet
+cargo install --git https://github.com/ado11231/neet --locked neet
 ```
 
-* From a local checkout, `cargo run --release` builds and runs the current branch.
-* To install that checkout as `neet`, run `cargo install --path crates/neet --force`.
+* From a checkout, use `cargo run --release` to build and run that branch.
+* Install a checkout with `cargo install --path crates/neet --locked --force`.
+* Downloads are also on [GitHub Releases](https://github.com/ado11231/neet/releases).
 
 ## Use
 
@@ -43,43 +43,21 @@ cargo install --git https://github.com/ado11231/neet neet
 neet
 ```
 
-* neet opens on a menu and starts scanning your home folder in the background.
-* Use the arrow keys to move, `Enter` to open a screen, `Esc` to go back, `?` for help, and `q` to quit.
+* Scans your home folder in the background.
+* Arrow keys move, `Enter` opens, `Esc` goes back, `?` shows help, and `q` quits.
+* The table below describes the current code. Published releases may have fewer features.
 
-| Screen | What It Does |
+| Screen | Purpose |
 | --- | --- |
-| Disk | Start here: browse your folders, largest first, and see how full your Mac is. |
-| Quick Clean | See everything taking space that can be cleared, move project build folders and old installers to the Trash, and empty the Trash. |
-| Deep Clean | Go through every cache and log rule, and move what your apps can make again to the Trash. |
-| Remove App | Remove an app along with the files it left in your Library folder. |
-| Large Files | Find your largest and oldest files. |
-| Startup | See what starts on its own. Press `t` to turn your own launch agents off or back on after confirmation. Other items stay view only. |
-| Dotfiles | See your settings files, such as `~/.zshrc`, edit or configure them with a backup, save them with chezmoi, and export them to a private GitHub repository after a review for secrets. |
-| AI Tools | Browse assistant files and chat summaries, flag missing projects, and move selected chat files to Trash. Link local skills and review edits and restores. |
-
-* Settings and SSH are on the menu, marked `soon`.
-
-## Notes
-
-* Works on macOS 13 or later, on Apple silicon and Intel.
-* Files go to the Trash, never deleted, so you can put them back. The exceptions each ask a red question that says so first: simulator runtimes and Docker images, which neet asks their own tools to remove, and emptying the Trash itself.
-* You review and confirm everything before it moves.
-* Cleanup leaves your personal folders, iCloud files, keychains, and SSH keys alone. The exception is project build folders and installers, which you pick in Quick Clean.
-* Dotfiles and AI Tools show each edit before saving and keep a backup. AI Tools can also move selected chat files to Trash after review. Tool settings stay view only.
-* For a full scan, give your terminal Full Disk Access:
-  1. Open System Settings, then Privacy & Security, then Full Disk Access.
-  2. Turn on your terminal app, such as Terminal, iTerm, or Ghostty.
-  3. Quit and reopen the terminal, then run `neet` again.
-
-## Learn More
-
-* The [wiki](https://github.com/ado11231/neet/wiki) links every doc and section in one place.
-* [Features](docs/FEATURES.md): what neet does now, and what is planned.
-* [Interface](docs/INTERFACE.md): every screen, its layout, and its keys.
-* [Safety](docs/SAFETY.md): what neet may and may not change.
-* [Roadmap](docs/ROADMAP.md): what is done and what comes next.
-* [Architecture](docs/ARCHITECTURE.md): how the code is organized, for contributors.
+| Disk | Browse folders by size. |
+| Quick Clean | Review build folders, installers, Trash, Docker, and simulators. |
+| Deep Clean | Review cache and log cleanup rules. |
+| Remove App | Review an app and its leftover files. |
+| Large Files | Find large or old files. |
+| Startup | List startup items and review changes to your own launch agents. |
+| Dotfiles | Edit settings with backups, or review a Git export. |
+| AI Tools | Browse chats and skills, review transcript cleanup, and edit local skills. |
 
 ## License
 
-Licensed under either [MIT](LICENSE-MIT) or [Apache 2.0](LICENSE-APACHE), at your choice.
+[MIT](https://github.com/ado11231/neet/blob/master/LICENSE-MIT) or [Apache 2.0](https://github.com/ado11231/neet/blob/master/LICENSE-APACHE), your choice.
