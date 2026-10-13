@@ -1,8 +1,5 @@
-//! Cleanup rules: short TOML entries that say which files neet may clean, and
-//! how risky that is. See the rule format in `docs/SAFETY.md`.
-//!
-//! Rules only say where to look. Every path they find still has to pass
-//! [`CleanupRoots::validate_deletable`](crate::safety::CleanupRoots::validate_deletable).
+//! Reads cleanup rules. Every matching path must still pass the safety check.
+//! See `docs/SAFETY.md` for the rule format and fixed limits.
 
 use std::collections::HashSet;
 use std::fs;

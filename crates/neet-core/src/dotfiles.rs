@@ -1,9 +1,5 @@
-//! The settings files Dotfiles lists, and how each stands with chezmoi.
-//! Everything here only reads. See Dotfiles in `docs/SAFETY.md`.
-//!
-//! chezmoi's templates and hooks can run any program, so neet never runs
-//! chezmoi to learn about its files. It reads chezmoi's config and source
-//! folder itself.
+//! Lists settings files and compares saved copies without running chezmoi.
+//! Changes live in the child modules. See `docs/SAFETY.md` for file limits.
 
 use std::fs;
 use std::io::{self, Read};
