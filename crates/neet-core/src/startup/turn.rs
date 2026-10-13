@@ -3,6 +3,7 @@
 //! `docs/SAFETY.md`.
 
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -292,8 +293,7 @@ impl Asked {
         })
     }
 
-    /// Writes the state before, through a copy, so a half written file is
-    /// never left
+    /// Writes a fresh copy before replacing the saved state.
     fn save(&self, home: &Path, now: SystemTime, status: Status) -> std::io::Result<()> {
         let folder = folder(home);
         fs::create_dir_all(&folder)?;
@@ -308,15 +308,18 @@ impl Asked {
         };
         let text = serde_json::to_string_pretty(&saved).map_err(std::io::Error::other)?;
         let path = folder.join(format!("{}.json", self.label));
-        let copy = folder.join(format!(".{}.json.new", self.label));
-        fs::write(&copy, text)?;
-        fs::rename(&copy, &path)
+        let mut copy = tempfile::NamedTempFile::new_in(&folder)?;
+        copy.write_all(text.as_bytes())?;
+        copy.as_file().sync_all()?;
+        copy.persist(path).map_err(|error| error.error)?;
+        fs::File::open(folder)?.sync_all()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
+    use std::os::unix::fs::PermissionsExt;
     use std::time::{Duration, UNIX_EPOCH};
 
     use super::super::Signed;
@@ -429,23 +432,66 @@ mod tests {
     }
 
     #[test]
+    fn saving_state_does_not_write_through_links() {
+        for name in [".com.google.wake.json.new", "com.google.wake.json"] {
+            for hard_link in [false, true] {
+                let (_dir, home, item) = setup();
+                let asked = ask(&item, &home).unwrap();
+                fs::create_dir_all(folder(&home)).unwrap();
+                let other = home.join("notes.txt");
+                fs::write(&other, "keep these notes").unwrap();
+                let link = folder(&home).join(name);
+                if hard_link {
+                    fs::hard_link(&other, &link).unwrap();
+                } else {
+                    std::os::unix::fs::symlink(&other, &link).unwrap();
+                }
+
+                assert!(run(&asked, &home, |_| ok()).0.is_ok());
+
+                assert_eq!(fs::read_to_string(other).unwrap(), "keep these notes");
+                assert_eq!(saved(&home, &asked.label).unwrap().status, Status::Complete);
+                let path = folder(&home).join("com.google.wake.json");
+                let mode = fs::metadata(path).unwrap().permissions().mode();
+                assert_eq!(mode & 0o777, 0o600);
+            }
+        }
+    }
+
+    #[test]
+    fn a_failed_first_save_runs_no_commands() {
+        let (_dir, home, item) = setup();
+        let asked = ask(&item, &home).unwrap();
+        fs::create_dir_all(folder(&home).parent().unwrap()).unwrap();
+        fs::write(folder(&home), "keep this file").unwrap();
+
+        let (result, ran) = run(&asked, &home, |_| ok());
+
+        assert_eq!(ran.len(), 0);
+        assert_eq!(result.unwrap_err().status, Status::NotChanged);
+        assert_eq!(fs::read_to_string(folder(&home)).unwrap(), "keep this file");
+    }
+
+    #[test]
     fn a_failed_result_save_keeps_the_state_before() {
         let (_dir, home, item) = setup();
         let asked = ask(&item, &home).unwrap();
-        let error = asked
-            .apply_with(
-                &home,
-                501,
-                SystemTime::now(),
-                &|_| item.label.clone(),
-                &mut |args| {
-                    if args[0] == "disable" {
-                        fs::create_dir(folder(&home).join(".com.google.wake.json.new")).unwrap();
-                    }
-                    Ok(ok())
-                },
-            )
-            .unwrap_err();
+        fs::create_dir_all(folder(&home)).unwrap();
+        let permissions = fs::metadata(folder(&home)).unwrap().permissions();
+        let result = asked.apply_with(
+            &home,
+            501,
+            SystemTime::now(),
+            &|_| item.label.clone(),
+            &mut |args| {
+                if args[0] == "disable" {
+                    fs::set_permissions(folder(&home), fs::Permissions::from_mode(0o500)).unwrap();
+                }
+                Ok(ok())
+            },
+        );
+        fs::set_permissions(folder(&home), permissions).unwrap();
+        let error = result.unwrap_err();
         assert_eq!(error.status, Status::Complete);
         assert!(error.reason.contains("The change finished"));
         assert!(error.reason.contains("result could not be saved"));
