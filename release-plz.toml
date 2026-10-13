@@ -3,15 +3,13 @@
 [workspace]
 # Release only when a release pull request is merged, not on every push.
 release_always = false
-# Keep a CHANGELOG.md in each crate, written from conventional commits.
+# Keep each crate's changelog in docs.
 changelog_update = true
 # Check public library changes against the last published version.
 semver_check = true
 pr_labels = ["release"]
 
-# The default changelog, with the date moved from the heading to the last
-# line. dist names the GitHub release after the heading, so releases are
-# titled with the version only.
+# Keep release titles to the version. Put the date after the notes.
 [changelog]
 body = """
 
@@ -20,11 +18,7 @@ body = """
 ### {{ group | upper_first }}
 
 {% for commit in commits %}
-{%- if commit.scope -%}
-- *({{commit.scope}})* {% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message }}{%- if commit.links %} ({% for link in commit.links %}[{{link.text}}]({{link.href}}) {% endfor -%}){% endif %}
-{% else -%}
-- {% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message }}
-{% endif -%}
+* {% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message }}
 {% endfor -%}
 {% endfor %}
 Released {{ timestamp | date(format="%Y-%m-%d") }}
@@ -33,12 +27,14 @@ Released {{ timestamp | date(format="%Y-%m-%d") }}
 
 [[package]]
 name = "neet"
+changelog_path = "docs/CHANGELOG.md"
 # release-plz only tags the program. The tag starts dist, in release.yml,
 # which builds the programs and makes the GitHub release.
 git_release_enable = false
 
 [[package]]
 name = "neet-core"
+changelog_path = "docs/CHANGELOG-CORE.md"
 # The library is only published to crates.io. No tag, so no GitHub release.
 git_tag_enable = false
 git_release_enable = false
