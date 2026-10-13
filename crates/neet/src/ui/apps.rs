@@ -2,7 +2,7 @@ use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::{LazyLock, Mutex};
 use std::thread;
 use std::time::Instant;
@@ -768,14 +768,17 @@ impl AppFiles {
     }
 
     fn poll(&mut self) {
-        if let State::Planning { result, .. } = &self.state
-            && let Ok(outcome) = result.try_recv()
-        {
-            self.state = match outcome {
-                Ok(planned) => State::Ready(Arc::new(planned)),
-                Err(reason) => State::Failed(reason),
-            };
-        }
+        let State::Planning { result, .. } = &self.state else {
+            return;
+        };
+        self.state = match result.try_recv() {
+            Ok(Ok(planned)) => State::Ready(Arc::new(planned)),
+            Ok(Err(reason)) => State::Failed(reason),
+            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Disconnected) => State::Failed(
+                "The task ended without a result. Go back and open the app again.".to_string(),
+            ),
+        };
     }
 
     fn toggle(&mut self) {
@@ -1239,6 +1242,63 @@ mod tests {
             },
         ];
         (home, shared, roots, apps)
+    }
+
+    #[test]
+    fn missing_app_plans_stop_loading() {
+        let (sender, result) = mpsc::channel();
+        let mut screen = AppFiles {
+            name: "Example".to_string(),
+            bundle_id: "com.example.app".to_string(),
+            state: State::Planning {
+                started: Instant::now(),
+                result,
+            },
+            list: TableState::default(),
+        };
+        screen.poll();
+        assert!(matches!(screen.state, State::Planning { .. }));
+        drop(sender);
+        screen.poll();
+        assert!(render(&mut screen).contains("ended without a result"));
+        assert!(matches!(press(&mut screen, KeyCode::Enter), Action::None));
+        assert!(matches!(screen.back(), Action::Back));
+    }
+
+    #[test]
+    fn queued_app_plans_survive_the_worker_exiting() {
+        let (_home, _shared, roots, apps) = setup();
+        let planned = Planned {
+            plan: removal::plan(&roots, &apps[0]).unwrap(),
+            errors: Vec::new(),
+            home: roots.home().to_path_buf(),
+        };
+        for outcome in [Ok(planned), Err("Cannot read the app.".to_string())] {
+            let succeeded = outcome.is_ok();
+            let (sender, result) = mpsc::channel();
+            sender.send(outcome).unwrap();
+            drop(sender);
+            let mut screen = AppFiles {
+                name: "Example".to_string(),
+                bundle_id: "com.example.app".to_string(),
+                state: State::Planning {
+                    started: Instant::now(),
+                    result,
+                },
+                list: TableState::default(),
+            };
+            screen.poll();
+            screen.poll();
+            if succeeded {
+                assert!(matches!(screen.state, State::Ready(_)));
+                assert!(matches!(
+                    press(&mut screen, KeyCode::Enter),
+                    Action::Open(_)
+                ));
+            } else {
+                assert!(render(&mut screen).contains("Cannot read the app."));
+            }
+        }
     }
 
     #[test]
