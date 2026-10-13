@@ -83,43 +83,25 @@
 
 ## Next
 
-### 8. Clarity Pass
-
-* Make it easy to see how your disk space is used, and why neet's numbers can differ from Finder's.
-* Its bugs are fixed before any later feature. The other items can be done alongside them.
-* **Done:**
-  1. Free space and Finder. Home says how much free space Finder shows, and that it adds space macOS clears on its own, called purgeable space.
-  2. A wireless networks file in user logs. It is a copy macOS wrote once for diagnostics. Your Mac connects without it, so the rule keeps offering it, and FEATURES explains it.
-  3. Moving to the Trash no longer waits forever when Finder does not answer.
-  4. Every built screen got a clarity pass: Quick Clean, Deep Clean, Remove App, Large Files, and Disk use small titled boxes, one label width, plain words, and lists only as tall as their rows.
-  5. A Trash screen lists what is in the Trash and empties it after a red question.
-  6. Home starts on Disk, then the cleanups, with SSH last.
-  7. Deep Clean names the apps to quit and says to press `r` for busy app files. Other skip reasons keep their own explanation.
-  8. AI chat cleanup keeps totals and actions visible while scrolling. It separates ready and skipped files, removes empty move prompts, and lists files with unconfirmed results after an interrupted cleanup.
-  9. Docker labels reported reclaimable space as an estimate and drops the free space forecast. A scrollable list names running containers, images, and Compose projects. Zero space results use a fresh container check and keep volume results separate.
-
-| Item | Done When |
-| --- | --- |
-| Space breakdown | The parts add up to the disk's used space, with anything left shown as unexplained. Each part says what it is, in plain words. |
+* Fix failed Docker lookups and unknown prune sizes in [#121](https://github.com/ado11231/neet/issues/121).
+* Finish chat actions, related file cleanup, restore, and reload checks in [#111](https://github.com/ado11231/neet/issues/111).
+* Add skill source and removal support in [#112](https://github.com/ado11231/neet/issues/112).
+* Explain disk space outside the home scan in [#20](https://github.com/ado11231/neet/issues/20).
+* Explain leftover simulator downloads in [#61](https://github.com/ado11231/neet/issues/61).
+* Test Startup on macOS 13, 14, and 15 in [#22](https://github.com/ado11231/neet/issues/22). macOS 26.5 is checked.
+* Review the next release, then verify the published crate and both Mac downloads.
 
 ## Later
 
-### 9. Later Features
-
-* Remaining work stays here even when a feature has shipped. Proposed features must answer any [open questions](FEATURES.md#open-questions) before implementation.
-
-| Feature | Done When |
+| Work | Issue |
 | --- | --- |
-| Startup items | List and turn actions are built and checked on macOS 26.5. Changed plists are refused from the list through confirmation. Turn results and saved history distinguish partial changes and unknown results. Checks on macOS 13, 14, and 15 remain in [#22](https://github.com/ado11231/neet/issues/22). |
-| Dotfiles | **Done.** Changes stay within the list in SAFETY.md. Backup, restore, check, configure, and export tests pass. With chezmoi, edits reach the source file, and nothing is pushed without `y`. |
-| SSH | Changes stay within `~/.ssh`, and known hosts and permissions can be undone. |
-| Shell PATH | Changes stay within the shell files, and can be undone from their backups. |
-| AI Tools | **First version built.** Browse known user and current project files for Claude Code, Codex, and Gemini CLI. Show chat titles and missing-project tags. Review and move selected transcript files to Trash. Link local skills and review edits and restores with backups. Resume, archive, index cleanup, and related files are tracked in [#111](https://github.com/ado11231/neet/issues/111); skill removal and plugin discovery in [#112](https://github.com/ado11231/neet/issues/112). |
-| Power and display | Setting names are checked on real Macs. A refresh rate you do not keep switches back. Every change can be undone. |
-| Treemap and preferences | The treemap shows the scan without changing files, and preferences keep your choices. |
+| SSH hosts, key details, permissions, and known hosts | [#23](https://github.com/ado11231/neet/issues/23) |
+| Shell PATH inspection and reviewed edits | [#25](https://github.com/ado11231/neet/issues/25) |
+| Power and display settings with undo | [#27](https://github.com/ado11231/neet/issues/27) |
+| Folder sizes shown as areas | [#29](https://github.com/ado11231/neet/issues/29) |
+| Saved preferences | [#30](https://github.com/ado11231/neet/issues/30) |
+| Decide whether Mail attachment cleanup is safe | [#32](https://github.com/ado11231/neet/issues/32) |
+| Decide whether system log cleanup is safe | [#33](https://github.com/ado11231/neet/issues/33) |
 
-* Dotfiles checks: action and export reviews reject changed files, backups, and links. Pushes name the reviewed commit and tracked branch. Unicode renames and export scrolling have regression tests. Ghostty, the zsh block, and starting a repository without chezmoi are built. On 2026-10-08 every action was run by hand against real personal dotfiles and worked, so Dotfiles is done.
-
-* The opt in Dotfiles test passed with chezmoi 2.72.2 on macOS: edit and apply, save, put back, add, Configure, backup and restore, a link, and export to a local remote. It also refuses hooks added after an edit starts.
-
-* AI Tools checks use temporary homes for discovery, chat parsing and summaries, missing-project tags, removal validation, local skill links, edit and restore, stale reviews, and escaped paths. UI tests cover section changes, shared skill filters, search, chat selection and removal review, partial cleanup results, selection after refresh, failed loads, draft recovery, edit and restore, review cancellation, and narrow terminals. Real assistant reloads still need a manual check.
+* These features must follow [SAFETY.md](SAFETY.md), with tests for refused changes and undo.
+* Homebrew remains a later option. Current installs use crates.io or GitHub Releases.
