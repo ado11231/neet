@@ -993,6 +993,7 @@ mod tests {
             name: name.to_string(),
             label: Some(name.to_string()),
             file: PathBuf::from(format!("/home/Library/LaunchAgents/{name}.plist")),
+            listed_plist: None,
             program: Some(PathBuf::from("/usr/local/bin/x")),
             runs,
             off: false,
@@ -1121,6 +1122,9 @@ mod tests {
         let agent = &mut listing.items[1];
         agent.file = agents.join("com.google.GoogleUpdater.wake.plist");
         std::fs::write(&agent.file, "<plist/>").unwrap();
+        agent.listed_plist = Some(Box::new(
+            neet_core::rewrite::Opened::open(&agent.file).unwrap(),
+        ));
         let mut screen = Startup::from_listing(home, listing);
         press(&mut screen, KeyCode::Down);
         press(&mut screen, KeyCode::Char('t'));

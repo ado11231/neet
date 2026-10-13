@@ -15,7 +15,7 @@ pub const MAX_BYTES: u64 = 1024 * 1024;
 
 /// A file as it was when it was opened, to change it later only if it is
 /// still the same
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Opened {
     original: PathBuf,
     /// Where it really is. For a link, where the link leads, so the link

@@ -435,7 +435,7 @@ min_age_days = 0
 * neet refuses, and runs nothing, when:
   1. The item is not in `~/Library/LaunchAgents`, has no label, its label starts with `com.apple.`, or its label has a `/` in it.
   2. The plist is a link that leads out of your home folder, or is not a plain file.
-  3. The plist changed since the question, or now names a different label.
+  3. The plist could not be checked when listed, changed since the list or the question, or now names a different label. Look again before trying a changed item.
 * View only, always:
   1. Items in `/Library/LaunchAgents` and `/Library/LaunchDaemons`. An admin installed them for every user, sometimes for device management.
   2. Background items inside apps, and apps that open at login. `o` opens System Settings, where macOS turns them off and on.

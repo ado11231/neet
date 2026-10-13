@@ -101,6 +101,8 @@ pub struct Item {
     pub label: Option<String>,
     /// The plist, or for a login item the helper app
     pub file: PathBuf,
+    /// The plist checked while reading the list, for later turn actions
+    pub listed_plist: Option<Box<crate::rewrite::Opened>>,
     pub program: Option<PathBuf>,
     pub runs: Runs,
     /// Turned off with `launchctl disable`, in System Settings, or by the
@@ -153,6 +155,8 @@ pub struct Embedded {
 pub struct Read {
     /// Each plist, with its kind and its contents as JSON, or why not
     pub plists: Vec<(Kind, PathBuf, Result<String, String>)>,
+    /// Your launch agent files, held from before their contents were parsed
+    pub listed_plists: HashMap<PathBuf, Box<crate::rewrite::Opened>>,
     pub embedded: Vec<Embedded>,
     /// `launchctl list`
     pub gui_list: Option<String>,
@@ -162,6 +166,21 @@ pub struct Read {
     pub system_disabled: Option<String>,
     /// `launchctl print system/<label>`, by label
     pub daemons: HashMap<String, String>,
+}
+
+impl Read {
+    fn read_plist(&mut self, kind: Kind, path: PathBuf) {
+        let opened = (kind == Kind::YourAgent)
+            .then(|| crate::rewrite::Opened::open(&path).ok())
+            .flatten();
+        let json = plist_json(&path);
+        if let Some(opened) =
+            opened.filter(|opened| json.is_ok() && opened.is_unchanged().unwrap_or(false))
+        {
+            self.listed_plists.insert(path.clone(), Box::new(opened));
+        }
+        self.plists.push((kind, path, json));
+    }
 }
 
 fn run(program: &str, args: &[&str]) -> Result<crate::run::Captured, String> {
@@ -281,8 +300,7 @@ pub fn read(home: &Path, uid: u32) -> Read {
         (Kind::Daemon, PathBuf::from("/Library/LaunchDaemons")),
     ] {
         for path in entries(&folder, "plist") {
-            let json = plist_json(&path);
-            read.plists.push((kind, path, json));
+            read.read_plist(kind, path);
         }
     }
     for folder in [PathBuf::from("/Applications"), home.join("Applications")] {
@@ -556,6 +574,7 @@ fn plist_item(
         at_start: plist.is_some_and(|plist| plist.at_start),
         label,
         file: path.clone(),
+        listed_plist: None,
         program,
         runs,
         signed: signer_name,
@@ -617,6 +636,7 @@ fn embedded_item(
         off: service == Some(true),
         label: Some(label),
         file: helper.path.clone(),
+        listed_plist: None,
         program,
         runs,
         at_start,
@@ -662,7 +682,10 @@ fn listing(read: &Read, signer: &dyn Fn(&Path) -> Signed) -> Listing {
         );
     for found in found {
         match found {
-            Found::Item(item) => listing.items.push(item),
+            Found::Item(mut item) => {
+                item.listed_plist = read.listed_plists.get(&item.file).cloned();
+                listing.items.push(item);
+            }
             Found::MacOs => listing.from_macos += 1,
             Found::NotAsked => {}
         }
@@ -760,6 +783,7 @@ mod tests {
         let docker = dir.join("Docker.app");
         let ollama = dir.join("Ollama.app");
         Read {
+            listed_plists: HashMap::new(),
             plists: vec![
                 plist(
                     Kind::YourAgent,

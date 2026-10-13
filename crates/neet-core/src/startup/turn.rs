@@ -65,8 +65,8 @@ fn safe_label(label: &str) -> bool {
     !label.is_empty() && !label.contains('/') && !label.starts_with('.')
 }
 
-/// Checks `item` may be turned, and opens its plist so a change after the
-/// question is caught. Runs nothing.
+/// Checks `item` may be turned and its plist has not changed since the
+/// list was read. Holds it for another check after the question.
 ///
 /// # Errors
 ///
@@ -92,6 +92,14 @@ pub fn ask(item: &Item, home: &Path) -> Result<Asked, String> {
     let home_real = fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf());
     if !opened.path().starts_with(&home_real) {
         return Err("Its plist is a link that leads out of your home folder.".to_string());
+    }
+    let listed = item.listed_plist.as_deref().ok_or_else(|| {
+        "Its plist could not be checked when listed. Look again before changing it.".to_string()
+    })?;
+    if &opened != listed || !listed.is_unchanged().unwrap_or(false) {
+        return Err(
+            "Its plist changed since it was listed. Look again before changing it.".to_string(),
+        );
     }
     Ok(Asked {
         turn: if item.off { Turn::On } else { Turn::Off },
@@ -235,6 +243,7 @@ mod tests {
             kind: Kind::YourAgent,
             name: "com.google.wake".to_string(),
             label: Some("com.google.wake".to_string()),
+            listed_plist: Some(Box::new(Opened::open(&plist).unwrap())),
             file: plist,
             program: Some(PathBuf::from("/x/updater")),
             runs: Runs::Waiting,
@@ -399,8 +408,76 @@ mod tests {
     }
 
     #[test]
+    fn refuses_changed_programs_and_arguments_until_listed_again() {
+        let (_dir, home, fixture) = setup();
+        let write_plist = |program: &str, argument: &str| {
+            fs::write(
+                &fixture.file,
+                format!(
+                    "<plist version=\"1.0\"><dict>\
+                     <key>Label</key><string>com.google.wake</string>\
+                     <key>ProgramArguments</key><array><string>{program}</string>\
+                     <string>{argument}</string></array>\
+                     <key>Disabled</key><true/></dict></plist>"
+                ),
+            )
+            .unwrap();
+        };
+        let list_item = || {
+            let mut read = super::super::Read::default();
+            read.read_plist(Kind::YourAgent, fixture.file.clone());
+            super::super::listing(&read, &|_| Signed::Unsigned)
+                .items
+                .remove(0)
+        };
+        for (program, argument) in [("/new/updater", "--old"), ("/x/updater", "--new")] {
+            for off in [false, true] {
+                write_plist("/x/updater", "--old");
+                let mut item = list_item();
+                item.off = off;
+                assert_eq!(item.program.as_deref(), Some(Path::new("/x/updater")));
+                write_plist(program, argument);
+                let mut ran = Vec::new();
+                let result = ask(&item, &home).and_then(|asked| {
+                    let (result, commands) = run(&asked, &home, |_| ok());
+                    ran = commands;
+                    result
+                });
+                let error = result.unwrap_err();
+                assert!(error.contains("changed since it was listed"), "{error}");
+                assert!(error.contains("Look again"), "{error}");
+                assert_eq!(ran, Vec::<String>::new());
+                assert!(saved(&home, "com.google.wake").is_none());
+            }
+        }
+
+        write_plist("/new/updater", "--new");
+        let item = list_item();
+        let asked = ask(&item, &home).unwrap();
+        assert_eq!(asked.turn, Turn::On);
+        assert_eq!(asked.label, "com.google.wake");
+        assert_eq!(asked.program.as_deref(), Some(Path::new("/new/updater")));
+        let (result, ran) = run(&asked, &home, |_| ok());
+        assert_eq!(result, Ok(()));
+        assert_eq!(ran.len(), 2);
+    }
+
+    #[test]
+    fn refuses_a_plist_that_was_not_checked_when_listed() {
+        let (_dir, home, mut item) = setup();
+        item.listed_plist = None;
+        let error = ask(&item, &home).unwrap_err();
+        assert!(
+            error.contains("could not be checked when listed"),
+            "{error}"
+        );
+        assert!(error.contains("Look again"), "{error}");
+        assert!(saved(&home, "com.google.wake").is_none());
+    }
+
+    #[test]
     fn refuses_a_plist_changed_since_the_question() {
-        let (_dir, home, item) = setup();
+        let (_dir, home, mut item) = setup();
         let asked = ask(&item, &home).unwrap();
         fs::write(&item.file, "<plist>changed</plist>").unwrap();
         let (result, ran) = run(&asked, &home, |_| ok());
@@ -408,6 +485,7 @@ mod tests {
         assert_eq!(ran, Vec::<String>::new());
         assert!(saved(&home, "com.google.wake").is_none());
 
+        item.listed_plist = Some(Box::new(Opened::open(&item.file).unwrap()));
         let asked = ask(&item, &home).unwrap();
         let ran = RefCell::new(0);
         let result = asked.apply_with(
