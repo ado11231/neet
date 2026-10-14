@@ -517,7 +517,6 @@ fn open_home(file: &Dotfile) -> Result<Opened, String> {
     let real_home = fs::canonicalize(home).map_err(|error| error.to_string())?;
     let roots = crate::safety::CleanupRoots::new(home).ok();
     let current = super::view_only(
-        file.known,
         &file.path,
         &real_home,
         roots.as_ref(),
@@ -771,7 +770,7 @@ mod tests {
         missing.found = None;
         assert!(Edit::begin(&missing, None).is_err());
         let mut view_only = dotfile(&home, None);
-        view_only.view_only = Some(super::super::ViewOnly::SshConfig);
+        view_only.view_only = Some(super::super::ViewOnly::NotWritable);
         assert!(
             Edit::begin(&view_only, None)
                 .err()
@@ -963,7 +962,7 @@ mod tests {
         assert_eq!(backups.list(".zshrc").unwrap().len(), 2);
 
         let mut view_only = dotfile(&home, None);
-        view_only.view_only = Some(super::super::ViewOnly::SshConfig);
+        view_only.view_only = Some(super::super::ViewOnly::NotWritable);
         assert!(restore(&view_only, &saved[0], &backups, SystemTime::now()).is_err());
     }
 }

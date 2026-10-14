@@ -101,11 +101,6 @@ const ENTRIES: &[Entry] = &[
         target: Target::Soon,
     },
     Entry {
-        label: "SSH",
-        about: "Manage hosts, keys, and permissions.",
-        target: Target::Soon,
-    },
-    Entry {
         label: "Quit",
         about: "Close neet.",
         target: Target::Quit,

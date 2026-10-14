@@ -692,11 +692,17 @@ alias sk-=ls
         use std::os::unix::fs::PermissionsExt as _;
         let dir = tempfile::tempdir().unwrap();
         let home = fs::canonicalize(dir.path()).unwrap().join("home");
-        fs::create_dir_all(home.join(".ssh")).unwrap();
-        fs::set_permissions(home.join(".ssh"), fs::Permissions::from_mode(0o700)).unwrap();
+        fs::create_dir_all(home.join(".config/kitty")).unwrap();
+        fs::set_permissions(home.join(".config"), fs::Permissions::from_mode(0o700)).unwrap();
         fs::write(home.join(".zshrc"), "export A=1\n").unwrap();
+        fs::write(home.join(".config/kitty/kitty.conf"), "font_size 14\n").unwrap();
+        fs::set_permissions(
+            home.join(".config/kitty/kitty.conf"),
+            fs::Permissions::from_mode(0o600),
+        )
+        .unwrap();
+        fs::create_dir_all(home.join(".ssh")).unwrap();
         fs::write(home.join(".ssh/config"), "Host x\n").unwrap();
-        fs::set_permissions(home.join(".ssh/config"), fs::Permissions::from_mode(0o600)).unwrap();
         fs::write(
             home.join(".npmrc"),
             "//r/:_authToken=npm_abcdefabcdefabcdef\n",
@@ -720,14 +726,18 @@ alias sk-=ls
             files,
             [
                 (".zshrc", "dot_zshrc", 0),
-                (".ssh/config", "private_dot_ssh/private_config", 0),
+                (
+                    ".config/kitty/kitty.conf",
+                    "private_dot_config/kitty/private_kitty.conf",
+                    0
+                ),
                 (".npmrc", "dot_npmrc", 1),
             ]
         );
 
         commit(
             &plan,
-            &["dot_zshrc", "private_dot_ssh/private_config"],
+            &["dot_zshrc", "private_dot_config/kitty/private_kitty.conf"],
             "Start dotfiles",
         )
         .unwrap();
@@ -737,8 +747,13 @@ alias sk-=ls
         );
         let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode(&folder), 0o700);
-        assert_eq!(mode(&folder.join("private_dot_ssh")), 0o700);
-        assert_eq!(mode(&folder.join("private_dot_ssh/private_config")), 0o600);
+        assert_eq!(mode(&folder.join("private_dot_config")), 0o700);
+        assert_eq!(
+            mode(&folder.join("private_dot_config/kitty/private_kitty.conf")),
+            0o600
+        );
+        assert!(!folder.join("private_dot_ssh").exists());
+        assert!(!folder.join("dot_ssh").exists());
         assert!(!folder.join("dot_npmrc").exists());
         assert_eq!(
             fs::read_to_string(folder.join(".chezmoiignore")).unwrap(),
@@ -747,7 +762,7 @@ alias sk-=ls
         assert!(
             fs::read_to_string(folder.join("README.md"))
                 .unwrap()
-                .contains("- `~/.ssh/config`")
+                .contains("- `~/.config/kitty/kitty.conf`")
         );
         let shown = Command::new("git")
             .arg("-C")
@@ -757,7 +772,7 @@ alias sk-=ls
             .unwrap();
         assert_eq!(
             String::from_utf8_lossy(&shown.stdout),
-            "Start dotfiles\n\n.chezmoiignore\nREADME.md\ndot_zshrc\nprivate_dot_ssh/private_config\n"
+            "Start dotfiles\n\n.chezmoiignore\nREADME.md\ndot_zshrc\nprivate_dot_config/kitty/private_kitty.conf\n"
         );
 
         // The folder now holds files, so starting again is refused, and so
