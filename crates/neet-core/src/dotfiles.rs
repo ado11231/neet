@@ -19,7 +19,6 @@ pub mod export;
 pub enum Group {
     Shell,
     Git,
-    Ssh,
     Editors,
     Terminal,
     Tools,
@@ -31,7 +30,6 @@ impl Group {
         match self {
             Self::Shell => "Shell",
             Self::Git => "Git",
-            Self::Ssh => "SSH",
             Self::Editors => "Editors",
             Self::Terminal => "Terminal",
             Self::Tools => "Tools",
@@ -98,7 +96,6 @@ pub const FILES: &[Known] = &[
     known(".config/git/config", Group::Git, Syntax::Git),
     known(".config/git/ignore", Group::Git, Syntax::None),
     known(".gitignore_global", Group::Git, Syntax::None),
-    known(".ssh/config", Group::Ssh, Syntax::None),
     known(".vimrc", Group::Editors, Syntax::None),
     known(".config/nvim/init.lua", Group::Editors, Syntax::None),
     known(".config/nvim/init.vim", Group::Editors, Syntax::None),
@@ -176,8 +173,6 @@ impl Built {
 /// Why a listed file can only be viewed
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ViewOnly {
-    /// `.ssh/config` waits for the SSH feature.
-    SshConfig,
     /// A link that leads nowhere
     BrokenLink,
     /// A link that leads outside the home folder
@@ -195,7 +190,6 @@ impl ViewOnly {
     #[must_use]
     pub fn describe(&self) -> &'static str {
         match self {
-            Self::SshConfig => "Changing it comes with the SSH screen",
             Self::BrokenLink => "It is a link that leads nowhere",
             Self::LinkLeadsOut => "It is a link that leads outside your home folder",
             Self::Protected => "It is a link into a protected folder",
@@ -282,9 +276,9 @@ pub fn list(home: &Path) -> Listing {
             let managed = chezmoi
                 .as_ref()
                 .map(|chezmoi| managed(&chezmoi.source, known.path, &path, &ignored));
-            let view_only = found.as_ref().and_then(|_| {
-                view_only(known, &path, &real_home, roots.as_ref(), managed.as_ref())
-            });
+            let view_only = found
+                .as_ref()
+                .and_then(|_| view_only(&path, &real_home, roots.as_ref(), managed.as_ref()));
             Dotfile {
                 known,
                 path,
@@ -319,15 +313,11 @@ fn found(path: &Path) -> Option<Found> {
 }
 
 fn view_only(
-    known: &Known,
     path: &Path,
     real_home: &Path,
     roots: Option<&CleanupRoots>,
     managed: Option<&Managed>,
 ) -> Option<ViewOnly> {
-    if known.path == ".ssh/config" {
-        return Some(ViewOnly::SshConfig);
-    }
     let Ok(target) = fs::canonicalize(path) else {
         return Some(ViewOnly::BrokenLink);
     };
@@ -1232,9 +1222,11 @@ mod tests {
         assert_eq!(zshrc.view_only, None);
         assert!(!zshrc.may_hold_secrets);
         assert_eq!(file(&listing, ".bashrc").found, None);
-        assert_eq!(
-            file(&listing, ".ssh/config").view_only,
-            Some(ViewOnly::SshConfig)
+        assert!(
+            !listing
+                .files
+                .iter()
+                .any(|file| file.known.path.starts_with(".ssh/"))
         );
         assert!(file(&listing, ".npmrc").may_hold_secrets);
         assert_eq!(
