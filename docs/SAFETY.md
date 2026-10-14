@@ -252,7 +252,6 @@ Only these files are listed. Paths are inside your home folder.
 | --- | --- |
 | Shell | `.zshrc`, `.zprofile`, `.zshenv`, `.zlogin`, `.zlogout`, `.bashrc`, `.bash_profile`, `.profile`, `.inputrc`, `.config/fish/config.fish` |
 | Git | `.gitconfig`, `.config/git/config`, `.config/git/ignore`, `.gitignore_global` |
-| SSH | `.ssh/config` |
 | Editors | `.vimrc`, `.config/nvim/init.lua`, `.config/nvim/init.vim`, `.nanorc`, `.editorconfig` |
 | Terminal | `.tmux.conf`, `.config/tmux/tmux.conf`, `.config/kitty/kitty.conf`, `.config/ghostty/config`, `.config/ghostty/config.ghostty`, `.config/alacritty/alacritty.toml`, `.config/starship.toml`, `.wezterm.lua` |
 | Tools | `.npmrc`, `.config/mise/config.toml`, `.config/gh/config.yml`, `.Brewfile` |
@@ -261,7 +260,7 @@ Only these files are listed. Paths are inside your home folder.
 * Never listed, read, or exported:
 * Shell and editor history, such as `.zsh_history`, `.bash_history`, and `.viminfo`.
 * Files that hold passwords or tokens: `.netrc`, `.git-credentials`, `.config/gh/hosts.yml`, and everything in `~/.aws`, `~/.docker`, and `~/.kube`.
-* Everything in `~/.ssh` except `config`.
+* Everything in `~/.ssh`.
 * Files a shell makes for itself, such as `.zcompdump`.
 * `.npmrc` can hold a token. It is marked **secret**, and starts left out of exports.
 
@@ -269,7 +268,6 @@ Only these files are listed. Paths are inside your home folder.
 
 * Only the files in the table, and, with [chezmoi](#chezmoi), the source file chezmoi keeps for each one.
 * View only, never changed:
-* `.ssh/config`. Changing it waits for the SSH feature.
 * A file that is a link leading outside your home folder, or into a [protected folder](#protected-folders).
 * A file neet cannot write as you. neet never uses `sudo` here.
 * With chezmoi: templates, encrypted files, and files chezmoi builds from scripts or changes in place.
@@ -298,7 +296,6 @@ A check only reads the file. It never runs it.
 | TOML files | Read with neet's own TOML reader. |
 | Everything else | None. The screen says there is no check. |
 
-* `ssh -G` is not used for `.ssh/config`: it runs `Match exec` commands while it reads.
 * Save, Put Back, and Restore also check the text they are about to save or restore.
 * Failed checks block saving. Return to the editor or cancel.
 
@@ -451,9 +448,6 @@ Later features change files or settings in place, not through the Trash. Each ha
 | Feature | May Change | How |
 | --- | --- | --- |
 | Shell PATH | Only the shell files in [Dotfiles](#which-files-1). Never `/etc/paths`. | Edit with a backup |
-| SSH permissions | `~/.ssh` and the files directly inside it. | Change permissions |
-| SSH known hosts | `~/.ssh/known_hosts` | `ssh-keygen -R` |
-| SSH agent | Nothing on disk. | `ssh-add` |
 | Power settings | Low and High Power Mode, graphics switching, and three wake settings. | `sudo pmset` |
 | Refresh rate | The mode of a connected display. It switches back after 15 seconds unless you keep it. | CoreGraphics |
 

@@ -350,6 +350,5 @@ These screens are not built. Keys and layouts are still undecided.
 | Screen | Plan |
 | --- | --- |
 | Space Breakdown | Explain used space outside the home scan. |
-| SSH | Inspect hosts and keys, and review permission or known host changes. |
 | PATH | Show shell search folders and review edits with backups. |
 | Settings | Power and display controls with undo, plus saved choices. |
