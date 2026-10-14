@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -136,11 +136,20 @@ impl DiskWatch {
     }
 
     fn poll(&mut self) {
-        if let Some(answer) = &self.answer
-            && let Ok(purgeable) = answer.try_recv()
-        {
-            self.purgeable = purgeable;
-            self.answer = None;
+        if let Some(answer) = &self.answer {
+            match answer.try_recv() {
+                Ok(purgeable) => {
+                    self.purgeable = purgeable;
+                    self.answer = None;
+                }
+                // The worker died without answering, so the old value is
+                // stale. Ask again after the usual wait.
+                Err(TryRecvError::Disconnected) => {
+                    self.purgeable = None;
+                    self.answer = None;
+                }
+                Err(TryRecvError::Empty) => {}
+            }
         }
         if self.answer.is_none()
             && self
@@ -301,6 +310,45 @@ mod tests {
 
     fn press(app: &mut App, code: KeyCode) {
         app.handle_key(KeyEvent::new(code, KeyModifiers::NONE));
+    }
+
+    #[test]
+    fn a_lost_disk_result_clears_the_old_value_and_allows_retry() {
+        let mut watch = DiskWatch::new(None);
+        let (sender, answer) = mpsc::channel();
+        watch.answer = Some(answer);
+        watch.purgeable = Some(500);
+        watch.asked = Some(Instant::now());
+        watch.poll();
+        assert!(watch.answer.is_some());
+        assert_eq!(watch.purgeable, Some(500));
+        drop(sender);
+        watch.poll();
+        assert!(watch.answer.is_none());
+        assert_eq!(watch.purgeable, None);
+
+        let dir = tempfile::tempdir().unwrap();
+        watch.root = Some(dir.path().join("missing"));
+        watch.asked = Instant::now().checked_sub(PURGEABLE_REFRESH);
+        watch.poll();
+        assert!(watch.answer.is_some());
+        assert!(watch.asked.unwrap().elapsed() < PURGEABLE_REFRESH);
+    }
+
+    #[test]
+    fn queued_disk_results_survive_the_worker_exiting() {
+        for result in [Some(123), None] {
+            let mut watch = DiskWatch::new(None);
+            watch.purgeable = Some(500);
+            let (sender, answer) = mpsc::channel();
+            watch.answer = Some(answer);
+            sender.send(result).unwrap();
+            drop(sender);
+            watch.poll();
+            watch.poll();
+            assert_eq!(watch.purgeable, result);
+            assert!(watch.answer.is_none());
+        }
     }
 
     #[test]
