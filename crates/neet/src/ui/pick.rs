@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -80,14 +80,17 @@ impl Pick {
     }
 
     fn poll(&mut self) {
-        if let State::Planning { result, .. } = &self.state
-            && let Ok(outcome) = result.try_recv()
-        {
-            self.state = match outcome {
-                Ok(planned) => State::Ready(Arc::new(planned)),
-                Err(reason) => State::Failed(reason),
-            };
-        }
+        let State::Planning { result, .. } = &self.state else {
+            return;
+        };
+        self.state = match result.try_recv() {
+            Ok(Ok(planned)) => State::Ready(Arc::new(planned)),
+            Ok(Err(reason)) => State::Failed(reason),
+            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Disconnected) => State::Failed(
+                "The task ended without a result. Go back and open this list again.".to_string(),
+            ),
+        };
     }
 
     /// The plan, to change, while no review holds a copy
@@ -605,6 +608,58 @@ mod tests {
                 plan: None,
             },
         )
+    }
+
+    #[test]
+    fn a_missing_picker_plan_stops_loading() {
+        let (sender, result) = mpsc::channel();
+        let mut pick = Pick {
+            title: "Project build folders",
+            state: State::Planning {
+                started: Instant::now(),
+                result,
+            },
+            list: TableState::default(),
+        };
+        pick.poll();
+        assert!(matches!(pick.state, State::Planning { .. }));
+        drop(sender);
+        pick.poll();
+        pick.poll();
+        assert!(render(&mut pick).contains("ended without a result"));
+        assert!(matches!(press(&mut pick, KeyCode::Enter), Action::None));
+        assert!(matches!(pick.back(), Action::Back));
+    }
+
+    #[test]
+    fn queued_picker_results_survive_the_worker_exiting() {
+        let home = tempfile::tempdir().unwrap();
+        let planned = Planned {
+            plan: neet_core::clean::Plan::default(),
+            errors: Vec::new(),
+            home: home.path().to_path_buf(),
+        };
+        for outcome in [Ok(planned), Err("Cannot read the home folder.".to_string())] {
+            let succeeded = outcome.is_ok();
+            let (sender, result) = mpsc::channel();
+            sender.send(outcome).unwrap();
+            drop(sender);
+            let mut pick = Pick {
+                title: "Installers",
+                state: State::Planning {
+                    started: Instant::now(),
+                    result,
+                },
+                list: TableState::default(),
+            };
+            pick.poll();
+            pick.poll();
+            if succeeded {
+                assert!(matches!(pick.state, State::Ready(_)));
+            } else {
+                assert!(render(&mut pick).contains("Cannot read the home folder."));
+            }
+        }
     }
 
     #[test]
