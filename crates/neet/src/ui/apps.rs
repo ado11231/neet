@@ -83,15 +83,16 @@ fn sizes() -> std::sync::MutexGuard<'static, HashMap<PathBuf, Measured>> {
 }
 
 /// Starts measuring, in the background, every app in `paths` that is not
-/// measured or being measured yet, several at once. Sizes are kept while
-/// neet runs, so Remove App opens with them.
+/// measured or being measured yet, several at once. An app that failed is
+/// measured again. Sizes are kept while neet runs, so Remove App opens with
+/// them.
 pub fn measure(paths: Vec<PathBuf>) {
     let queue: Vec<PathBuf> = {
         let mut sizes = sizes();
         paths
             .into_iter()
             .filter(|path| {
-                let new = !sizes.contains_key(path);
+                let new = matches!(sizes.get(path), None | Some(Measured::Failed));
                 if new {
                     sizes.insert(path.clone(), Measured::Waiting);
                 }
@@ -109,7 +110,12 @@ pub fn measure(paths: Vec<PathBuf>) {
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .pop();
                 let Some(path) = next else { return };
-                let measured = removal::app_size(&path).map_or(Measured::Failed, Measured::Size);
+                // A panic while measuring must not leave the app waiting
+                // forever, or stop this measurer from taking the next app.
+                let measured = std::panic::catch_unwind(|| removal::app_size(&path))
+                    .map_or(Measured::Failed, |size| {
+                        size.map_or(Measured::Failed, Measured::Size)
+                    });
                 sizes().insert(path, measured);
             }
         });
@@ -1351,6 +1357,25 @@ mod tests {
         sizes().insert(app.clone(), Measured::Size(1));
         measure(vec![app.clone()]);
         assert!(matches!(sizes().get(&app), Some(Measured::Size(1))));
+    }
+
+    #[test]
+    fn measures_an_app_that_failed_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = dir.path().join("Retry.app");
+        std::fs::create_dir_all(app.join("Contents")).unwrap();
+        std::fs::write(app.join("Contents/x"), vec![0u8; 10_000]).unwrap();
+        sizes().insert(app.clone(), Measured::Failed);
+        measure(vec![app.clone()]);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while matches!(sizes().get(&app), Some(Measured::Waiting)) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "measuring took too long"
+            );
+            thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(matches!(sizes().get(&app), Some(Measured::Size(size)) if *size >= 10_000));
     }
 
     #[test]
