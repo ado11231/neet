@@ -166,7 +166,6 @@ These features are not built yet. Each needs checking on real Macs.
 
 | Area | What It Would Do |
 | --- | --- |
-| SSH | Show hosts, key details, and agent keys, fix file permissions that are too open, and remove old known hosts. Never shows a private key. |
 | Shell PATH | Show the folders your shell searches for programs, in order, flag problems, show which copy of a program runs, and reorder them with a backup. |
 | Power and display | Switch power modes, graphics switching, and display refresh rate, and show what keeps the Mac awake. Every change can be undone. |
 | Space breakdown | Explain the gap between the disk's used space and the scan. |

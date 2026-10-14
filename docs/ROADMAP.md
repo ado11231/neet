@@ -83,7 +83,6 @@
 
 ## Next
 
-* Fix failed Docker lookups and unknown prune sizes in [#121](https://github.com/ado11231/neet/issues/121).
 * Finish chat actions, related file cleanup, restore, and reload checks in [#111](https://github.com/ado11231/neet/issues/111).
 * Add skill source and removal support in [#112](https://github.com/ado11231/neet/issues/112).
 * Explain disk space outside the home scan in [#20](https://github.com/ado11231/neet/issues/20).
@@ -95,7 +94,6 @@
 
 | Work | Issue |
 | --- | --- |
-| SSH hosts, key details, permissions, and known hosts | [#23](https://github.com/ado11231/neet/issues/23) |
 | Shell PATH inspection and reviewed edits | [#25](https://github.com/ado11231/neet/issues/25) |
 | Power and display settings with undo | [#27](https://github.com/ado11231/neet/issues/27) |
 | Folder sizes shown as areas | [#29](https://github.com/ado11231/neet/issues/29) |
