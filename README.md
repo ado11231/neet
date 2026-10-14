@@ -15,13 +15,7 @@
 ## Install
 
 * macOS 13 or later, on Apple silicon or Intel.
-* Download the latest release with the installer:
-
-```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/ado11231/neet/releases/latest/download/neet-installer.sh | sh
-```
-
-Or install the published crate with [Rust](https://rustup.rs):
+* Install the published crate with [Rust](https://rustup.rs):
 
 ```sh
 cargo install neet --locked
@@ -43,20 +37,29 @@ cargo install --git https://github.com/ado11231/neet --locked neet
 neet
 ```
 
-* Scans your home folder in the background.
-* Arrow keys move, `Enter` opens, `Esc` goes back, `?` shows help, and `q` quits.
-* The table below describes the current code. Published releases may have fewer features.
+neet scans your home folder in the background while you pick a screen from Home.
 
-| Screen | Purpose |
+| Key | Does |
 | --- | --- |
-| Disk | Browse folders by size. |
-| Quick Clean | Review build folders, installers, Trash, Docker, and simulators. |
-| Deep Clean | Review cache and log cleanup rules. |
-| Remove App | Review an app and its leftover files. |
-| Large Files | Find large or old files. |
-| Startup | List startup items and review changes to your own launch agents. |
-| Dotfiles | Edit settings with backups, or review a Git export. |
-| AI Tools | Browse chats and skills, review transcript cleanup, and edit local skills. |
+| `↑` `↓` or `j` `k` | Move |
+| `Enter` | Open |
+| `1`–`8` | Open a screen from Home |
+| `Esc` | Go back |
+| `?` | Help for the current screen |
+| `q` | Quit |
+
+| # | Screen | What it does |
+| --- | --- | --- |
+| 1 | Disk | Browse folders by size. |
+| 2 | Quick Clean | Find build folders, installers, Trash, Docker, and simulator space. |
+| 3 | Deep Clean | Clear caches and logs, after you review every path. |
+| 4 | Remove App | Remove an app and its leftover files. |
+| 5 | Large Files | Find large or old files. |
+| 6 | Startup | See what starts on its own, and turn off your own launch agents. |
+| 7 | Dotfiles | Edit settings files with backups, and export them with chezmoi. |
+| 8 | AI Tools | Browse assistant chats and skills, clean up transcripts, and edit local skills. |
+
+Every cleanup shows what it will remove and asks first. Files go to the Trash, except Docker, simulator, and Empty Trash actions, which delete for good after a separate warning. See [SAFETY.md](docs/SAFETY.md).
 
 ## License
 
