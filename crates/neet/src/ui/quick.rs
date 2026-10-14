@@ -15,7 +15,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Cell, Padding, Paragraph, Row, Table, TableState, Wrap};
 
 use super::app::{Action, Context, Screen};
-use super::clean::{Clean, display_path};
+use super::clean::{Clean, Estimate, display_path};
 use super::disk::Disk;
 use super::format;
 use super::loading::scanning;
@@ -330,6 +330,7 @@ impl QuickClean {
                             planned.plan.rules.iter().map(|rule| rule.items.len()).sum()
                         }),
                 },
+                None if context.plan.is_some_and(Estimate::failed) => Status::Failed,
                 None => Status::Looking,
             },
             Item::Clutter(kind) if clutter::neet_removes(kind) => {
@@ -855,9 +856,14 @@ impl Screen for QuickClean {
         // from top to bottom, so a tall screen has no empty box.
         let (title, mut sections) = self.about_lines();
         if matches!(self.status(self.selected(), context), Status::Failed) {
+            let retry = if self.selected() == Item::Rules {
+                "Open Deep Clean to see why, then press r to try again."
+            } else {
+                "Go back and open Quick Clean again to try again."
+            };
             sections[0] = vec![
                 Line::from("Could not read the size.").yellow(),
-                Line::from("Go back and open Quick Clean again to try again."),
+                Line::from(retry),
             ];
         }
         sections.push(self.row_lines(context));
@@ -1138,6 +1144,30 @@ mod tests {
                 assert!(matches!(status, Status::Nothing));
             }
         }
+    }
+
+    #[test]
+    fn a_failed_cache_plan_shows_unknown_instead_of_scanning() {
+        let (_dir, scan) = done();
+        let estimate = super::super::clean::Estimate::start(None);
+        let context = Context {
+            cleanable: None,
+            plan: Some(&estimate),
+            ..context(&scan)
+        };
+        let mut screen = quick();
+        let mut terminal = Terminal::new(TestBackend::new(140, 30)).unwrap();
+        terminal
+            .draw(|frame| screen.draw(frame, frame.area(), &context))
+            .unwrap();
+        let text = crate::ui::visual::tests::text(terminal.backend().buffer());
+        assert!(text.contains("unknown"));
+        assert!(!text.contains("scanning"));
+        assert!(text.contains("Open Deep Clean"));
+        assert!(matches!(
+            press(&mut screen, &scan, KeyCode::Enter),
+            Action::Open(_)
+        ));
     }
 
     #[test]

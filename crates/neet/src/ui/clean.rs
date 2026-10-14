@@ -101,6 +101,11 @@ impl Estimate {
         }
     }
 
+    /// Whether planning failed, so there will be no total
+    pub fn failed(&self) -> bool {
+        self.failed.is_some()
+    }
+
     /// The total, once planned
     pub fn size(&self) -> Option<u64> {
         self.planned
