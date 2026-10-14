@@ -1,7 +1,8 @@
 use std::cmp::Reverse;
 use std::fs;
+use std::io;
 use std::path::PathBuf;
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
 
 use neet_core::clutter::{self, Finding, Kind};
@@ -33,12 +34,13 @@ const TALL: u16 = 45;
 
 /// What the background work found, once it is done
 enum Asked {
-    Waiting(Receiver<Option<Finding>>),
+    Waiting(Receiver<io::Result<Option<Finding>>>),
     Done(Option<Finding>),
+    Failed,
 }
 
 impl Asked {
-    fn start(work: impl FnOnce() -> Option<Finding> + Send + 'static) -> Self {
+    fn start(work: impl FnOnce() -> io::Result<Option<Finding>> + Send + 'static) -> Self {
         let (sender, answer) = mpsc::channel();
         thread::spawn(move || {
             let _ = sender.send(work());
@@ -47,11 +49,14 @@ impl Asked {
     }
 
     fn poll(&mut self) {
-        if let Self::Waiting(answer) = self
-            && let Ok(found) = answer.try_recv()
-        {
-            *self = Self::Done(found);
-        }
+        let Self::Waiting(answer) = self else {
+            return;
+        };
+        *self = match answer.try_recv() {
+            Ok(Ok(found)) => Self::Done(found),
+            Ok(Err(_)) | Err(TryRecvError::Disconnected) => Self::Failed,
+            Err(TryRecvError::Empty) => return,
+        };
     }
 }
 
@@ -87,6 +92,7 @@ enum Status {
     Nothing,
     /// macOS would not let the scan read it, so its size is unknown
     NoAccess,
+    Failed,
 }
 
 fn name(item: Item) -> &'static str {
@@ -245,8 +251,8 @@ pub struct QuickClean {
 impl QuickClean {
     pub fn new() -> Self {
         Self::with(
-            Asked::start(|| clutter::simulator_runtimes().ok().flatten()),
-            Asked::start(|| clutter::temp_files().ok()),
+            Asked::start(clutter::simulator_runtimes),
+            Asked::start(|| clutter::temp_files().map(Some)),
         )
     }
 
@@ -297,11 +303,11 @@ impl QuickClean {
         match kind {
             Kind::SimulatorRuntimes => match &self.simulators {
                 Asked::Done(found) => found.as_ref(),
-                Asked::Waiting(_) => None,
+                Asked::Waiting(_) | Asked::Failed => None,
             },
             Kind::TempFiles => match &self.temp {
                 Asked::Done(found) => found.as_ref(),
-                Asked::Waiting(_) => None,
+                Asked::Waiting(_) | Asked::Failed => None,
             },
             _ => self
                 .from_tree
@@ -342,6 +348,13 @@ impl QuickClean {
                 }
             }
             Item::Clutter(kind) => {
+                if matches!(
+                    (kind, &self.simulators, &self.temp),
+                    (Kind::SimulatorRuntimes, Asked::Failed, _)
+                        | (Kind::TempFiles, _, Asked::Failed)
+                ) {
+                    return Status::Failed;
+                }
                 let waiting = match kind {
                     Kind::SimulatorRuntimes => matches!(self.simulators, Asked::Waiting(_)),
                     Kind::TempFiles => matches!(self.temp, Asked::Waiting(_)),
@@ -420,6 +433,7 @@ impl QuickClean {
                         String::new(),
                     ),
                     Status::Nothing => (Span::raw("none"), Span::raw(""), String::new()),
+                    Status::Failed => (Span::raw("unknown").yellow(), Span::raw(""), String::new()),
                     Status::NoAccess => (
                         Span::raw("no access").yellow(),
                         Span::raw(""),
@@ -578,6 +592,9 @@ impl QuickClean {
                 vec![Span::raw("scanning").fg(super::visual::ACCENT)],
             )),
             Status::Nothing => lines.push(field("Size", vec![Span::raw("none found")])),
+            Status::Failed => {
+                lines.push(field("Size", vec![Span::raw("unknown").yellow()]));
+            }
             Status::NoAccess => {
                 lines.push(field("Size", vec![Span::raw("no access").yellow()]));
                 lines.push(Line::from(NO_ACCESS).yellow());
@@ -837,6 +854,12 @@ impl Screen for QuickClean {
         // row's largest items down the right. Each box spreads its sections
         // from top to bottom, so a tall screen has no empty box.
         let (title, mut sections) = self.about_lines();
+        if matches!(self.status(self.selected(), context), Status::Failed) {
+            sections[0] = vec![
+                Line::from("Could not read the size.").yellow(),
+                Line::from("Go back and open Quick Clean again to try again."),
+            ];
+        }
         sections.push(self.row_lines(context));
         if area.width >= MIN_SIDE_WIDTH {
             let [left, side] =
@@ -1022,10 +1045,7 @@ mod tests {
             count: 2,
             node: None,
         };
-        QuickClean::with(
-            Asked::Done(Some(simulator)),
-            Asked::Waiting(mpsc::channel().1),
-        )
+        QuickClean::with(Asked::Done(Some(simulator)), Asked::Done(None))
     }
 
     fn context(scan: &ScanStatus) -> Context<'_> {
@@ -1056,6 +1076,71 @@ mod tests {
     }
 
     #[test]
+    fn missing_quick_clean_results_do_not_keep_scanning() {
+        let (_dir, scan) = done();
+        for kind in [Kind::SimulatorRuntimes, Kind::TempFiles] {
+            let (sender, answer) = mpsc::channel();
+            let mut screen = match kind {
+                Kind::SimulatorRuntimes => {
+                    QuickClean::with(Asked::Waiting(answer), Asked::Done(None))
+                }
+                _ => QuickClean::with(Asked::Done(None), Asked::Waiting(answer)),
+            };
+            screen
+                .table
+                .select(ITEMS.iter().position(|item| *item == Item::Clutter(kind)));
+            let _ = render(&mut screen, &scan);
+            assert!(matches!(
+                screen.status(Item::Clutter(kind), &context(&scan)),
+                Status::Looking
+            ));
+            drop(sender);
+            let text = render(&mut screen, &scan);
+            assert!(!text.contains("scanning"));
+            assert!(text.contains("unknown"));
+            assert!(text.contains("open Quick Clean again"));
+            assert!(matches!(screen.back(), Action::Back));
+        }
+    }
+
+    #[test]
+    fn queued_quick_clean_results_keep_sizes_and_errors() {
+        let (_dir, scan) = done();
+        let finding = Finding {
+            kind: Kind::TempFiles,
+            size: 2048,
+            count: 1,
+            node: None,
+        };
+        for result in [
+            Ok(Some(finding)),
+            Ok(None),
+            Err(io::Error::other("read failed")),
+        ] {
+            let failed = result.is_err();
+            let size = result
+                .as_ref()
+                .ok()
+                .and_then(|found| found.as_ref())
+                .map(|found| found.size);
+            let (sender, answer) = mpsc::channel();
+            sender.send(result).unwrap();
+            drop(sender);
+            let mut screen = QuickClean::with(Asked::Done(None), Asked::Waiting(answer));
+            screen.temp.poll();
+            screen.temp.poll();
+            let status = screen.status(Item::Clutter(Kind::TempFiles), &context(&scan));
+            if failed {
+                assert!(matches!(status, Status::Failed));
+            } else if let Some(expected) = size {
+                assert!(matches!(status, Status::Found { size, .. } if size == expected));
+            } else {
+                assert!(matches!(status, Status::Nothing));
+            }
+        }
+    }
+
+    #[test]
     fn lists_what_neet_clears_and_what_you_remove() {
         let (_dir, scan) = done();
         let screen = render(&mut quick(), &scan);
@@ -1066,7 +1151,7 @@ mod tests {
         assert!(screen.contains("1.0 MB"));
         assert!(screen.contains("300.0 KB") || screen.contains("303.1 KB"));
         assert!(screen.contains("17.0 GB"));
-        assert!(screen.contains("scanning"));
+        assert!(screen.contains("none"));
         assert!(screen.contains("Manual: 2.0 MB"));
         assert!(screen.contains("neet, permanently"));
         assert!(screen.contains("macOS"));
