@@ -807,7 +807,10 @@ mod tests {
     fn no_asset_folder_finds_nothing() {
         let root = tempfile::tempdir().unwrap();
 
-        assert!(leftover_downloads(&root.path().join("missing"), &[]).is_empty());
+        assert_eq!(
+            leftover_downloads(&root.path().join("missing"), &[]),
+            Vec::new()
+        );
     }
 
     #[test]

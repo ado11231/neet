@@ -69,7 +69,7 @@ enum Item {
 }
 
 /// What neet clears first, then what you clear, then what macOS clears
-const ITEMS: [Item; 7] = [
+const ITEMS: [Item; 8] = [
     Item::Rules,
     Item::Clutter(Kind::BuildFolders),
     Item::Clutter(Kind::Installers),
@@ -77,6 +77,7 @@ const ITEMS: [Item; 7] = [
     Item::Clutter(Kind::DockerImage),
     Item::Clutter(Kind::SimulatorRuntimes),
     Item::Clutter(Kind::TempFiles),
+    Item::Clutter(Kind::SimulatorDownloads),
 ];
 
 /// Width of the bar that shows each row's share of everything found
@@ -104,6 +105,7 @@ fn name(item: Item) -> &'static str {
         Item::Clutter(Kind::DockerImage) => "Docker disk image",
         Item::Clutter(Kind::SimulatorRuntimes) => "Simulators",
         Item::Clutter(Kind::TempFiles) => "Temporary files",
+        Item::Clutter(Kind::SimulatorDownloads) => "Simulator downloads",
     }
 }
 
@@ -117,6 +119,8 @@ enum Who {
     You,
     /// macOS clears it on its own
     Mac,
+    /// macOS keeps it, and nobody can remove it
+    Nobody,
 }
 
 fn who(item: Item) -> Who {
@@ -125,6 +129,7 @@ fn who(item: Item) -> Who {
         Item::Clutter(kind) if clutter::neet_removes(kind) => Who::Neet,
         Item::Clutter(Kind::DockerImage | Kind::SimulatorRuntimes) => Who::Tool,
         Item::Clutter(Kind::TempFiles) => Who::Mac,
+        Item::Clutter(Kind::SimulatorDownloads) => Who::Nobody,
         Item::Clutter(_) => Who::You,
     }
 }
@@ -135,6 +140,7 @@ fn who_span(who: Who) -> Span<'static> {
         Who::Tool => Span::raw("neet, permanently").red(),
         Who::You => Span::raw("you").yellow(),
         Who::Mac => Span::raw("macOS").fg(super::visual::ACCENT),
+        Who::Nobody => Span::raw("no one").magenta(),
     }
 }
 
@@ -154,6 +160,9 @@ fn about(item: Item) -> &'static str {
         }
         Item::Clutter(Kind::SimulatorRuntimes) => "iPhone & iPad simulators that Xcode downloaded.",
         Item::Clutter(Kind::TempFiles) => "Temporary files apps left behind.",
+        Item::Clutter(Kind::SimulatorDownloads) => {
+            "Simulator downloads macOS kept after their runtime was removed."
+        }
     }
 }
 
@@ -167,6 +176,7 @@ fn place(item: Item) -> &'static str {
         Item::Clutter(Kind::DockerImage) => "~/Library/Containers/com.docker.docker",
         Item::Clutter(Kind::SimulatorRuntimes) => "/Library/Developer/CoreSimulator",
         Item::Clutter(Kind::TempFiles) => "/private/var/folders",
+        Item::Clutter(Kind::SimulatorDownloads) => "/System/Library/AssetsV2",
     }
 }
 
@@ -182,6 +192,9 @@ fn afterwards(item: Item) -> &'static str {
         }
         Item::Clutter(Kind::SimulatorRuntimes) => "Xcode downloads it again if you need it.",
         Item::Clutter(Kind::TempFiles) => "Nothing to do. The space comes back by itself.",
+        Item::Clutter(Kind::SimulatorDownloads) => {
+            "macOS never clears them, and protects them, so neet & sudo can't delete them."
+        }
     }
 }
 
@@ -193,6 +206,7 @@ fn undo(item: Item) -> Span<'static> {
         // Only the Trash is left to you, and emptying it cannot be undone.
         Who::You => Span::raw("No, once emptied").red(),
         Who::Mac => Span::raw("Not needed").fg(super::visual::ACCENT),
+        Who::Nobody => Span::raw("Nothing is removed").magenta(),
     }
 }
 
@@ -234,6 +248,11 @@ fn steps_of(item: Item) -> &'static [&'static str] {
             "Restarting your Mac clears more.",
             "Don't delete them yourself.",
         ],
+        Item::Clutter(Kind::SimulatorDownloads) => &[
+            "Press Enter to see each download.",
+            "Reuse one instead of downloading it again.",
+            "neet never deletes system files.",
+        ],
     }
 }
 
@@ -246,14 +265,17 @@ pub struct QuickClean {
     removable: Option<Vec<(Kind, Vec<NodeId>)>>,
     simulators: Asked,
     temp: Asked,
+    downloads: Asked,
 }
 
 impl QuickClean {
     pub fn new() -> Self {
-        Self::with(
+        let mut screen = Self::with(
             Asked::start(clutter::simulator_runtimes),
             Asked::start(|| clutter::temp_files().map(Some)),
-        )
+        );
+        screen.downloads = Asked::start(clutter::simulator_downloads);
+        screen
     }
 
     fn with(simulators: Asked, temp: Asked) -> Self {
@@ -263,12 +285,14 @@ impl QuickClean {
             removable: None,
             simulators,
             temp,
+            downloads: Asked::Done(None),
         }
     }
 
     fn poll(&mut self, tree: &Tree) {
         self.simulators.poll();
         self.temp.poll();
+        self.downloads.poll();
         if self.from_tree.is_none() {
             self.from_tree = Some(clutter::from_tree(tree));
         }
@@ -306,6 +330,10 @@ impl QuickClean {
                 Asked::Waiting(_) | Asked::Failed => None,
             },
             Kind::TempFiles => match &self.temp {
+                Asked::Done(found) => found.as_ref(),
+                Asked::Waiting(_) | Asked::Failed => None,
+            },
+            Kind::SimulatorDownloads => match &self.downloads {
                 Asked::Done(found) => found.as_ref(),
                 Asked::Waiting(_) | Asked::Failed => None,
             },
@@ -350,15 +378,17 @@ impl QuickClean {
             }
             Item::Clutter(kind) => {
                 if matches!(
-                    (kind, &self.simulators, &self.temp),
-                    (Kind::SimulatorRuntimes, Asked::Failed, _)
-                        | (Kind::TempFiles, _, Asked::Failed)
+                    (kind, &self.simulators, &self.temp, &self.downloads),
+                    (Kind::SimulatorRuntimes, Asked::Failed, _, _)
+                        | (Kind::TempFiles, _, Asked::Failed, _)
+                        | (Kind::SimulatorDownloads, _, _, Asked::Failed)
                 ) {
                     return Status::Failed;
                 }
                 let waiting = match kind {
                     Kind::SimulatorRuntimes => matches!(self.simulators, Asked::Waiting(_)),
                     Kind::TempFiles => matches!(self.temp, Asked::Waiting(_)),
+                    Kind::SimulatorDownloads => matches!(self.downloads, Asked::Waiting(_)),
                     _ => self.from_tree.is_none(),
                 };
                 match self.finding(kind) {
@@ -383,7 +413,7 @@ impl QuickClean {
                 match who(item) {
                     Who::Neet | Who::Tool => neet_total += size,
                     Who::You => your_total += size,
-                    Who::Mac => {}
+                    Who::Mac | Who::Nobody => {}
                 }
             }
         }
@@ -494,6 +524,7 @@ impl QuickClean {
             Who::Tool => Color::Red,
             Who::You => Color::Yellow,
             Who::Mac => super::visual::ACCENT,
+            Who::Nobody => Color::Magenta,
         };
         let mut steps = Vec::new();
         steps.extend(steps_of(item).iter().enumerate().map(|(number, step)| {
@@ -606,6 +637,7 @@ impl QuickClean {
             Who::Tool => "neet, deleted for good",
             Who::You => "you",
             Who::Mac => "macOS",
+            Who::Nobody => "no one, macOS keeps it",
         };
         // In the color the table uses for who clears it
         let style = who_span(who(item)).style;
@@ -750,9 +782,9 @@ impl QuickClean {
         };
         if entries.is_empty() {
             return Err(Line::from(match item {
-                Item::Clutter(Kind::SimulatorRuntimes | Kind::TempFiles) => {
-                    "Outside home. No scan details."
-                }
+                Item::Clutter(
+                    Kind::SimulatorRuntimes | Kind::TempFiles | Kind::SimulatorDownloads,
+                ) => "Outside home. No scan details.",
                 _ => "Nothing to list.",
             }));
         }
@@ -920,7 +952,7 @@ impl Screen for QuickClean {
                     let ScanStatus::Done { scan, .. } = context.scan else {
                         return Action::None;
                     };
-                    if kind == Kind::SimulatorRuntimes {
+                    if matches!(kind, Kind::SimulatorRuntimes | Kind::SimulatorDownloads) {
                         return Action::Open(Box::new(Simulators::new()));
                     }
                     if kind == Kind::DockerImage {
