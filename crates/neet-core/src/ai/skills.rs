@@ -333,3 +333,118 @@ impl Edit {
         Ok(backup)
     }
 }
+
+/// The folders a skill link may be removed from: each tool's own skill
+/// folder, and the shared one
+fn link_roots(locations: &Locations) -> [PathBuf; 4] {
+    [
+        locations.skill_root(Provider::Claude),
+        locations.skill_root(Provider::Shared),
+        locations.codex.join("skills"),
+        locations.skill_root(Provider::Gemini),
+    ]
+}
+
+/// Removes a skill's link from a tool's skill folder, leaving the folder it
+/// points to alone
+pub struct Unlink {
+    link: PathBuf,
+    /// What the link pointed to when it was reviewed, as written in it
+    target: PathBuf,
+}
+
+impl Unlink {
+    /// Checks that `item` is a skill linked into a tool's skill folder.
+    ///
+    /// # Errors
+    /// Rejects anything but a link directly in a user skill folder.
+    pub fn prepare(locations: &Locations, item: &Item) -> io::Result<Self> {
+        if item.kind != Kind::Skill || !matches!(item.source, Some(super::Source::Link(_))) {
+            return Err(invalid(
+                "only linked skills can be removed here; the folder it points to stays",
+            ));
+        }
+        let link = item
+            .path
+            .parent()
+            .ok_or_else(|| invalid("missing skill folder"))?
+            .to_path_buf();
+        let parent = link
+            .parent()
+            .ok_or_else(|| invalid("missing skill folder"))?;
+        if !link_roots(locations).iter().any(|root| root == parent) {
+            return Err(invalid(
+                "only links in your Claude Code, Codex, Gemini, or shared skill folders can be removed",
+            ));
+        }
+        if !fs::symlink_metadata(&link)?.file_type().is_symlink() {
+            return Err(invalid(
+                "this skill is a folder, not a link; nothing was removed",
+            ));
+        }
+        let target = fs::read_link(&link)?;
+        Ok(Self { link, target })
+    }
+
+    /// The link that goes
+    #[must_use]
+    pub fn link(&self) -> &Path {
+        &self.link
+    }
+
+    /// The folder it points to, which stays
+    #[must_use]
+    pub fn source(&self) -> PathBuf {
+        self.link
+            .parent()
+            .map_or_else(|| self.target.clone(), |parent| parent.join(&self.target))
+    }
+
+    /// Removes the link if it still points where it did when reviewed.
+    ///
+    /// # Errors
+    /// Returns an error if the link changed, was replaced, or cannot be removed.
+    pub fn apply(&self) -> io::Result<Relink> {
+        let meta = fs::symlink_metadata(&self.link)?;
+        if !meta.file_type().is_symlink() || fs::read_link(&self.link)? != self.target {
+            return Err(invalid(
+                "the link changed after review; nothing was removed. Look again with r",
+            ));
+        }
+        // Removes the link itself. A link is never followed by remove_file.
+        fs::remove_file(&self.link)?;
+        Ok(Relink {
+            link: self.link.clone(),
+            target: self.target.clone(),
+        })
+    }
+}
+
+/// Puts a removed skill link back
+pub struct Relink {
+    link: PathBuf,
+    target: PathBuf,
+}
+
+impl Relink {
+    #[must_use]
+    pub fn link(&self) -> &Path {
+        &self.link
+    }
+
+    /// Links the skill again, as it was.
+    ///
+    /// # Errors
+    /// Returns an error if something now uses the link's name.
+    pub fn apply(&self) -> io::Result<()> {
+        match fs::symlink_metadata(&self.link) {
+            Ok(_) => Err(invalid(
+                "something already uses that name; nothing was replaced",
+            )),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                symlink(&self.target, &self.link)
+            }
+            Err(error) => Err(error),
+        }
+    }
+}

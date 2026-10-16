@@ -1,6 +1,7 @@
 //! Local assistant files, conversation summaries, and skill changes.
 
 mod chat;
+mod plugins;
 pub mod remove;
 pub mod skills;
 pub mod summary;
@@ -53,6 +54,44 @@ impl Kind {
     }
 }
 
+/// An installed plugin that brings skills with it
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Plugin {
+    pub name: String,
+    /// Where it was installed from, such as `claude-plugins-official`
+    pub marketplace: String,
+    pub version: String,
+    /// Whether the tool has it turned on, when the tool records that
+    pub enabled: Option<bool>,
+}
+
+/// Where a skill comes from
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Source {
+    /// A folder of its own in the skill folder: your copy
+    Copy,
+    /// A link to a folder elsewhere, which holds the skill. Removing the
+    /// link leaves that folder alone.
+    Link(PathBuf),
+    /// Shipped with the tool
+    Bundled,
+    /// Part of an installed plugin, which the tool manages
+    Plugin(Plugin),
+}
+
+impl Source {
+    /// A word or two for lists
+    #[must_use]
+    pub fn label(&self) -> String {
+        match self {
+            Self::Copy => "your copy".into(),
+            Self::Link(_) => "link".into(),
+            Self::Bundled => "bundled".into(),
+            Self::Plugin(plugin) => format!("plugin {}", plugin.name),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Item {
     pub provider: Provider,
@@ -61,8 +100,11 @@ pub struct Item {
     pub scope: String,
     pub size: u64,
     pub modified: Option<SystemTime>,
+    /// View only: shipped with the tool, or part of a plugin
     pub bundled: bool,
     pub chat: Option<summary::Summary>,
+    /// Where a skill comes from. `None` for other kinds.
+    pub source: Option<Source>,
 }
 
 #[derive(Default)]
@@ -147,6 +189,7 @@ impl Locations {
             false,
         );
         scanner.walk_skills(&self.home.join(".agents/skills"), Provider::Shared, "User");
+        scanner.plugins();
         scanner.walk_chats(&self.claude.join("projects"), Provider::Claude, 2);
         scanner.walk_chats(&self.codex.join("sessions"), Provider::Codex, 4);
         scanner.walk_chats(&self.codex.join("archived_sessions"), Provider::Codex, 1);
@@ -227,6 +270,7 @@ impl Scanner<'_> {
                 modified: meta.modified().ok(),
                 bundled,
                 chat: None,
+                source: None,
             }),
             Err(error) if path_exists || error.kind() != io::ErrorKind::NotFound => {
                 self.listing
@@ -266,17 +310,48 @@ impl Scanner<'_> {
 
     fn walk_skills(&mut self, root: &Path, provider: Provider, scope: &str) {
         for folder in self.children(root) {
-            if fs::symlink_metadata(&folder).is_ok_and(|meta| meta.is_file()) {
+            let Ok(meta) = fs::symlink_metadata(&folder) else {
+                continue;
+            };
+            if meta.is_file() {
                 continue;
             }
             let bundled = folder.file_name().is_some_and(|name| name == ".system");
             if bundled {
                 for system in self.children(&folder) {
-                    self.add(system.join("SKILL.md"), provider, Kind::Skill, scope, true);
+                    self.add_skill(system.join("SKILL.md"), provider, scope, Source::Bundled);
                 }
+            } else if meta.file_type().is_symlink() {
+                let target = fs::read_link(&folder).map_or_else(
+                    |_| folder.clone(),
+                    |target| {
+                        folder
+                            .parent()
+                            .map_or(target.clone(), |parent| parent.join(target))
+                    },
+                );
+                self.add_skill(
+                    folder.join("SKILL.md"),
+                    provider,
+                    scope,
+                    Source::Link(target),
+                );
             } else {
-                self.add(folder.join("SKILL.md"), provider, Kind::Skill, scope, false);
+                self.add_skill(folder.join("SKILL.md"), provider, scope, Source::Copy);
             }
+        }
+    }
+
+    /// Adds a skill, marked with where it comes from. Bundled and plugin
+    /// skills are view only.
+    fn add_skill(&mut self, path: PathBuf, provider: Provider, scope: &str, source: Source) {
+        let view_only = matches!(source, Source::Bundled | Source::Plugin(_));
+        let before = self.listing.items.len();
+        self.add(path, provider, Kind::Skill, scope, view_only);
+        if self.listing.items.len() > before
+            && let Some(item) = self.listing.items.last_mut()
+        {
+            item.source = Some(source);
         }
     }
 
