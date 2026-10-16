@@ -4,7 +4,9 @@ use std::thread;
 use std::time::Instant;
 
 use neet_core::safety::CleanupRoots;
-use neet_core::tools::{self, Device, Docker, DockerContainer, DockerUsage, DockerVolume, Runtime};
+use neet_core::tools::{
+    self, Device, Docker, DockerContainer, DockerUsage, DockerVolume, Download, Runtime,
+};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
@@ -218,10 +220,12 @@ fn counted(count: usize, noun: &str) -> String {
     }
 }
 
-/// The simulator runtimes and devices `simctl` knows
+/// The simulator runtimes and devices `simctl` knows, and downloads macOS
+/// kept after their runtime went
 pub struct SimulatorsFound {
     runtimes: Vec<Runtime>,
     devices: Vec<Device>,
+    downloads: Vec<Download>,
 }
 
 impl SimulatorsFound {
@@ -245,14 +249,86 @@ impl SimulatorsFound {
             .collect()
     }
 
-    /// One row per runtime, and one for stranded simulators if there are any
-    fn row_count(&self) -> usize {
+    /// One row per runtime, and one for stranded simulators if there are
+    /// any. These rows can be removed.
+    fn removable_rows(&self) -> usize {
         self.runtimes.len() + usize::from(!self.stranded().is_empty())
+    }
+
+    /// The removable rows, then one per leftover download
+    fn row_count(&self) -> usize {
+        self.removable_rows() + self.downloads.len()
+    }
+
+    /// The leftover download on row `index`, if it is one
+    fn download(&self, index: usize) -> Option<&Download> {
+        index
+            .checked_sub(self.removable_rows())
+            .and_then(|index| self.downloads.get(index))
     }
 }
 
 fn size_of(devices: &[&Device]) -> u64 {
     devices.iter().map(|device| device.size).sum()
+}
+
+/// The Simulators table's columns. Each is as wide as what it holds, so the
+/// build and size sit beside the name. The last column takes what is left.
+fn list_columns(found: &SimulatorsFound, width: u16) -> super::visual::Columns<6> {
+    let sizes = format::column_width(
+        "Size",
+        found
+            .runtimes
+            .iter()
+            .map(|runtime| format::size(runtime.size))
+            .chain(
+                found
+                    .downloads
+                    .iter()
+                    .map(|download| format::size(download.size)),
+            ),
+    )
+    .max(9);
+    let names = format::column_width(
+        "No runtime",
+        found
+            .runtimes
+            .iter()
+            .map(|runtime| runtime.name.clone())
+            .chain(
+                found
+                    .downloads
+                    .iter()
+                    .map(|download| format!("{} download", download.name)),
+            ),
+    )
+    .max(u16::try_from("Runtime".len()).unwrap_or(0));
+    let builds = format::column_width(
+        "Build",
+        found
+            .runtimes
+            .iter()
+            .map(|runtime| runtime.build.clone())
+            .chain(
+                found
+                    .downloads
+                    .iter()
+                    .map(|download| download.build.clone()),
+            ),
+    );
+    super::visual::Columns::new(
+        width,
+        [
+            (3, 0),
+            (names, 0),
+            (builds, 0),
+            (sizes, 0),
+            (11, 0),
+            (18, 1),
+        ],
+        &[2, 4],
+        true,
+    )
 }
 
 /// One runtime as a table row, with the simulators on it
@@ -315,7 +391,13 @@ impl Simulators {
                 .map_err(|error| format!("simctl could not list runtimes: {error}"))?;
             let devices = tools::devices()
                 .map_err(|error| format!("simctl could not list simulators: {error}"))?;
-            Ok(SimulatorsFound { runtimes, devices })
+            let downloads =
+                tools::leftover_downloads(std::path::Path::new(tools::ASSETS), &runtimes);
+            Ok(SimulatorsFound {
+                runtimes,
+                devices,
+                downloads,
+            })
         }))
     }
 
@@ -372,38 +454,7 @@ impl Simulators {
         let Some(found) = self.stage.found() else {
             return;
         };
-        let sizes = format::column_width(
-            "Size",
-            found
-                .runtimes
-                .iter()
-                .map(|runtime| format::size(runtime.size)),
-        )
-        .max(9);
-        // Each column is as wide as what it holds, so the build and size sit
-        // beside the name. The last column takes what is left.
-        let names = format::column_width(
-            "No runtime",
-            found.runtimes.iter().map(|runtime| runtime.name.clone()),
-        )
-        .max(u16::try_from("Runtime".len()).unwrap_or(0));
-        let builds = format::column_width(
-            "Build",
-            found.runtimes.iter().map(|runtime| runtime.build.clone()),
-        );
-        let columns = super::visual::Columns::new(
-            area.width,
-            [
-                (3, 0),
-                (names, 0),
-                (builds, 0),
-                (sizes, 0),
-                (11, 0),
-                (18, 1),
-            ],
-            &[2, 4],
-            true,
-        );
+        let columns = list_columns(found, area.width);
         let stranded = found.stranded();
         let mut rows: Vec<Row> = found
             .runtimes
@@ -427,6 +478,24 @@ impl Simulators {
                     counted(stranded.len(), "simulator")
                 )),
             ]));
+        }
+        for download in &found.downloads {
+            rows.push(
+                columns.row([
+                    Cell::from(checkbox(false, false)),
+                    Cell::from(format!("{} download", download.name)),
+                    Cell::from(download.build.clone()),
+                    Cell::from(
+                        Line::from(format::size_span(
+                            download.size,
+                            format::size(download.size),
+                        ))
+                        .right_aligned(),
+                    ),
+                    Cell::from(""),
+                    Cell::from(Span::raw("Kept by macOS").magenta()),
+                ]),
+            );
         }
         let header = columns
             .row([
@@ -470,6 +539,12 @@ impl Simulators {
         let index = self.list.selected().unwrap_or(0);
         let field =
             |label: &'static str, value: Span<'static>| labeled(label, Color::Reset, vec![value]);
+        if let Some(download) = found.download(index) {
+            return (
+                format!(" {} download ", download.name),
+                download_lines(download),
+            );
+        }
         let (title, mut lines) = if let Some(runtime) = found.runtimes.get(index) {
             let on = found.on(runtime);
             let mut lines = vec![
@@ -574,7 +649,7 @@ impl Simulators {
         let devices = size_of(&found.devices.iter().collect::<Vec<_>>());
         let picked = self.picked_size();
         let picked = Span::raw(format::size(picked));
-        let in_all = vec![
+        let mut in_all = vec![
             Line::from("Total").style(super::visual::HEADING),
             field(
                 "Runtimes",
@@ -601,6 +676,21 @@ impl Simulators {
                 },
             ),
         ];
+        if !found.downloads.is_empty() {
+            let size = found.downloads.iter().map(|download| download.size).sum();
+            in_all.insert(
+                3,
+                field(
+                    "Downloads",
+                    Span::raw(format!(
+                        "{}, {}, kept by macOS",
+                        counted(found.downloads.len(), "download"),
+                        format::size(size)
+                    ))
+                    .magenta(),
+                ),
+            );
+        }
         let how = vec![
             Line::from("Steps").style(super::visual::HEADING),
             step(
@@ -738,6 +828,45 @@ impl Simulators {
     }
 }
 
+/// A leftover download's details: why it stays, and how to reuse it
+fn download_lines(download: &Download) -> Vec<Line<'static>> {
+    let field =
+        |label: &'static str, value: Span<'static>| labeled(label, Color::Reset, vec![value]);
+    let mut lines = vec![
+        field("Build", Span::raw(download.build.clone())),
+        field(
+            "Size",
+            format::size_span(download.size, format::size(download.size)),
+        ),
+        labeled(
+            "Why",
+            Color::Magenta,
+            vec![Span::raw(
+                "macOS kept this download after its runtime was removed. It never clears it, and System Integrity Protection stops anyone deleting it, even with sudo.",
+            )],
+        ),
+    ];
+    if let Some(image) = &download.disk_image {
+        lines.push(labeled(
+            "Reuse",
+            Color::Green,
+            vec![
+                Span::raw("to get this runtime back without downloading it, run "),
+                Span::raw(format!("xcrun simctl runtime add {}", image.display()))
+                    .fg(super::visual::ACCENT),
+            ],
+        ));
+    }
+    lines.push(labeled(
+        "neet",
+        super::visual::ACCENT,
+        vec![Span::raw(
+            "shows it so the space is not a mystery. It never deletes system files.",
+        )],
+    ));
+    lines
+}
+
 /// Removes each runtime, then the simulators on the ones that went, and the
 /// stranded simulators picked
 fn remove_simulators(runtimes: Vec<(Runtime, Vec<Device>)>, stranded: Vec<Device>) -> Removal {
@@ -872,7 +1001,7 @@ impl Screen for Simulators {
         let selectable = found
             .runtimes
             .get(index)
-            .map_or(index < found.row_count(), |runtime| runtime.deletable);
+            .map_or(index < found.removable_rows(), |runtime| runtime.deletable);
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => self.list.select(Some(index.saturating_sub(1))),
             KeyCode::Down | KeyCode::Char('j') => self.list.select(Some((index + 1).min(last))),
@@ -1975,6 +2104,7 @@ mod tests {
                 runtime("iOS 26.5", 8_500_000_000),
             ],
             devices: vec![device("iPhone 16 Pro", "iOS 18.6", true, 2_100_000_000)],
+            downloads: Vec::new(),
         }));
 
         let text = render(&mut screen);
@@ -2012,6 +2142,7 @@ mod tests {
                 device("iPhone 16 Pro", "iOS 18.6", false, 2_000_000_000),
                 device("iPhone 16", "iOS 18.6", false, 1_000_000_000),
             ],
+            downloads: Vec::new(),
         }));
 
         let text = render(&mut screen);
@@ -2029,11 +2160,40 @@ mod tests {
         let mut screen = Simulators::with(Stage::Ready(SimulatorsFound {
             runtimes: Vec::new(),
             devices: Vec::new(),
+            downloads: Vec::new(),
         }));
 
         assert!(render(&mut screen).contains("Nothing to remove"));
         press(&mut screen, KeyCode::Enter);
         assert!(matches!(screen.stage, Stage::Ready(_)));
+    }
+
+    #[test]
+    fn leftover_downloads_are_shown_but_never_selected() {
+        let mut screen = Simulators::with(Stage::Ready(SimulatorsFound {
+            runtimes: Vec::new(),
+            devices: Vec::new(),
+            downloads: vec![Download {
+                name: "iOS 18.6".to_string(),
+                build: "22G86".to_string(),
+                size: 9_100_000_000,
+                disk_image: Some(PathBuf::from(
+                    "/System/Library/AssetsV2/x.asset/AssetData/a.dmg",
+                )),
+            }],
+        }));
+
+        let text = render(&mut screen);
+        assert!(!text.contains("Nothing to remove"), "{text}");
+        assert!(text.contains("iOS 18.6 download"), "{text}");
+        assert!(text.contains("Kept by macOS"), "{text}");
+        assert!(text.contains("9.1 GB"), "{text}");
+        assert!(text.contains("xcrun simctl runtime add"), "{text}");
+
+        press(&mut screen, KeyCode::Char(' '));
+        press(&mut screen, KeyCode::Enter);
+        assert!(matches!(screen.stage, Stage::Ready(_)));
+        assert!(render(&mut screen).contains("Selected · 0 B"));
     }
 
     #[test]
@@ -2320,6 +2480,7 @@ mod tests {
         let mut sims = Simulators::with(Stage::Ready(SimulatorsFound {
             runtimes: vec![runtime("iOS 18.6", 8_800_000_000)],
             devices: vec![device("iPhone 16 Pro", "iOS 18.6", true, 2_100_000_000)],
+            downloads: Vec::new(),
         }));
         let usage = DockerUsage {
             kind: "Images".into(),
