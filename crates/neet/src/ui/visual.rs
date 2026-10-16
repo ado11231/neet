@@ -400,25 +400,6 @@ pub(super) mod tests {
             .join("\n")
     }
 
-    pub fn position(buffer: &Buffer, value: &str) -> (u16, u16) {
-        let mut found = Vec::new();
-        for y in 0..buffer.area.height {
-            let line: String = (0..buffer.area.width)
-                .map(|x| buffer[(x, y)].symbol())
-                .collect();
-            if let Some(offset) = line.find(value) {
-                found.push((
-                    u16::try_from(crate::ui::format::display_width(&line[..offset])).unwrap(),
-                    y,
-                ));
-            }
-        }
-        found
-            .into_iter()
-            .min()
-            .unwrap_or_else(|| panic!("{value:?} missing:\n{}", text(buffer)))
-    }
-
     pub fn aligned(buffer: &Buffer, header: &str, value: &str) {
         let (header_end, header_y) = (0..buffer.area.height)
             .find_map(|y| {
