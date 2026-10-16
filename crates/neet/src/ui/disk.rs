@@ -391,6 +391,7 @@ fn steps(width: usize) -> Vec<Line<'static>> {
         "Press → or Enter to open a folder.",
         "Press ← to go back up.",
         "Press s to sort by size, name or items.",
+        "Press t to see this folder as boxes sized by space.",
         "Press b to see where space outside your home folder goes.",
         "Disk only shows files. Clean them with Deep Clean, Remove App or Large Files.",
     ]
@@ -766,6 +767,9 @@ impl Screen for Disk {
             KeyCode::Right | KeyCode::Enter | KeyCode::Char('l') => browser.enter(tree),
             KeyCode::Left | KeyCode::Char('h') => browser.leave(tree),
             KeyCode::Char('s') => browser.cycle_sort(tree),
+            KeyCode::Char('t') => {
+                return Action::Open(Box::new(super::treemap::Treemap::new(browser.current)));
+            }
             KeyCode::Char('b') => {
                 return Action::Open(Box::new(super::space::Space::new(
                     tree.path(tree.root()),
@@ -780,7 +784,7 @@ impl Screen for Disk {
     }
 
     fn hints(&self) -> &'static str {
-        "↑↓ move · → open · ← up · s sort · b space breakdown · esc home · ? help"
+        "↑↓ move · → open · ← up · s sort · t treemap · b space breakdown · esc home · ? help"
     }
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
@@ -789,6 +793,7 @@ impl Screen for Disk {
             ("→  Enter  l", "Open the selected folder"),
             ("←  h", "Go up to the parent folder"),
             ("s", "Sort by size, name, or items"),
+            ("t", "Show this folder as boxes sized by space"),
             ("b", "See where space outside your home folder goes"),
             ("g  G", "Jump to the first or last row"),
             ("Esc", "Back to Home"),
