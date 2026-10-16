@@ -1,344 +1,146 @@
 # Changelog
 
-* Release notes for the neet app.
-* Library changes are in [CHANGELOG-CORE.md](CHANGELOG-CORE.md).
+* Release notes for neet, the app, and neet-core, the library behind it.
+* Each release lists what changed in the app, then what changed in the library.
+* Versions follow [Semantic Versioning](https://semver.org). Before 1.0, a minor version can change the library's API.
 
 ## Unreleased
 
 ## [0.3.0](https://github.com/ado11231/neet/compare/neet-v0.2.0...neet-v0.3.0)
 
+Settings arrives, so every screen on Home is now built. Disk explains space outside your home folder and draws folders as a treemap, and AI Tools can continue chats and manage skills.
+
 ### Added
 
+**Settings**
 
-* add a Shell PATH tab to Settings
+* New Settings screen, number 9 on Home, with Power, Mac settings, Preferences, and Shell PATH tabs.
+* Power lists Low Power Mode, sleep timers, Power Nap, and wake for network, per battery and charger. Changes run `sudo pmset` once after review, and `u` undoes them.
+* Power flags sleep turned off with `pmset disablesleep 1`, and lists the apps keeping the Mac awake.
+* Mac settings offers 31 Finder, typing, Dock, screenshot, and saving settings through `defaults`, each with undo and reset to macOS's default.
+* Preferences remembers what Disk, Large Files, and AI Tools open with.
+* Shell PATH lists your PATH folders in search order, flags missing, repeated, relative, and world-writable ones, shows where each was added, and which copy of a program runs.
 
-* show folder sizes as areas
+**Disk**
 
-* add the Settings screen
+* Space, on `b`, splits used disk space into your home folder, apps, macOS data, macOS's own volumes, and what cannot be measured without admin rights.
+* Treemap, on `t`, draws a folder as boxes sized by the space each item takes.
 
-* read and change power, Mac, and neet settings
+**Quick Clean**
 
-* continue, archive, and fully clean up chats
+* Simulator downloads macOS keeps after their runtime is removed now show, with how to reuse them. macOS protects them, so they are view only.
 
-* show skill sources and review removing a skill link
+**AI Tools**
 
-* explain leftover runtime downloads
+* Skills show where they come from: your copy, a link, bundled with the tool, or a plugin with its version and on or off state.
+* `x` removes a linked skill after review, leaving its source folder alone, and `u` puts the link back.
+* `c` continues a chat in Claude Code or Codex, and `z` archives or unarchives a Codex chat.
+* Chat cleanup also moves Claude Code's related folders to Trash, and removes the chat's history entries with a backup.
 
-* explain space outside the home scan
+### Changed
+
+* Mail and Messages data is protected, so no rule or removal can reach it.
+* Mail attachment cleanup and system log cleanup were checked and left out. The reasons are in [SAFETY.md](SAFETY.md#left-out).
+* The README lists every screen, including Settings.
 
 ### Fixed
 
+* Space shows the same size for other volumes in every place.
 
-* show the same size for other volumes everywhere
+### Library
 
-### Other
-
-
-* add Settings and the new Disk and AI Tools features
-
-* compare the empty layout directly
-
-* wait for the refresh the cleanup starts
-
-* install with cargo and tidy the Use section
+* New `space`, `settings`, `path`, and `program` modules for the new screens.
+* `ai::Item` gains a `source` field, and `clutter::Kind` gains `SimulatorDownloads`. Both change the public API.
+* Chat actions in `ai::actions`: session IDs, resume commands, Codex archive, related files, and history cleanup.
 
 Released 2026-10-16
 
 ## [0.2.0](https://github.com/ado11231/neet/compare/neet-v0.1.0...neet-v0.2.0)
 
+Quick Clean, Startup, Dotfiles, and AI Tools join Home, and every screen moves to the same plain, boxed layout.
+
 ### Added
 
+**Cleanup**
 
-* [**breaking**] remove SSH support
+* Quick Clean: one table of everything that can be cleared, with where each item is and what clearing it means.
+* Clear project build folders and installers in Downloads from Quick Clean, after review.
+* Remove simulator runtimes and devices, prune Docker, pick unused Docker volumes, and reset Docker to the Trash.
+* A Trash screen that lists what is in the Trash and empties it after a separate warning.
+* Docker shows running containers, the images they hold, and Compose projects.
+* Remove App shows each app's size and sorts by it.
 
-* show images held by running containers
+**Startup**
 
-* review and trash selected chat files
+* Lists programs that start on their own, with whether each runs and who signed it.
+* `t` turns your own launch agents off and back on, after review.
 
-* select chats individually or by filter
+**Dotfiles**
 
-* show searchable chat titles and project tags
+* Lists your settings files and how each stands with chezmoi, without running chezmoi.
+* Edit with a check and a diff, keep backups, restore one, and compare with `d`.
+* Configure Git, tmux, Starship, kitty, Ghostty, mise, and zsh settings one at a time.
+* Add a file to chezmoi, export with a check for secrets, and start a dotfiles repository when there is none.
 
-* add local tools and skill manager
+**AI Tools**
 
-* polish the Startup layout and fix the legend
+* Browse Claude Code, Codex, and Gemini CLI files, chats, and skills.
+* Search chats by title and project, select them, and move them to Trash after review.
+* Link a local skill folder, and edit or restore your own skills.
 
-* t turns your own launch agents off and back on
+**Home and layout**
 
-* Startup lists programs that start on their own
+* Home opens on Disk, with the rest by number.
+* Every screen uses the same boxes, plain words, and colors for sizes.
 
-* x starts a repository when chezmoi's folder is missing
+### Changed
 
-* Configure zsh settings in a block neet owns
-
-* Configure Ghostty settings
-
-* Disk first on Home, SSH last
-
-* Disk shows the whole disk, <1% shares & its name in the title
-
-* Disk in the same boxes & words as the other screens
-
-* Large Files in the same boxes & words as the other screens
-
-* Remove App fits its lists & fills the space below with boxes
-
-* Review steps wrap under their text, plainer confirm
-
-* Deep Clean in plainer words, with values that wrap under themselves
-
-* Docker in small boxes, and & for and on the cleanup screens
-
-* a Trash screen that empties the Trash after a red question
-
-* Review's summary is small boxes, with a bar beside each path
-
-* build folders and Simulators lay their boxes out in two columns
-
-* sections are separate boxes, with plainer words
-
-* Deep Clean's detail boxes keep their size whichever rule is selected
-
-* shorter section titles, a steady Location box, and no keys while loading
-
-* each section's heading sits right under its rule
-
-* fill Deep Clean, the build folder list, and Simulators with sections
-
-* sections sit in even bands, each just under its rule
-
-* Quick Clean says where each row is and what clearing it means, with rules between sections
-
-* Configure kitty and mise settings
-
-* Configure steps through choices and checks numbers as you type
-
-* Large Files clarity: aligned ages, a fitted name column, and files by type
-
-* Dotfiles reviews and questions are a centred card
-
-* Dotfiles list keeps a sensible width, and the box under it is filled
-
-* Quick Clean keeps its full height boxes, filled with sections
-
-* Quick Clean is one centred rectangle on a full screen
-
-* Quick Clean boxes fit their lines, centred, with After cleanup
-
-* Home's boxes stand a row apart, with stars around them
-
-* stars cover the whole Home screen evenly, in visible night colors
-
-* give Home's selected row box a blank row above and below
-
-* Home menu says only soon; Disk and Home folder in their own boxes
-
-* spread Home's stars across the whole art column
-
-* simpler Dotfiles screen: plain statuses, Enter opens what you can do
-
-* add a listed file to chezmoi with a, after showing it whole
-
-* export dotfiles with x: review for secrets, commit the chosen files, then push on y
-
-* configure Git settings one at a time with c, then review them like an edit
-
-* list a dotfile's backups and restore one, and show its diff with d
-
-* edit dotfiles with a check and a diff, and keep or put back a file that differs from chezmoi
-
-* leave the screen to open a file in your editor, then come back
-
-* open Dotfiles from Home, view only, with chezmoi status, details, and a preview
-
-* pick unused Docker volumes, reset Docker with x, and remove simulators with their runtimes
-
-* list simulator devices and unused Docker volumes, and reset Docker to the Trash
-
-* give Large Files a filter box, size bars, and a side with the selected file and where files are
-
-* keep row colors when selected, say permanently, and center Quick Clean's empty list
-
-* make Disk and Large Files view only, without d
-
-* remove simulator runtimes and prune Docker from Quick Clean
-
-* split Deep Clean's details into boxes that fit, with a chart of every rule
-
-* clear build folders and installers from Quick Clean, and tidy its layout
-
-* show each app's size in Remove App, color the list, and sort by size with s
-
-* order Home by quickest first, rename Clean to Deep Clean, and drop most gray text
-
-* put Quick Clean first on Home, marked start here
-
-* plan Clean once and reuse it, with r to look again
-
-* show the move and its result in a box in the middle
-
-* add Quick Clean, one table of everything that can be cleared
-
-* add a summary beside the review, and leave out rules that found nothing
-
-* explain the selected item in the Disk preview, with colors
-
-* say on Home why Finder shows more free space
+* SSH support was removed. This changed the library's API.
+* Deep Clean was renamed from Clean, and Disk and Large Files became view only.
 
 ### Fixed
 
-
-* show failed cache estimates as unknown
-
-* clear stuck app measurements and retry failed ones
-
-* retry purgeable space when the lookup is lost
-
-* show unknown sizes when lookups fail
-
-* report missing cleanup plans
-
-* report a missing repo result
-
-* report a missing list result
-
-* handle a lost final result
-
-* report missing removal plans
-
-* stop loading when a plan is lost
-
-* stop loading when a result is lost
-
-* report lost background results
-
-* wait for emptying before leaving the screen
-
-* keep quit blocked while help is open
-
-* [**breaking**] show lookup errors and unknown prune sizes
-
-* explain when a prune frees no space
-
-* stop promising prune savings
-
-* show each chat cleanup result
-
-* clarify chat removal review
-
-* show retry advice for busy app files
-
-* save turn results and label attempts
-
-* refuse plists changed since listing
-
-* keep failed chats selected and correct dates
-
-* preserve drafts and clarify tool browsing
-
-* merge Remove App opens with sizes and bars ready
-
-* Remove App opens with sizes and bars ready
-
-* Configure rows under the header, About wraps, plainer compare note
-
-* list the largest items inside the trash
-
-* show the cache and log item count
-
-* merge checkbox table alignment
-
-* align checkbox table headers
-
-* keep changes and exports tied to their review
-
-* Disk's notes name Deep Clean, and send Docker.raw to Quick Clean
-
-* every bottom edge reads Selected · …
-
-* no gap under the Remove App & Simulators headers, a blue ✓ over checkboxes
-
-* Simulators' table columns fit what they hold
-
-* Quick Clean says no access when macOS blocks the Trash
-
-* give chezmoi the file's home folder path, and never run it for a link
-
-* match the blue accents to the Home art
-
-* line up columns, brighten labels, and shorten screen text
-
-* reset Docker by moving its disk image into the Trash directly, once nothing has it open
-
-* size message boxes by word wrapping, so their last line shows
-
-* say remove permanently for simulators, offer prune only when Docker can, and say 1 item in Disk
-
-* line up Deep Clean's item counts
-
-* fit the Finder line on one row, and space out Home's details
-
-### Other
-
-
-* bump similar from 2.7.0 to 3.2.0
-
-* shorten install and use steps
-
-* move and shorten changelogs
-
-* explain chat cleanup screens
-
-* track turn failure status
-
-* explain chat selection and cleanup limits
-
-* refresh feature and safety docs
-
-* Dotfiles is done
-
-* README, FEATURES & ROADMAP catch up with the clarity pass
-
-* render the README Home image from a test, with Disk first
-
-* Merge pull request #87 from ado11231/feat/home-order
-
-* Merge pull request #78 from ado11231/feat/home-polish
-
-* read put back's note before it wraps, so it passes where chezmoi is not installed
-
-* hold the plan back so Deep Clean's loading test cannot race
-
-* share the colored size bar through format
-
-* describe the new Home order, Deep Clean, and white selection
-
-* describe Quick Clean
-
-* share the size colors between screens
-
-* move the 0.1.0 date to the end of each changelog entry
-
-* link the wiki and crates.io from the README
+* Lost background results stop loading and say what happened, instead of waiting forever.
+* Docker no longer promises prune savings it cannot know, and explains when a prune frees nothing.
+* Finder gets a minute to answer each move to the Trash, then the item is skipped.
+* Startup refuses plists changed since they were listed, and saves partial results.
+* Edits and exports stay tied to the review they came from.
+* Failed cache estimates and sizes show as unknown, not zero.
+
+### Library
+
+* New modules for Docker and simulator tools, clutter, Startup, Dotfiles, and AI Tools.
+* `disk::finder_free` reads the free space Finder shows, purgeable space included.
+* Commands run with a time limit, reading their output as they go.
+* State files are written through a fresh private file.
 
 Released 2026-10-14
 
 ## [0.1.0](https://github.com/ado11231/neet/releases/tag/neet-v0.1.0)
 
+The first release.
+
 ### Added
 
-* Home menu with disk space, scan progress, and the cat artwork.
+* Home with disk space, scan progress, and the cat artwork.
 * Background folder scans, a disk browser, and large file filters.
 * Cache and log cleanup with risk levels and open app checks.
 * App removal with a review of the app and its related files.
-* Refuses to run as root.
-* Required path review and confirmation before moving files to Trash.
+* A required review and confirmation before anything moves to the Trash.
 * Skipped path reports and Full Disk Access help.
+* Refuses to run as root.
 * Mac downloads, an installer, and `cargo install neet`.
 
 ### Fixed
 
 * Clear reasons for blocked paths and incomplete scans.
-* Better review groups, item counts, and narrow screen layout.
+* Better review groups, item counts, and narrow screen layouts.
+
+### Library
+
+* Folder scans with disk sizes and change times.
+* Built in and user cleanup rules with fixed path limits.
+* Cleanup plans that check files and open apps before moving.
+* Trash moves through Finder, with Put Back support.
 
 Released 2026-10-01

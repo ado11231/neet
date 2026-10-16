@@ -29,7 +29,7 @@
 | `crates/neet-core/rules/` | Built in cleanup rules. |
 | `crates/neet-core/src/` | File scans and actions. |
 | `crates/neet/src/` | Terminal app. |
-| `docs/` | Project docs, including app and library changelogs. |
+| `docs/` | Project docs, including the changelog. |
 | `.github/` | Build checks, releases, and dependency updates. |
 | `release-plz.toml` | Crate versions and release notes. |
 | `dist-workspace.toml` | Mac downloads and installer. |
