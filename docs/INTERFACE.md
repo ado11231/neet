@@ -18,6 +18,7 @@
 * [Startup](#startup)
 * [Dotfiles](#dotfiles)
 * [AI Tools](#ai-tools)
+* [Settings](#settings)
 * [Planned Screens](#planned-screens)
 
 ## Every Screen
@@ -369,12 +370,29 @@
 | `Up` / `Down`, `PageUp` / `PageDown` | Move or scroll a preview or review. |
 | `Esc` | Cancel input or review, discard a kept draft, close a preview, clear a search, then return Home. |
 
+## Settings
+
+* Three tabs: Power, Mac settings, and Preferences.
+* Power lists `pmset` settings this Mac supports, with battery and charger values when they differ. It flags sleep turned off with `pmset disablesleep 1`, and lists what keeps the Mac awake and the battery level.
+* Mac settings lists Finder, typing, Dock, screenshot, and saving settings by group, each with its value now. `(default)` means the key is not set.
+* Preferences sets what Disk, Large Files, and AI Tools open with. They save right away to `~/.config/neet/settings.toml`.
+* Enter opens a picker that shows the exact command for the highlighted value. Power changes run `sudo pmset` once in the terminal, which asks for your password. Mac settings run `defaults` and restart Finder, the Dock, or the menu bar when needed.
+* `•` marks what neet changed. `u` puts it back as it was before neet's first change.
+
+| Key | Action |
+| --- | --- |
+| `Tab` / `Shift-Tab`, `Left` / `Right` | Switch tabs. |
+| `Up` / `Down` | Move between settings, or between values in the picker. |
+| `Enter` | Pick a value. The command shows before anything runs. |
+| `y` | Apply the picked value, or the undo. |
+| `u` | Review putting a setting back as it was before neet changed it. |
+| `r` | Read every setting again. |
+
 ## Planned Screens
 
 These screens are not built. Keys and layouts are still undecided.
 
 | Screen | Plan |
 | --- | --- |
-| Space Breakdown | Explain used space outside the home scan. |
 | PATH | Show shell search folders and review edits with backups. |
-| Settings | Power and display controls with undo, plus saved choices. |
+| Display | Refresh rate for ProMotion and external displays, switching back unless you keep it. |

@@ -19,6 +19,7 @@
 * [Dotfiles](#dotfiles)
 * [Startup Items](#startup-items)
 * [Space Breakdown](#space-breakdown)
+* [Settings](#settings)
 * [Planned Features](#planned-features)
 * [AI Tools](#ai-tools)
 * [Tests](#tests)
@@ -30,7 +31,7 @@
 * Cleanup uses fixed folder lists. App removal, build folders, and installers each have their own checks.
 * Cleanup protects personal files, cloud files, passwords, and keys. Selected build folders, installers, and chat transcripts have separate rules. Dotfile and skill edits need review and backup.
 * Anything that changed since you reviewed it is skipped.
-* Cleanup never uses admin rights.
+* Cleanup never uses admin rights. Power settings are the only change that does, and only through `sudo` after review.
 
 ## How A Cleanup Runs
 
@@ -457,6 +458,29 @@ Only your own launch agents in `~/Library/LaunchAgents` may be turned off and ba
 * Folder sizes come from file details on the Data volume at `/System/Volumes/Data`, leaving out the home folder, other volumes, and other disks. No file is opened.
 * Folders macOS will not let neet read are counted, not retried with more rights.
 
+## Settings
+
+### Power
+
+* `pmset -g custom`, `-g batt`, `-g cap`, `-g`, and `-g assertions` are read without admin rights.
+* Only these keys may change, to the values listed in Settings: `lowpowermode`, `displaysleep`, `sleep`, `disksleep`, `powernap`, `womp`, and `disablesleep` back to `0`.
+* Each change shows its command, such as `sudo /usr/bin/pmset -a displaysleep 15`, before `y`. neet hands the terminal to `sudo`, which asks for your password, then comes back. neet itself never runs as root and never sees the password.
+* Before the first change to a key, its value for battery and charger is saved in `~/.local/state/neet/settings/power.json`. `u` runs `sudo pmset -b` and `-c` with those values, then forgets them. Later changes keep the first saved values.
+
+### Mac Settings
+
+* Only the 31 settings listed in [FEATURES.md](FEATURES.md#settings) may change, each to one of its listed values, or back to macOS's default by deleting its key.
+* `defaults read` checks the value again just before writing. If it changed since you looked, nothing is written.
+* Before the first change to a setting, its value, or that it was not set, is saved in `~/.local/state/neet/settings/mac.json`. `u` writes that value back, or deletes the key.
+* After a change, `killall` restarts Finder, the Dock, or SystemUIServer when the setting needs it. They start again on their own. Keyboard settings apply to apps when they next open, and some need you to log out.
+* Choosing `~/Pictures/Screenshots` makes that folder if it is missing.
+
+### Preferences
+
+* Saved to `~/.config/neet/settings.toml`, written as a new copy and swapped in. A link there is refused.
+* A missing file uses the defaults. Unknown values and broken files fall back to the defaults with a warning in Preferences. Keys from newer versions are ignored.
+* Preferences only choose what screens open with. Every review, confirmation, and check still applies.
+
 ## Planned Features
 
 Later features change files or settings in place, not through the Trash. Each has a fixed list of what it may change.
@@ -464,7 +488,6 @@ Later features change files or settings in place, not through the Trash. Each ha
 | Feature | May Change | How |
 | --- | --- | --- |
 | Shell PATH | Only the shell files in [Dotfiles](#which-files-1). Never `/etc/paths`. | Edit with a backup |
-| Power settings | Low and High Power Mode, graphics switching, and three wake settings. | `sudo pmset` |
 | Refresh rate | The mode of a connected display. It switches back after 15 seconds unless you keep it. | CoreGraphics |
 
 * Every change:

@@ -43,6 +43,8 @@
 | `scan.rs`, `tree.rs`, `size.rs` | Read folders and record file sizes. |
 | `disk.rs` | Disk totals and Finder's free space. |
 | `space.rs` | Volumes and folders outside the home scan. |
+| `settings.rs`, `settings/` | Power, Mac settings, and neet preferences. |
+| `program.rs` | Programs neet hands the terminal to. |
 | `large.rs` | Find large or old files in a scan. |
 | `clutter.rs` | Find build folders, installers, and other space to review. |
 | `rules.rs` | Load and check cleanup rules. |
@@ -67,6 +69,7 @@
 | `ui/scan.rs`, `ui/skipped.rs` | Background scan and unreadable paths. |
 | `ui/disk.rs`, `ui/large.rs` | Folder browser and large files. |
 | `ui/space.rs` | Where used space outside the home folder goes. |
+| `ui/settings.rs`, `ui/settings/` | Power, Mac settings, and preferences. |
 | `ui/clean.rs`, `ui/quick.rs` | Deep Clean and Quick Clean. |
 | `ui/apps.rs`, `ui/pick.rs` | App removal, build folders, and installers. |
 | `ui/review.rs` | Cleanup review, confirmation, progress, and results. |
