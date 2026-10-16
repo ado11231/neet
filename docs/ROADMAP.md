@@ -80,12 +80,12 @@
 * Busy app advice names the app to quit before refreshing.
 * Chat cleanup keeps totals and actions visible while scrolling.
 * Docker labels estimates and shows containers keeping images in use.
+* Space splits used disk space into the home folder, other folders, macOS volumes, and what cannot be measured.
 
 ## Next
 
 * Finish chat actions, related file cleanup, restore, and reload checks in [#111](https://github.com/ado11231/neet/issues/111).
 * Add skill source and removal support in [#112](https://github.com/ado11231/neet/issues/112).
-* Explain disk space outside the home scan in [#20](https://github.com/ado11231/neet/issues/20).
 * Explain leftover simulator downloads in [#61](https://github.com/ado11231/neet/issues/61).
 * Test Startup on macOS 13, 14, and 15 in [#22](https://github.com/ado11231/neet/issues/22). macOS 26.5 is checked.
 * Review the next release, then verify the published crate and both Mac downloads.

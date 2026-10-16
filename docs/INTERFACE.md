@@ -76,7 +76,21 @@
 | `Right`, `Enter`, or `l` | Open the selected folder. |
 | `Left` or `h` | Go up to the parent folder, keeping your place. |
 | `s` | Sort by size, then name, then item count. |
+| `b` | Open [Space](#space), where used space outside the home folder goes. |
 | `g` / `G` | Jump to the first or last row. |
+
+### Space
+
+* Splits used disk space into the home folder, the other folders on the Data volume, and macOS's own volumes.
+* Space neet cannot read without admin rights is labeled Not measured, so the parts add up to used space.
+* Shows free space, purgeable space, and how many local snapshots exist.
+* Measuring takes several seconds. Space is view only.
+
+| Key | Action |
+| --- | --- |
+| `Up` / `Down` | Move the selection. |
+| `g` / `G` | Jump to the first or last part. |
+| `r` | Measure again. |
 
 ## Quick Clean
 
