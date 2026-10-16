@@ -32,6 +32,8 @@ const PROTECTED_IN_HOME: &[&str] = &[
     "Library/Mobile Documents",
     "Library/CloudStorage",
     "Library/Keychains",
+    "Library/Mail",
+    "Library/Messages",
     ".ssh",
     "Library/Developer/Xcode/Archives",
 ];
@@ -706,6 +708,19 @@ mod tests {
             refused(&roots, &home.join("Library/Caches/repo/.git")),
             SafetyError::Protected
         ));
+    }
+
+    #[test]
+    fn protects_mail_and_messages() {
+        let (_dir, roots, home) = home();
+        for path in [
+            "Library/Mail",
+            "Library/Mail/V10/x/Attachments/1/report.pdf",
+            "Library/Messages/Attachments/a.heic",
+        ] {
+            assert!(roots.protects(&home.join(path)), "{path}");
+        }
+        assert!(!roots.protects(&home.join("Library/Caches/com.apple.mail")));
     }
 
     #[test]
