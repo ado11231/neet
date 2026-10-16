@@ -31,22 +31,11 @@ cargo install --git https://github.com/ado11231/neet --locked neet
 * Install a checkout with `cargo install --path crates/neet --locked --force`.
 * Downloads are also on [GitHub Releases](https://github.com/ado11231/neet/releases).
 
-## Use
+## Start
 
 ```sh
 neet
 ```
-
-neet scans your home folder in the background while you pick a screen from Home.
-
-| Key | Does |
-| --- | --- |
-| `↑` `↓` or `j` `k` | Move |
-| `Enter` | Open |
-| `1`–`9` | Open a screen from Home |
-| `Esc` | Go back |
-| `?` | Help for the current screen |
-| `q` | Quit |
 
 | # | Screen | What it does |
 | --- | --- | --- |
@@ -60,8 +49,17 @@ neet scans your home folder in the background while you pick a screen from Home.
 | 8 | AI Tools | Browse, continue, and clean up assistant chats, and manage skills and where they come from. |
 | 9 | Settings | Power and sleep, Mac settings for Finder, typing, and the Dock, your shell PATH, and neet's preferences. |
 
-Every cleanup shows what it will remove and asks first. Files go to the Trash, except Docker, simulator, and Empty Trash actions, which delete for good after a separate warning. See [SAFETY.md](docs/SAFETY.md).
+| Key | Does |
+| --- | --- |
+| `↑` `↓` or `j` `k` | Move |
+| `Enter` | Open |
+| `1`–`9` | Open a screen from Home |
+| `Esc` | Go back |
+| `?` | Help for the current screen |
+| `q` | Quit |
+
+Every cleanup asks first, and only Docker, simulator, and Empty Trash actions skip the Trash. See [SAFETY.md](docs/SAFETY.md).
 
 ## License
 
-[MIT](https://github.com/ado11231/neet/blob/master/LICENSE-MIT) or [Apache 2.0](https://github.com/ado11231/neet/blob/master/LICENSE-APACHE), your choice.
+[MIT](https://github.com/ado11231/neet/blob/master/LICENSE-MIT) or [Apache 2.0](https://github.com/ado11231/neet/blob/master/LICENSE-APACHE).
