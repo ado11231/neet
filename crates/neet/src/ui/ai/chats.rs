@@ -6,24 +6,33 @@ use std::sync::mpsc::{self, Receiver};
 use std::thread;
 
 use super::{AiTools, Item, Kind, Review, Viewer, ai, format, visual};
-use neet_core::ai::remove::Removal;
+use neet_core::ai::actions::{self, Cleaned, History};
+use neet_core::ai::remove::{Moved, Removal};
 use neet_core::ai::summary::Summary;
+use neet_core::ai::{Locations, Provider};
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 
-type MoveResult = (PathBuf, Result<(), String>);
+/// News from the cleanup thread
+pub(super) enum Message {
+    /// One chat's transcript, and what went with it
+    Moved(PathBuf, Result<Moved, String>),
+    /// History and index entries removed for the chats that moved
+    History(Vec<Result<Cleaned, String>>),
+}
 
 pub(super) struct Cleanup {
-    receiver: Receiver<MoveResult>,
+    receiver: Receiver<Message>,
     pub total: usize,
     pub done: usize,
     removed: usize,
     items: Vec<Item>,
-    results: BTreeMap<PathBuf, Result<(), String>>,
+    results: BTreeMap<PathBuf, Result<Moved, String>>,
+    history: Vec<Result<Cleaned, String>>,
 }
 
 impl Cleanup {
-    pub(super) fn new(items: Vec<Item>, receiver: Receiver<MoveResult>) -> Self {
+    pub(super) fn new(items: Vec<Item>, receiver: Receiver<Message>) -> Self {
         Self {
             receiver,
             total: items.len(),
@@ -31,8 +40,30 @@ impl Cleanup {
             removed: 0,
             items,
             results: BTreeMap::new(),
+            history: Vec::new(),
         }
     }
+}
+
+/// Removes the history and index entries of the chats in `moved`, a file at
+/// a time, each with a backup
+fn clean_history(locations: &Locations, moved: &[Item]) -> Vec<Result<Cleaned, String>> {
+    let mut results = Vec::new();
+    for provider in [Provider::Claude, Provider::Codex] {
+        let ids: std::collections::BTreeSet<String> = moved
+            .iter()
+            .filter(|item| item.provider == provider)
+            .filter_map(actions::session_id)
+            .collect();
+        for history in History::prepare(locations, provider, &ids) {
+            results.push(
+                history
+                    .and_then(|history| history.apply(locations))
+                    .map_err(|error| error.to_string()),
+            );
+        }
+    }
+    results
 }
 
 impl AiTools {
@@ -56,6 +87,21 @@ impl AiTools {
             Line::from(self.shown_path(&item.path)).fg(visual::ACCENT),
             Line::default(),
         ]
+    }
+
+    /// The related folders and files that go with a chat, if any
+    fn related_line(&self, removal: &Removal) -> Option<Line<'static>> {
+        let related: Vec<String> = removal
+            .related()
+            .map(|path| self.shown_path(path))
+            .collect();
+        (!related.is_empty()).then(|| {
+            Line::from(format!(
+                "With {} related: {}",
+                related.len(),
+                related.join(", ")
+            ))
+        })
     }
 
     pub(super) fn review_chat_removal(&mut self) {
@@ -93,6 +139,11 @@ impl AiTools {
             match Removal::prepare(&self.locations, &item) {
                 Ok(removal) => {
                     details.extend(self.chat_details(&item, removals.len() + 1));
+                    if let Some(line) = self.related_line(&removal) {
+                        details.pop();
+                        details.push(line);
+                        details.push(Line::default());
+                    }
                     size = size.saturating_add(item.size);
                     removals.push(removal);
                 }
@@ -116,7 +167,7 @@ impl AiTools {
                 skipped.len()
             )),
             Line::from(
-                "Local transcripts only. Assistant indexes, related files, and cloud history remain.",
+                "Claude Code's related folders go to Trash too. Claude and Codex history entries for these chats are removed, with a backup. Cloud history and Codex's own database stay.",
             ),
         ];
         if count > 0 {
@@ -164,13 +215,22 @@ impl AiTools {
         self.marked
             .extend(removals.iter().map(|removal| removal.item.path.clone()));
         let (sender, receiver) = mpsc::channel();
+        let locations = self.locations.clone();
         thread::spawn(move || {
+            let mut moved = Vec::new();
             for removal in removals {
                 let result = removal.apply().map_err(|error| error.to_string());
-                if sender.send((removal.item.path, result)).is_err() {
-                    break;
+                if result.is_ok() {
+                    moved.push(removal.item.clone());
+                }
+                if sender
+                    .send(Message::Moved(removal.item.path, result))
+                    .is_err()
+                {
+                    return;
                 }
             }
+            let _ = sender.send(Message::History(clean_history(&locations, &moved)));
         });
         self.cleanup = Some(Cleanup::new(items, receiver));
         self.viewer = None;
@@ -182,7 +242,7 @@ impl AiTools {
         };
         loop {
             match cleanup.receiver.try_recv() {
-                Ok((path, result)) => {
+                Ok(Message::Moved(path, result)) => {
                     cleanup.done += 1;
                     if result.is_ok() {
                         cleanup.removed += 1;
@@ -190,6 +250,7 @@ impl AiTools {
                     }
                     cleanup.results.insert(path, result);
                 }
+                Ok(Message::History(results)) => cleanup.history = results,
                 Err(mpsc::TryRecvError::Empty) => return,
                 Err(mpsc::TryRecvError::Disconnected) => break,
             }
@@ -238,7 +299,7 @@ impl AiTools {
             for item in &cleanup.items {
                 let result = cleanup.results.get(&item.path);
                 let status = match result {
-                    Some(Ok(())) => "Moved to Trash",
+                    Some(Ok(_)) => "Moved to Trash",
                     Some(Err(_)) => "Not moved",
                     None => "Unconfirmed",
                 };
@@ -247,16 +308,50 @@ impl AiTools {
                 }
                 index += 1;
                 viewer.lines.extend(self.chat_details(item, index));
-                if let Some(Err(reason)) = result {
-                    viewer
-                        .lines
-                        .push(Line::from(ai::display_text(reason)).yellow());
-                    viewer.lines.push(Line::default());
+                match result {
+                    Some(Err(reason)) => {
+                        viewer
+                            .lines
+                            .push(Line::from(ai::display_text(reason)).yellow());
+                        viewer.lines.push(Line::default());
+                    }
+                    Some(Ok(moved)) if moved.related > 0 || !moved.kept.is_empty() => {
+                        viewer.lines.pop();
+                        if moved.related > 0 {
+                            viewer.lines.push(Line::from(format!(
+                                "{} related folders and files moved too",
+                                moved.related
+                            )));
+                        }
+                        for kept in &moved.kept {
+                            viewer
+                                .lines
+                                .push(Line::from(ai::display_text(kept)).yellow());
+                        }
+                        viewer.lines.push(Line::default());
+                    }
+                    _ => {}
                 }
             }
         }
+        if !cleanup.history.is_empty() {
+            viewer
+                .lines
+                .push(Line::from("History entries").style(visual::HEADING));
+            for result in &cleanup.history {
+                viewer.lines.push(match result {
+                    Ok(cleaned) => Line::from(format!(
+                        "{} removed from {}. Backup: {}",
+                        cleaned.removed,
+                        self.shown_path(&cleaned.file),
+                        self.shown_path(&cleaned.backup)
+                    )),
+                    Err(reason) => Line::from(ai::display_text(reason)).yellow(),
+                });
+            }
+        }
         viewer.footer = vec![
-            Line::from("Restore moved files with Finder's Put Back."),
+            Line::from("Restore moved files with Finder's Put Back, and history from its backup."),
             Line::from("Unmoved chats stay selected. Esc returns to the list."),
         ];
         viewer

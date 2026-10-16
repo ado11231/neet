@@ -39,6 +39,8 @@ enum Review {
         contents: Vec<u8>,
     },
     Unlink(Unlink),
+    /// Archive or unarchive a Codex chat
+    Archive(Item),
 }
 
 struct Viewer {
@@ -129,6 +131,8 @@ pub struct AiTools {
     cleanup: Option<chats::Cleanup>,
     /// The last skill link removed, to put back with `u`
     relink: Option<Relink>,
+    /// Codex archiving a chat, on its own thread
+    archiving: Option<Receiver<Result<bool, String>>>,
     note: String,
 }
 
@@ -164,6 +168,7 @@ impl AiTools {
             editing: None,
             cleanup: None,
             relink: None,
+            archiving: None,
             note: String::new(),
         }
     }
@@ -190,6 +195,7 @@ impl AiTools {
 
     fn poll(&mut self) {
         self.poll_cleanup();
+        self.poll_archive();
         let Some(receiver) = &self.pending else {
             return;
         };
@@ -432,6 +438,18 @@ impl AiTools {
                 }
                 Err(error) => error.to_string(),
             },
+            Review::Archive(item) => {
+                let (sender, receiver) = mpsc::channel();
+                let locations = self.locations.clone();
+                thread::spawn(move || {
+                    let _ = sender.send(
+                        ai::actions::archive(&locations, &item).map_err(|error| error.to_string()),
+                    );
+                });
+                self.archiving = Some(receiver);
+                self.viewer = None;
+                return;
+            }
             Review::Unlink(unlink) => match unlink.apply() {
                 Ok(relink) => {
                     let note = format!(
@@ -477,6 +495,99 @@ y removes the link. Esc cancels.",
             }
             Err(error) => self.note = error.to_string(),
         }
+    }
+
+    /// Leaves neet to continue the selected chat in its own tool
+    fn continue_chat(&mut self) -> Action {
+        let Some(item) = self.chat_in_view() else {
+            self.note = "Select a chat first.".into();
+            return Action::None;
+        };
+        match ai::actions::resume(&self.locations, &item) {
+            Ok(resume) => Action::Run(resume),
+            Err(error) => {
+                self.note = error.to_string();
+                Action::None
+            }
+        }
+    }
+
+    /// The chat open in the preview, or else the selected one
+    fn chat_in_view(&self) -> Option<Item> {
+        let open = self
+            .viewer
+            .as_ref()
+            .and_then(|viewer| viewer.source.as_ref())
+            .and_then(|path| self.listing.items.iter().find(|item| &item.path == path))
+            .cloned();
+        open.or_else(|| self.selected())
+            .filter(|item| item.kind == Kind::Chat)
+    }
+
+    /// Asks before Codex archives the selected chat, or brings it back
+    fn review_archive(&mut self) {
+        let Some(item) = self.chat_in_view() else {
+            self.note = "Select a chat first.".into();
+            return;
+        };
+        if item.provider != Provider::Codex {
+            self.note = format!(
+                "{} has no archive. d moves a chat to Trash instead.",
+                item.provider.name()
+            );
+            return;
+        }
+        let archived = ai::actions::is_archived(&self.locations, &item);
+        let title = item
+            .chat
+            .as_ref()
+            .map_or("Untitled chat", |chat| chat.title.as_str())
+            .to_owned();
+        let text = if archived {
+            format!(
+                "Bring back from the archive: {title}
+
+Codex runs codex unarchive, which moves it back to its chats.
+y unarchives it. Esc cancels."
+            )
+        } else {
+            format!(
+                "Archive: {title}
+
+Codex runs codex archive, which moves it out of its chat list. Nothing is deleted, and z brings it back.
+y archives it. Esc cancels."
+            )
+        };
+        self.viewer = Some(Viewer::new(
+            if archived {
+                "Unarchive chat"
+            } else {
+                "Archive chat"
+            }
+            .into(),
+            &text,
+        ));
+        self.review = Some(Review::Archive(item));
+    }
+
+    fn poll_archive(&mut self) {
+        let Some(receiver) = &self.archiving else {
+            return;
+        };
+        let result = match receiver.try_recv() {
+            Ok(result) => result,
+            Err(mpsc::TryRecvError::Empty) => return,
+            Err(mpsc::TryRecvError::Disconnected) => {
+                Err("Codex stopped without a result. Check its chat list.".into())
+            }
+        };
+        self.archiving = None;
+        self.note = match result {
+            Ok(true) => "Archived in Codex. z on it brings it back.".into(),
+            Ok(false) => "Brought back from the Codex archive.".into(),
+            Err(error) => error,
+        };
+        self.refresh();
     }
 
     /// Puts the last removed skill link back
@@ -774,6 +885,8 @@ y removes the link. Esc cancels.",
             lines.push(Line::from(ai::display_text(&self.source_text(source))));
         }
         lines.push(Line::from(match (item.kind, &item.source) {
+            (Kind::Chat, _) if item.provider == Provider::Codex => "Enter reads · c continues · z archives · Space selects · d reviews removal.",
+            (Kind::Chat, _) if item.provider == Provider::Claude => "Enter reads · c continues · Space selects · d reviews removal.",
             (Kind::Chat, _) => "Enter reads · Space selects · a selects all shown · d reviews removal.",
             (Kind::Settings, _) => "Enter shows settings, which may include tokens. View only.",
             (Kind::Instructions, _) => "Enter shows instructions. View only.",
@@ -796,6 +909,16 @@ impl Screen for AiTools {
                 doing: "Moving chat files to Trash",
                 progress: format!("{} of {} checked", cleanup.done, cleanup.total),
                 note: "Changed or open files are skipped. Finder can restore moved files.",
+            }
+            .draw(frame, area);
+            return;
+        }
+        if self.archiving.is_some() {
+            super::loading::Loading {
+                title: "AI Tools",
+                doing: "Codex is archiving the chat",
+                progress: "codex archive".into(),
+                note: "Codex moves the chat file and updates its own list.",
             }
             .draw(frame, area);
             return;
@@ -883,7 +1006,7 @@ impl Screen for AiTools {
 
     fn handle_key(&mut self, key: KeyEvent, _: &Context) -> Action {
         self.poll();
-        if self.pending.is_some() || self.cleanup.is_some() {
+        if self.pending.is_some() || self.cleanup.is_some() || self.archiving.is_some() {
             return Action::None;
         }
         if self.input.is_some() {
@@ -910,6 +1033,12 @@ impl Screen for AiTools {
                     self.back();
                 }
                 KeyCode::Char('o') if viewer.source.is_some() => self.reveal(),
+                KeyCode::Char('c') if self.review.is_none() && viewer.source.is_some() => {
+                    return self.continue_chat();
+                }
+                KeyCode::Char('z') if self.review.is_none() && viewer.source.is_some() => {
+                    self.review_archive();
+                }
                 _ => {}
             }
             return Action::None;
@@ -938,6 +1067,8 @@ impl Screen for AiTools {
             KeyCode::Char('a') if self.tab == 1 => self.toggle_all_chats(),
             KeyCode::Char('n') if self.tab == 1 => self.marked.clear(),
             KeyCode::Char('d') | KeyCode::Delete if self.tab == 1 => self.review_chat_removal(),
+            KeyCode::Char('c') if self.tab == 1 => return self.continue_chat(),
+            KeyCode::Char('z') if self.tab == 1 => self.review_archive(),
             KeyCode::Char('/') => self.input = Some(Input::Search),
             KeyCode::Char('i') => {
                 self.input = Some(Input::Install {
@@ -967,6 +1098,14 @@ impl Screen for AiTools {
         Action::None
     }
 
+    fn ran(&mut self, result: Result<(), String>) {
+        self.note = match result {
+            Ok(()) => "Back from the chat.".into(),
+            Err(error) => error,
+        };
+        self.refresh();
+    }
+
     fn edited(&mut self, result: Result<(), String>) {
         let Some(edit) = self.editing.take() else {
             return;
@@ -979,7 +1118,7 @@ impl Screen for AiTools {
     }
 
     fn back(&mut self) -> Action {
-        if self.cleanup.is_some() {
+        if self.cleanup.is_some() || self.archiving.is_some() {
             return Action::None;
         }
         if let Some(input) = self.input.take() {
@@ -1009,7 +1148,10 @@ impl Screen for AiTools {
         self.input.is_some()
     }
     fn is_dialog(&self) -> bool {
-        self.review.is_some() || self.editing.is_some() || self.cleanup.is_some()
+        self.review.is_some()
+            || self.editing.is_some()
+            || self.cleanup.is_some()
+            || self.archiving.is_some()
     }
 
     fn hints(&self) -> &'static str {
@@ -1029,12 +1171,19 @@ impl Screen for AiTools {
             .viewer
             .as_ref()
             .is_some_and(|viewer| viewer.source.is_some())
+            && self.chat_in_view().is_some()
+        {
+            "↑↓ scroll · PgUp/PgDn page · c continue · z archive · o Finder · Esc back · ? help"
+        } else if self
+            .viewer
+            .as_ref()
+            .is_some_and(|viewer| viewer.source.is_some())
         {
             "↑↓ scroll · PgUp/PgDn page · o Finder · Esc back · ? help · q quit"
         } else if self.viewer.is_some() {
             "↑↓ scroll · PgUp/PgDn page · Esc back · ? help · q quit"
         } else if self.tab == 1 {
-            "↑↓ move · Enter read · Space select · a all shown · d delete · / find · p tool · Tab section · ? help · Esc back"
+            "↑↓ move · Enter read · c continue · z archive · Space select · a all shown · d delete · / find · p tool · Tab section · ? help · Esc back"
         } else if self.tab == 2 {
             "↑↓ move · Tab section · Enter read · i link skill · e edit · b restore · x remove link · u undo · / find · p tool · ? help · Esc back"
         } else {
@@ -1059,6 +1208,11 @@ impl Screen for AiTools {
                 "a / n",
                 "Select all shown chats / clear every selection. n also cancels chat removal.",
             ),
+            (
+                "c",
+                "Continue the chat in Claude Code or Codex. neet comes back when it quits.",
+            ),
+            ("z", "Archive a Codex chat, or bring it back, with Codex."),
             (
                 "d / Delete",
                 "Review moving selected chat files to Trash, including hidden selections.",

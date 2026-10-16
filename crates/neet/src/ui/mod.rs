@@ -55,6 +55,10 @@ pub fn run(terminal: &mut DefaultTerminal) -> io::Result<()> {
             let result = editor::suspend(terminal, &path);
             app.edited(result);
         }
+        if let Some(resume) = app.take_run() {
+            let result = editor::run(terminal, &resume);
+            app.ran(result);
+        }
     }
     Ok(())
 }

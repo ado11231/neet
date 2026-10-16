@@ -31,6 +31,9 @@ pub enum Action {
     /// Leave the screen to open this file in your editor, then tell the
     /// screen with [`Screen::edited`]
     Edit(PathBuf),
+    /// Leave the screen to run an assistant on a chat, then tell the screen
+    /// with [`Screen::ran`]
+    Run(neet_core::ai::actions::Resume),
     Quit,
 }
 
@@ -80,6 +83,9 @@ pub trait Screen {
 
     /// Your editor closed after [`Action::Edit`], or could not open.
     fn edited(&mut self, _result: Result<(), String>) {}
+
+    /// The program from [`Action::Run`] quit, or could not start.
+    fn ran(&mut self, _result: Result<(), String>) {}
 }
 
 /// The disk's free space, reread every few seconds so the gauge stays current.
@@ -177,6 +183,8 @@ pub struct App {
     disk: DiskWatch,
     /// A file to open in your editor, once the screen is left
     edit: Option<PathBuf>,
+    /// A program to run, once the screen is left
+    run: Option<neet_core::ai::actions::Resume>,
     quit: bool,
 }
 
@@ -194,6 +202,7 @@ impl App {
             home: disk_root.clone(),
             disk: DiskWatch::new(disk_root),
             edit: None,
+            run: None,
             quit: false,
         }
     }
@@ -217,6 +226,16 @@ impl App {
     /// Tells the screen that asked how the editor went.
     pub fn edited(&mut self, result: Result<(), String>) {
         self.top().edited(result);
+    }
+
+    /// The program a screen asked to run, if any
+    pub fn take_run(&mut self) -> Option<neet_core::ai::actions::Resume> {
+        self.run.take()
+    }
+
+    /// Tells the screen that asked how the program went.
+    pub fn ran(&mut self, result: Result<(), String>) {
+        self.top().ran(result);
     }
 
     fn top(&mut self) -> &mut dyn Screen {
@@ -293,6 +312,7 @@ impl App {
             }
             Action::Replan => self.estimate = Estimate::start(self.home.clone()),
             Action::Edit(path) => self.edit = Some(path),
+            Action::Run(resume) => self.run = Some(resume),
             Action::Quit => self.quit = true,
         }
     }

@@ -343,7 +343,7 @@ fn removal_review_includes_hidden_selections_and_escape_cancels() {
     let text = render(&mut screen, 100, 40);
     assert!(text.contains("Move 2 chat files"), "{text}");
     assert!(text.contains("rollout-other.jsonl"), "{text}");
-    assert!(text.contains("indexes, related files"), "{text}");
+    assert!(text.contains("related folders go to Trash"), "{text}");
     assert!(text.contains("1 hidden by filters"), "{text}");
     screen.back();
     assert!(other.exists());
@@ -450,7 +450,10 @@ fn interrupted_cleanup_lists_files_without_a_confirmed_result() {
     let items: Vec<_> = screen.rows().into_iter().cloned().collect();
     let (sender, receiver) = mpsc::channel();
     sender
-        .send((items[0].path.clone(), Err("Chat is open".into())))
+        .send(chats::Message::Moved(
+            items[0].path.clone(),
+            Err("Chat is open".into()),
+        ))
         .unwrap();
     drop(sender);
     screen.cleanup = Some(chats::Cleanup::new(items, receiver));
@@ -489,9 +492,17 @@ fn cleanup_reports_partial_failure_and_keeps_failed_chats_selected() {
         screen.rows().into_iter().cloned().collect(),
         receiver,
     ));
-    sender.send((paths[0].clone(), Ok(()))).unwrap();
     sender
-        .send((paths[1].clone(), Err("Chat changed after review".into())))
+        .send(chats::Message::Moved(
+            paths[0].clone(),
+            Ok(neet_core::ai::remove::Moved::default()),
+        ))
+        .unwrap();
+    sender
+        .send(chats::Message::Moved(
+            paths[1].clone(),
+            Err("Chat changed after review".into()),
+        ))
         .unwrap();
     drop(sender);
     screen.poll_cleanup();
@@ -605,4 +616,149 @@ fn a_copy_or_plugin_skill_is_never_removed() {
     assert!(!screen.is_dialog());
     press(&mut screen, KeyCode::Char('e'));
     assert!(screen.note.contains("only your own"), "{}", screen.note);
+}
+
+const ID: &str = "0df8fdc8-b9e2-48ed-bc04-d2dc4b6e8fd0";
+
+/// A Claude Code chat recorded in `project`, with folders beside it and a
+/// history entry, made a few minutes old so it can be removed
+fn claude_chat(screen: &mut AiTools, project: &Path) -> PathBuf {
+    let claude = screen.locations.claude.clone();
+    let path = claude.join(format!("projects/repo/{ID}.jsonl"));
+    write(
+        &path,
+        &format!(
+            "{{\"cwd\":\"{}\",\"message\":{{\"role\":\"user\",\"content\":\"Fix the build\"}}}}\n",
+            project.display()
+        ),
+    );
+    write(&claude.join(format!("file-history/{ID}/v1")), "x");
+    write(
+        &claude.join("history.jsonl"),
+        &format!(
+            "{{\"display\":\"Fix the build\",\"sessionId\":\"{ID}\"}}\n{{\"display\":\"other\",\"sessionId\":\"x\"}}\n"
+        ),
+    );
+    let old = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
+    fs::File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_modified(old)
+        .unwrap();
+    let mut listing = screen.locations.list();
+    listing.summarize_chats(&screen.locations);
+    screen.listing = listing;
+    screen.tab = 1;
+    screen
+        .list
+        .select(screen.rows().iter().position(|item| item.path == path));
+    path
+}
+
+#[test]
+fn c_continues_a_chat_in_its_tool_from_its_project() {
+    let (_dir, mut screen) = setup();
+    let project = screen.locations.home.join("work/app");
+    fs::create_dir_all(&project).unwrap();
+    claude_chat(&mut screen, &project);
+    assert!(render(&mut screen, 120, 30).contains("c continues"));
+
+    let Action::Run(resume) = press(&mut screen, KeyCode::Char('c')) else {
+        panic!("c should leave neet to run Claude Code");
+    };
+    assert_eq!(resume.program, "claude");
+    assert_eq!(resume.args, ["--resume", ID]);
+    assert_eq!(resume.folder, project);
+
+    // From the chat's preview too
+    press(&mut screen, KeyCode::Enter);
+    assert!(matches!(
+        press(&mut screen, KeyCode::Char('c')),
+        Action::Run(_)
+    ));
+    screen.back();
+
+    screen.ran(Err("claude quit with an error.".into()));
+    assert!(screen.note.contains("quit with an error"));
+}
+
+#[test]
+fn archive_is_for_codex_and_asks_first() {
+    let (_dir, mut screen) = setup();
+    let home = screen.locations.home.clone();
+    claude_chat(&mut screen, &home);
+    press(&mut screen, KeyCode::Char('z'));
+    assert!(!screen.is_dialog());
+    assert!(screen.note.contains("has no archive"), "{}", screen.note);
+
+    let codex = screen.locations.codex.join(format!(
+        "sessions/2026/10/01/rollout-2026-10-01T16-30-26-{ID}.jsonl"
+    ));
+    write(
+        &codex,
+        "{\"type\":\"session_meta\",\"payload\":{\"cwd\":\"/tmp\"}}\n",
+    );
+    let mut listing = screen.locations.list();
+    listing.summarize_chats(&screen.locations);
+    screen.listing = listing;
+    screen
+        .list
+        .select(screen.rows().iter().position(|item| item.path == codex));
+    press(&mut screen, KeyCode::Char('z'));
+    assert!(screen.is_dialog());
+    assert!(render(&mut screen, 120, 30).contains("Nothing is deleted"));
+    screen.back();
+    assert!(!screen.is_dialog());
+    assert!(codex.exists());
+}
+
+#[test]
+fn removal_takes_related_folders_and_history_entries() {
+    let (_dir, mut screen) = setup();
+    let project = screen.locations.home.clone();
+    claude_chat(&mut screen, &project);
+    press(&mut screen, KeyCode::Char('d'));
+    let text = render(&mut screen, 140, 40);
+    assert!(text.contains("With 1 related"), "{text}");
+    assert!(text.contains("history entries"), "{text}");
+    screen.back();
+
+    // The thread's news, as the cleanup would send it
+    let (sender, receiver) = mpsc::channel();
+    let item = screen.selected().unwrap();
+    screen.cleanup = Some(chats::Cleanup::new(vec![item.clone()], receiver));
+    sender
+        .send(chats::Message::Moved(
+            item.path.clone(),
+            Ok(neet_core::ai::remove::Moved {
+                related: 1,
+                kept: Vec::new(),
+            }),
+        ))
+        .unwrap();
+    sender
+        .send(chats::Message::History(vec![Ok(
+            neet_core::ai::actions::Cleaned {
+                file: screen.locations.claude.join("history.jsonl"),
+                removed: 1,
+                backup: screen
+                    .locations
+                    .home
+                    .join(".local/state/neet/backups/ai/history/b"),
+            },
+        )]))
+        .unwrap();
+    drop(sender);
+    screen.poll();
+    finish_refresh(&mut screen);
+    let text = render(&mut screen, 140, 40);
+    assert!(
+        text.contains("1 related folders and files moved too"),
+        "{text}"
+    );
+    assert!(
+        text.contains("1 removed from ~/.claude/history.jsonl"),
+        "{text}"
+    );
 }
