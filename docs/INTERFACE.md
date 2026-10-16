@@ -335,7 +335,11 @@
 * Review separates ready and skipped files. Totals and confirmation keys stay visible while scrolling.
 * `y` moves ready transcripts to Trash. If none are ready, the review offers no move action.
 * Results list moved, failed, and unconfirmed files. Check Trash before retrying unconfirmed files.
-* Finder's Put Back restores transcripts. Assistant indexes, related files, and cloud history remain.
+* Claude Code's related folders for a chat, such as subagents and file history, go to Trash with it.
+* The chat's lines in Claude Code and Codex history and index files are removed after the move, with a backup. The result names each backup.
+* Finder's Put Back restores transcripts and folders. Cloud history and Codex's own database remain.
+* `c` continues a Claude Code or Codex chat in its project folder. neet comes back when the tool quits. Gemini CLI resumes by a list number, so neet explains how instead.
+* `z` archives a Codex chat, or brings it back, with Codex's own command, after a question.
 * Linking a skill reviews its source, destination, and instructions. Keep its source folder in place and reload the assistant afterward.
 * Editing or restoring a user skill shows a diff and saves a backup after confirmation.
 * A failed edit keeps the draft. Use `e` to repair it or `Esc` to discard it.
@@ -352,6 +356,8 @@
 | `Space` | Select or deselect the highlighted chat. |
 | `a` / `n` | Toggle all shown chats / clear every chat selection. In a chat removal review, `n` cancels. |
 | `d` / `Delete` | Review moving selected chat files, or the highlighted chat, to Trash. |
+| `c` | Continue the highlighted or open chat in Claude Code or Codex. |
+| `z` | Archive or unarchive the highlighted or open Codex chat, after a question. |
 | `i` | Link a local skill folder. `Tab` or `Shift-Tab` chooses the tool while typing. |
 | `e` | Edit a user skill, or reopen a kept draft, then review. |
 | `b` | Review restoring the latest skill backup. |

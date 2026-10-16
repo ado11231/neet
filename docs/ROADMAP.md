@@ -73,6 +73,7 @@
 * Changed plists are refused. Partial changes and failed checks stay visible.
 * AI Tools browses files and chats, reviews transcript cleanup, and manages local skill links and edits.
 * Skills show their source, including plugin skills, and linked skills can be removed and put back.
+* Chats continue in Claude Code or Codex, Codex chats archive, and cleanup takes related folders and history entries with a backup.
 * Tests cover file checks, backups, failed cleanup, draft recovery, and narrow screens.
 
 ### Clarity Pass
@@ -86,7 +87,6 @@
 
 ## Next
 
-* Finish chat actions, related file cleanup, restore, and reload checks in [#111](https://github.com/ado11231/neet/issues/111).
 * Test Startup on macOS 13, 14, and 15 in [#22](https://github.com/ado11231/neet/issues/22). macOS 26.5 is checked.
 * Review the next release, then verify the published crate and both Mac downloads.
 
