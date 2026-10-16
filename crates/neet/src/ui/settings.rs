@@ -24,7 +24,10 @@ use super::loading::Loading;
 use super::tools;
 use super::visual::{self, Columns};
 
-const TABS: [&str; 3] = ["Power", "Mac settings", "Preferences"];
+const TABS: [&str; 4] = ["Power", "Mac settings", "Preferences", "Shell PATH"];
+
+/// The Shell PATH tab
+const PATH_TAB: usize = 3;
 
 /// From this width the selected row's details show on the right.
 const SIDE_WIDTH: u16 = 100;
@@ -36,6 +39,7 @@ const LABEL: usize = 11;
 struct Found {
     power: Result<Power, String>,
     mac: Vec<Result<Current, String>>,
+    path: neet_core::path::Listing,
 }
 
 enum State {
@@ -55,6 +59,8 @@ enum Item {
     Mac(usize),
     /// An index into [`PREFS`]
     Pref(usize),
+    /// An index into the PATH listing's folders
+    Path(usize),
 }
 
 /// The preferences, in the order shown
@@ -93,6 +99,9 @@ pub struct Settings {
     note: Option<(String, Color)>,
     /// The power key whose undo is running, to forget once it worked
     pending_undo: Option<&'static str>,
+    /// A program name typed to see which copy runs, and whether typing
+    which: String,
+    typing: bool,
 }
 
 impl Settings {
@@ -108,6 +117,7 @@ impl Settings {
             state: State::Ready(Found {
                 power: Err(String::new()),
                 mac: Vec::new(),
+                path: neet_core::path::Listing::default(),
             }),
             tab: 0,
             table: TableState::default(),
@@ -116,6 +126,8 @@ impl Settings {
             ask: None,
             note: None,
             pending_undo: None,
+            which: String::new(),
+            typing: false,
         };
         screen.look();
         screen
@@ -132,12 +144,15 @@ impl Settings {
             state: State::Ready(Found {
                 power: Ok(power),
                 mac: mac.into_iter().map(Ok).collect(),
+                path: neet_core::path::Listing::default(),
             }),
             tab: 0,
             table: TableState::default(),
             ask: None,
             note: None,
             pending_undo: None,
+            which: String::new(),
+            typing: false,
         };
         screen.select_first();
         screen
@@ -147,8 +162,10 @@ impl Settings {
     /// `defaults` take a moment each.
     fn look(&mut self) {
         let (sender, receiver) = mpsc::channel();
+        let home = self.home.clone();
         thread::spawn(move || {
             let found = Found {
+                path: neet_core::path::from_env(&home),
                 power: power::read().map_err(|error| error.to_string()),
                 mac: mac::read_all()
                     .into_iter()
@@ -170,6 +187,7 @@ impl Settings {
             Err(TryRecvError::Disconnected) => Found {
                 power: Err("the task ended without a result".into()),
                 mac: Vec::new(),
+                path: neet_core::path::Listing::default(),
             },
         };
         let selected = self.table.selected();
@@ -235,7 +253,10 @@ impl Settings {
                 }
                 rows
             }
-            _ => (0..PREFS.len()).map(Item::Pref).collect(),
+            2 => (0..PREFS.len()).map(Item::Pref).collect(),
+            _ => (0..self.found().map_or(0, |found| found.path.entries.len()))
+                .map(Item::Path)
+                .collect(),
         }
     }
 
@@ -305,7 +326,7 @@ impl Settings {
                 .into_iter()
                 .map(|(label, value)| (label, Some(value)))
                 .collect(),
-            Item::Heading(_) => Vec::new(),
+            Item::Heading(_) | Item::Path(_) => Vec::new(),
         }
     }
 
@@ -327,7 +348,7 @@ impl Settings {
                 }
             }),
             Item::Pref(index) => Some(pref_value(&self.prefs, index)),
-            Item::SleepDisabled | Item::Heading(_) => None,
+            Item::SleepDisabled | Item::Heading(_) | Item::Path(_) => None,
         };
         choices
             .iter()
@@ -340,6 +361,14 @@ impl Settings {
             return;
         };
         if matches!(row, Item::Heading(_)) {
+            return;
+        }
+        if matches!(row, Item::Path(_)) {
+            self.note = Some((
+                "Shell PATH is view only for now. Change it in the shell file the details name."
+                    .into(),
+                Color::Yellow,
+            ));
             return;
         }
         if let Item::Mac(index) = row
@@ -366,7 +395,7 @@ impl Settings {
                 .contains_key(power::SETTINGS[index].key),
             Item::SleepDisabled => self.power_saved.before.contains_key(power::DISABLE_SLEEP),
             Item::Mac(index) => self.mac_saved.before(&mac::SETTINGS[index]).is_some(),
-            Item::Pref(_) | Item::Heading(_) => false,
+            Item::Pref(_) | Item::Heading(_) | Item::Path(_) => false,
         };
         if saved {
             self.ask = Some(Ask::Undo(row));
@@ -517,7 +546,7 @@ impl Settings {
                         Err(error) => (format!("Not saved: {error}"), Color::Red),
                     });
                 }
-                Item::Heading(_) => {}
+                Item::Heading(_) | Item::Path(_) => {}
             },
             Ask::Undo(row) => match row {
                 Item::Power(_) | Item::SleepDisabled => {
@@ -568,6 +597,98 @@ impl Settings {
         self.look();
     }
 
+    fn path_entry(&self, index: usize) -> Option<&neet_core::path::Entry> {
+        self.found().and_then(|found| found.path.entries.get(index))
+    }
+
+    /// A row's name. PATH folders show their path, with ~ for home.
+    fn name(&self, row: Item) -> String {
+        match row {
+            Item::Path(index) => self
+                .path_entry(index)
+                .map(|entry| self.shown(std::path::Path::new(&entry.folder)))
+                .unwrap_or_default(),
+            _ => row_name(row).to_string(),
+        }
+    }
+
+    /// Where a PATH folder was added, in a few words
+    fn origin(&self, origin: &neet_core::path::Origin) -> String {
+        use neet_core::path::Origin;
+        match origin {
+            Origin::Line { file, line } => format!("{}, line {line}", self.shown(file)),
+            Origin::Tool { tool, file, line } => {
+                format!("{tool}, run from {}, line {line}", self.shown(file))
+            }
+            Origin::System(file) => format!("macOS, from {}", file.display()),
+            Origin::Unknown => {
+                "not in your shell files. Another program added it, such as an editor's terminal."
+                    .into()
+            }
+        }
+    }
+
+    /// Programs in more than one folder, and which copy runs
+    fn shadowed(&self, width: usize) -> Vec<Line<'static>> {
+        let mut lines = vec![Line::from("In more than one folder").style(visual::HEADING)];
+        let Some(found) = self.found() else {
+            return lines;
+        };
+        if found.path.shadowed.is_empty() {
+            lines.push(Line::from("None. Every program name is in one folder."));
+            return lines;
+        }
+        lines.push(Line::from(format!(
+            "{} programs. The first folder's copy runs.",
+            found.path.shadowed.len()
+        )));
+        for shadowed in found.path.shadowed.iter().take(8) {
+            let first = &found.path.entries[shadowed.entries[0]].folder;
+            let folder = self.shown(std::path::Path::new(first));
+            let name = format!("{:<14}", format::shorten_middle(&shadowed.name, 14));
+            lines.push(Line::from(vec![
+                Span::raw(name).bold(),
+                Span::raw(format::shorten_path(&folder, width.saturating_sub(15))),
+            ]));
+        }
+        lines
+    }
+
+    /// Every copy of the typed program, in PATH order
+    fn which_lines(&self, width: usize) -> Vec<Line<'static>> {
+        let mut lines = vec![Line::from("Which copy runs").style(visual::HEADING)];
+        let cursor = if self.typing { "▏" } else { "" };
+        lines.push(Line::from(vec![
+            Span::raw("Program  ").bold(),
+            Span::raw(format!("{}{cursor}", self.which)).fg(visual::ACCENT),
+        ]));
+        if self.which.is_empty() {
+            lines.push(Line::from(
+                "Press / and type a program name, such as python3.",
+            ));
+            return lines;
+        }
+        let copies = self
+            .found()
+            .map(|found| found.path.which(&self.which))
+            .unwrap_or_default();
+        if copies.is_empty() {
+            lines.push(Line::from("Not found in any PATH folder.").yellow());
+        }
+        for (number, copy) in copies.iter().enumerate() {
+            let shown = format::shorten_path(&self.shown(copy), width.saturating_sub(10));
+            lines.push(if number == 0 {
+                Line::from(vec![
+                    Span::raw("runs     ").green().bold(),
+                    Span::raw(shown),
+                ])
+            } else {
+                Line::from(vec![Span::raw("hidden   ").yellow(), Span::raw(shown)])
+            });
+        }
+        lines
+    }
+
     fn shown(&self, path: &std::path::Path) -> String {
         path.strip_prefix(&self.home).map_or_else(
             |_| path.display().to_string(),
@@ -579,6 +700,32 @@ impl Settings {
     fn value(&self, row: Item) -> Vec<Span<'static>> {
         match row {
             Item::Heading(_) => Vec::new(),
+            Item::Path(index) => {
+                let Some(entry) = self.path_entry(index) else {
+                    return Vec::new();
+                };
+                if entry.problems.is_empty() {
+                    let programs = entry.programs;
+                    vec![Span::raw(format!(
+                        "{programs} {}",
+                        if programs == 1 { "program" } else { "programs" }
+                    ))]
+                } else {
+                    let mut spans = Vec::new();
+                    for (number, problem) in entry.problems.iter().enumerate() {
+                        if number > 0 {
+                            spans.push(Span::raw(" · "));
+                        }
+                        let label = Span::raw(problem.label());
+                        spans.push(match problem {
+                            neet_core::path::Problem::Repeated(_)
+                            | neet_core::path::Problem::Missing => label.yellow(),
+                            _ => label.red().bold(),
+                        });
+                    }
+                    spans
+                }
+            }
             Item::SleepDisabled => vec![Span::raw("never sleeps").red().bold()],
             Item::Power(index) => {
                 let setting = &power::SETTINGS[index];
@@ -632,14 +779,16 @@ impl Settings {
                 .before
                 .contains_key(power::SETTINGS[index].key),
             Item::Mac(index) => self.mac_saved.before(&mac::SETTINGS[index]).is_some(),
-            Item::SleepDisabled | Item::Pref(_) | Item::Heading(_) => false,
+            Item::SleepDisabled | Item::Pref(_) | Item::Heading(_) | Item::Path(_) => false,
         }
     }
 
     fn draw_table(&mut self, frame: &mut Frame, area: Rect) {
         let rows = self.rows();
-        let names: Vec<String> = rows.iter().map(|&row| row_name(row).to_string()).collect();
-        let name_width = format::column_width("Setting", names.iter().map(|n| format!("  {n}")));
+        let names: Vec<String> = rows.iter().map(|&row| self.name(row)).collect();
+        // Long PATH folders are shortened, so the value column keeps room.
+        let name_width = format::column_width("Setting", names.iter().map(|n| format!("  {n}")))
+            .min(area.width.saturating_sub(4) * 3 / 5);
         let columns = Columns::new(area.width, [(name_width, 0), (12, 1), (2, 0)], &[2], true);
         let table_rows: Vec<Row> = rows
             .iter()
@@ -656,7 +805,10 @@ impl Settings {
                     Cell::from(""),
                 ]),
                 _ => columns.row([
-                    Cell::from(format!("  {name}")),
+                    Cell::from(format!(
+                        "  {}",
+                        format::shorten_middle(name, columns.width(0).saturating_sub(2))
+                    )),
                     Cell::from(Line::from(self.value(row))),
                     Cell::from(if self.changed_by_neet(row) {
                         Span::raw("•").fg(visual::ACCENT)
@@ -667,7 +819,19 @@ impl Settings {
             })
             .collect();
         let header = columns
-            .row([Cell::from("Setting"), Cell::from("Now"), Cell::from("")])
+            .row([
+                Cell::from(if self.tab == PATH_TAB {
+                    "Folder"
+                } else {
+                    "Setting"
+                }),
+                Cell::from(if self.tab == PATH_TAB {
+                    "Programs or problem"
+                } else {
+                    "Now"
+                }),
+                Cell::from(""),
+            ])
             .style(visual::HEADING);
         let block = visual::block()
             .title(format!(" {} ", TABS[self.tab]))
@@ -694,6 +858,42 @@ impl Settings {
         frame.render_stateful_widget(table, area, &mut self.table);
     }
 
+    /// A PATH folder's order, programs, where it was added, and problems
+    fn path_details(&self, index: usize, lines: &mut Vec<Line<'static>>, width: usize) {
+        let Some(entry) = self.path_entry(index) else {
+            return;
+        };
+        let text = |lines: &mut Vec<Line<'static>>, text: &str| {
+            lines.extend(visual::hanging(
+                Vec::new(),
+                0,
+                text,
+                ratatui::style::Style::default(),
+                width,
+            ));
+        };
+        let count = self.found().map_or(0, |found| found.path.entries.len());
+        lines.push(field(
+            "Order",
+            Span::raw(format!("#{} of {count}, searched in this order", index + 1)),
+        ));
+        lines.push(field("Programs", Span::raw(entry.programs.to_string())));
+        lines.push(field("Added by", Span::raw(self.origin(&entry.origin))));
+        for problem in &entry.problems {
+            lines.push(Line::default());
+            lines.push(Line::from(problem.label()).red().bold());
+            text(lines, problem.about());
+        }
+        if matches!(entry.origin, neet_core::path::Origin::System(_))
+            && entry.problems.contains(&neet_core::path::Problem::Missing)
+        {
+            text(
+                lines,
+                "macOS lists this folder for every user. It exists only on some Macs, so a missing one here is harmless.",
+            );
+        }
+    }
+
     /// The selected row: what it does, where it is kept, and the keys
     fn details(&self, row: Item, width: usize) -> Vec<Line<'static>> {
         let mut lines = vec![Line::from(row_name(row)).style(visual::HEADING)];
@@ -707,6 +907,10 @@ impl Settings {
             ));
         };
         match row {
+            Item::Path(index) => {
+                lines[0] = Line::from(self.name(row)).style(visual::HEADING);
+                self.path_details(index, &mut lines, width);
+            }
             Item::SleepDisabled => {
                 text(
                     &mut lines,
@@ -779,7 +983,12 @@ impl Settings {
 
     /// How changes on this tab are made and undone
     fn how(&self, width: usize) -> Vec<Line<'static>> {
-        let mut lines = vec![Line::from("How changes work").style(visual::HEADING)];
+        let heading = if self.tab == PATH_TAB {
+            "About this list"
+        } else {
+            "How changes work"
+        };
+        let mut lines = vec![Line::from(heading).style(visual::HEADING)];
         let steps: &[&str] = match self.tab {
             0 => &[
                 "Enter picks a value and shows the sudo pmset command.",
@@ -791,9 +1000,13 @@ impl Settings {
                 "y writes it and restarts Finder, the Dock, or the menu bar when needed.",
                 "• marks what neet changed. u puts it back; macOS default deletes the key.",
             ],
-            _ => &[
+            2 => &[
                 "Enter picks a value. y saves it right away.",
                 "Screens use it the next time they open. Reviews and checks stay the same.",
+            ],
+            _ => &[
+                "These are the folders your shell searches for programs, first to last. neet got them from the terminal it started in.",
+                "This tab is view only. Change PATH in the shell file each folder's details name.",
             ],
         };
         for (number, step) in steps.iter().enumerate() {
@@ -892,6 +1105,10 @@ impl Settings {
                     sections.push(screen.awake());
                     sections.push(screen.battery());
                 }
+                PATH_TAB => {
+                    sections.push(screen.which_lines(width(area)));
+                    sections.push(screen.shadowed(width(area)));
+                }
                 2 if !screen.prefs_warnings.is_empty() => {
                     let mut lines = vec![Line::from("Settings file").style(visual::HEADING)];
                     lines.extend(
@@ -962,6 +1179,7 @@ fn field(label: &str, value: Span<'static>) -> Line<'static> {
 fn row_name(row: Item) -> &'static str {
     match row {
         Item::Heading(title) => title,
+        Item::Path(_) => "Shell PATH",
         Item::SleepDisabled => "Sleep is turned off",
         Item::Power(index) => power::SETTINGS[index].name,
         Item::Mac(index) => mac::SETTINGS[index].name,
@@ -1087,6 +1305,17 @@ impl Screen for Settings {
         if self.note.take().is_some() {
             return Action::None;
         }
+        if self.typing {
+            match key.code {
+                KeyCode::Enter => self.typing = false,
+                KeyCode::Backspace => {
+                    self.which.pop();
+                }
+                KeyCode::Char(c) if !c.is_whitespace() && c != '/' => self.which.push(c),
+                _ => {}
+            }
+            return Action::None;
+        }
         if let Some(ask) = &mut self.ask {
             match (ask, key.code) {
                 (Ask::Choose { row, choice }, KeyCode::Up | KeyCode::Char('k')) => {
@@ -1112,6 +1341,10 @@ impl Screen for Settings {
             KeyCode::Down | KeyCode::Char('j') => self.step(true),
             KeyCode::Enter => self.open_choose(),
             KeyCode::Char('u') => self.open_undo(),
+            KeyCode::Char('/') if self.tab == PATH_TAB => {
+                self.typing = true;
+                self.which.clear();
+            }
             KeyCode::Char('r') => self.look(),
             _ => {}
         }
@@ -1133,6 +1366,11 @@ impl Screen for Settings {
     }
 
     fn back(&mut self) -> Action {
+        if self.typing {
+            self.typing = false;
+            self.which.clear();
+            return Action::None;
+        }
         if self.ask.take().is_some() || self.note.take().is_some() {
             return Action::None;
         }
@@ -1143,6 +1381,10 @@ impl Screen for Settings {
         self.ask.is_some() || self.note.is_some()
     }
 
+    fn takes_text(&self) -> bool {
+        self.typing
+    }
+
     fn hints(&self) -> &'static str {
         if matches!(self.ask, Some(Ask::Choose { .. })) {
             "↑↓ choose · y apply · n or esc cancel"
@@ -1150,6 +1392,10 @@ impl Screen for Settings {
             "y undo · n or esc cancel"
         } else if self.note.is_some() {
             "any key go on"
+        } else if self.typing {
+            "type a program name · enter done · esc clear"
+        } else if self.tab == PATH_TAB {
+            "↑↓ move · Tab section · / which copy runs · r look again · esc home · ? help"
         } else {
             "↑↓ move · Tab section · enter change · u undo · r look again · esc home · ? help"
         }
@@ -1162,6 +1408,7 @@ impl Screen for Settings {
             ("Enter", "Pick a value. The command shows before it runs"),
             ("y", "Apply the picked value"),
             ("u", "Put a setting back as it was before neet changed it"),
+            ("/", "In Shell PATH: type a program to see which copy runs"),
             ("r", "Read every setting again"),
             ("Esc", "Cancel, then back to Home"),
         ]

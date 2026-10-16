@@ -142,6 +142,7 @@ fn a_power_change_is_picked_reviewed_and_undone() {
     screen.state = State::Ready(Found {
         power: Ok(power(false)),
         mac: mac::SETTINGS.iter().map(|_| Ok(Current::Unset)).collect(),
+        path: neet_core::path::Listing::default(),
     });
     assert!(
         render(&mut screen, 130, 36).contains('•'),
@@ -216,7 +217,8 @@ fn mac_settings_are_grouped_and_show_the_command_before_anything_runs() {
 #[test]
 fn preferences_save_right_away() {
     let (home, mut screen) = screen(false);
-    press(&mut screen, KeyCode::BackTab);
+    press(&mut screen, KeyCode::Tab);
+    press(&mut screen, KeyCode::Tab);
     assert_eq!(screen.selected(), Some(Item::Pref(0)));
     assert!(render(&mut screen, 130, 36).contains("By size"));
 
@@ -252,4 +254,76 @@ fn a_lost_read_stops_loading() {
     screen.poll();
     assert!(matches!(screen.state, State::Ready(_)));
     assert!(render(&mut screen, 120, 30).contains("could not be read"));
+}
+
+/// A PATH of a folder with python3, the same folder again, a missing one,
+/// and a system folder that also has python3
+fn path_screen() -> (tempfile::TempDir, Settings) {
+    use std::os::unix::fs::PermissionsExt;
+    let (home, mut screen) = screen(false);
+    let root = std::fs::canonicalize(home.path()).unwrap();
+    let program = |path: &std::path::Path| {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    };
+    program(&root.join("bin/python3"));
+    program(&root.join("usr/bin/python3"));
+    std::fs::write(root.join(".zshrc"), "path=($HOME/bin $path)\n").unwrap();
+    std::fs::create_dir_all(root.join("etc")).unwrap();
+    let listing = neet_core::path::read(
+        &format!("{0}/bin:{0}/bin:{0}/gone:{0}/usr/bin", root.display()),
+        &root,
+        &root.join("etc"),
+    );
+    screen.home = root;
+    if let State::Ready(found) = &mut screen.state {
+        found.path = listing;
+    }
+    screen.change_tab(PATH_TAB);
+    (home, screen)
+}
+
+#[test]
+fn shell_path_lists_folders_problems_and_where_they_are_added() {
+    let (_home, mut screen) = path_screen();
+    let text = render(&mut screen, 140, 40);
+    for expected in [
+        "~/bin",
+        "1 program",
+        "repeat of #1",
+        "missing",
+        "~/.zshrc, line 1",
+        "In more than one folder",
+        "python3",
+    ] {
+        assert!(text.contains(expected), "{expected} missing:\n{text}");
+    }
+
+    press(&mut screen, KeyCode::Enter);
+    assert!(screen.note.as_ref().unwrap().0.contains("view only"));
+}
+
+#[test]
+fn slash_shows_which_copy_runs() {
+    let (_home, mut screen) = path_screen();
+    press(&mut screen, KeyCode::Char('/'));
+    assert!(screen.takes_text());
+    for c in "python3".chars() {
+        press(&mut screen, KeyCode::Char(c));
+    }
+    press(&mut screen, KeyCode::Enter);
+    assert!(!screen.takes_text());
+
+    let text = render(&mut screen, 140, 40);
+    assert!(text.contains("runs     ~/bin/python3"), "{text}");
+    assert!(text.contains("hidden   ~/usr/bin/python3"), "{text}");
+
+    press(&mut screen, KeyCode::Char('/'));
+    for c in "nothing-here".chars() {
+        press(&mut screen, KeyCode::Char(c));
+    }
+    assert!(render(&mut screen, 140, 40).contains("Not found"));
+    assert!(matches!(screen.back(), Action::None));
+    assert_eq!(screen.which, "");
 }
