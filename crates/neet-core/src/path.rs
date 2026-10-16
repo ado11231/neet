@@ -34,8 +34,8 @@ pub enum Problem {
     Repeated(usize),
     /// Not a full path, so it depends on the folder you are in
     Relative,
-    /// Other users can add programs to it
-    WritableByOthers,
+    /// Anyone on this Mac can add programs to it
+    WritableByAnyone,
 }
 
 impl Problem {
@@ -46,7 +46,7 @@ impl Problem {
             Self::NotFolder => "not a folder".into(),
             Self::Repeated(first) => format!("repeat of #{}", first + 1),
             Self::Relative => "relative".into(),
-            Self::WritableByOthers => "writable by others".into(),
+            Self::WritableByAnyone => "writable by anyone".into(),
         }
     }
 
@@ -62,8 +62,8 @@ impl Problem {
             Self::Relative => {
                 "This is not a full path, so what it finds depends on the folder you are in. A program in the current folder could run in place of the real one."
             }
-            Self::WritableByOthers => {
-                "Other users on this Mac can put programs here, which then run in place of yours."
+            Self::WritableByAnyone => {
+                "Anyone on this Mac can put programs here, which then run in place of yours."
             }
         }
     }
@@ -174,9 +174,11 @@ pub fn read(path_var: &str, home: &Path, etc: &Path) -> Listing {
             Err(_) => problems.push(Problem::Missing),
             Ok(meta) if !meta.is_dir() => problems.push(Problem::NotFolder),
             Ok(meta) => {
-                // Writable by group or others, and not a sticky folder like /tmp
-                if meta.mode() & 0o022 != 0 && meta.mode() & 0o1000 == 0 {
-                    problems.push(Problem::WritableByOthers);
+                // Writable by anyone, and not a sticky folder like /tmp.
+                // Homebrew's folders are writable by the admin group, which
+                // is how Homebrew works, so only everyone counts.
+                if meta.mode() & 0o002 != 0 && meta.mode() & 0o1000 == 0 {
+                    problems.push(Problem::WritableByAnyone);
                 }
             }
         }
@@ -399,7 +401,7 @@ mod tests {
         assert!(problems[2].contains(&Problem::Relative));
         assert_eq!(problems[3], [Problem::Repeated(0)]);
         assert_eq!(problems[4], [Problem::NotFolder]);
-        assert_eq!(problems[5], [Problem::WritableByOthers]);
+        assert_eq!(problems[5], [Problem::WritableByAnyone]);
     }
 
     #[test]
