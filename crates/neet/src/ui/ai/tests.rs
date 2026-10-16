@@ -503,3 +503,106 @@ fn cleanup_reports_partial_failure_and_keeps_failed_chats_selected() {
     assert!(text.contains("1 of 2 chat files moved"), "{text}");
     assert!(text.contains("Chat changed after review"), "{text}");
 }
+
+#[test]
+fn skills_show_their_source_and_a_link_is_removed_only_after_review() {
+    let (_dir, mut screen) = setup();
+    let home = screen.locations.home.clone();
+    let source = home.join("code/linked");
+    write(&source.join("SKILL.md"), SKILL);
+    let link = screen.locations.claude.join("skills/linked");
+    std::os::unix::fs::symlink(&source, &link).unwrap();
+    screen.listing = screen.locations.list();
+    screen.tab = 2;
+    screen.list.select(
+        screen
+            .rows()
+            .iter()
+            .position(|item| item.path == link.join("SKILL.md")),
+    );
+
+    let text = render(&mut screen, 120, 30);
+    assert!(text.contains("linked · Claude Code · link"), "{text}");
+    assert!(text.contains("Source: a link to ~/code/linked"), "{text}");
+    assert!(text.contains("x removes the link"), "{text}");
+
+    press(&mut screen, KeyCode::Char('x'));
+    assert!(screen.is_dialog());
+    assert!(render(&mut screen, 120, 30).contains("which stays as it is"));
+    assert!(fs::symlink_metadata(&link).is_ok(), "nothing goes before y");
+    screen.back();
+    assert!(fs::symlink_metadata(&link).is_ok(), "Esc cancels");
+
+    press(&mut screen, KeyCode::Char('x'));
+    press(&mut screen, KeyCode::Char('y'));
+    assert!(fs::symlink_metadata(&link).is_err());
+    assert!(source.join("SKILL.md").is_file());
+    assert!(
+        screen.note.contains("u puts the link back"),
+        "{}",
+        screen.note
+    );
+    finish_refresh(&mut screen);
+    assert!(
+        screen
+            .rows()
+            .iter()
+            .all(|item| item.path != link.join("SKILL.md"))
+    );
+
+    press(&mut screen, KeyCode::Char('u'));
+    assert!(screen.note.contains("Link put back"), "{}", screen.note);
+    finish_refresh(&mut screen);
+    assert_eq!(screen.selected().unwrap().path, link.join("SKILL.md"));
+}
+
+#[test]
+fn a_copy_or_plugin_skill_is_never_removed() {
+    let (_dir, mut screen) = setup();
+    screen.tab = 2;
+    let copy = screen.locations.claude.join("skills/sample");
+    press(&mut screen, KeyCode::Char('x'));
+    assert!(!screen.is_dialog());
+    assert!(
+        screen.note.contains("only linked skills"),
+        "{}",
+        screen.note
+    );
+    assert!(copy.join("SKILL.md").is_file());
+
+    let install = screen.locations.claude.join("plugins/cache/m/tools/1.0.0");
+    write(&install.join("skills/deploy/SKILL.md"), SKILL);
+    write(
+        &screen
+            .locations
+            .claude
+            .join("plugins/installed_plugins.json"),
+        &format!(
+            r#"{{"plugins":{{"tools@m":[{{"installPath":"{}","version":"1.0.0"}}]}}}}"#,
+            install.display()
+        ),
+    );
+    write(
+        &screen.locations.claude.join("settings.json"),
+        r#"{"enabledPlugins":{"tools@m":true}}"#,
+    );
+    screen.listing = screen.locations.list();
+    screen.list.select(
+        screen
+            .rows()
+            .iter()
+            .position(|item| item.path.parent().is_some_and(|p| p.ends_with("deploy"))),
+    );
+    let text = render(&mut screen, 120, 30);
+    assert!(text.contains("plugin tools"), "{text}");
+    assert!(text.contains("version 1.0.0, turned"), "{text}");
+    assert!(
+        screen
+            .source_text(screen.selected().unwrap().source.as_ref().unwrap())
+            .ends_with("turned on.")
+    );
+    press(&mut screen, KeyCode::Char('x'));
+    assert!(!screen.is_dialog());
+    press(&mut screen, KeyCode::Char('e'));
+    assert!(screen.note.contains("only your own"), "{}", screen.note);
+}
