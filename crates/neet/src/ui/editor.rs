@@ -38,11 +38,41 @@ fn open(path: &Path) -> Result<(), String> {
     }
 }
 
+/// Puts the terminal back as it was, runs an assistant on a chat in its
+/// project folder, then takes the terminal again once it quits.
+pub fn run(
+    terminal: &mut DefaultTerminal,
+    resume: &neet_core::ai::actions::Resume,
+) -> Result<(), String> {
+    hand_over(terminal, || {
+        let program = resume.program;
+        match Command::new(program)
+            .args(&resume.args)
+            .current_dir(&resume.folder)
+            .status()
+        {
+            Ok(status) if status.success() => Ok(()),
+            Ok(_) => Err(format!("{program} quit with an error.")),
+            Err(error) => Err(format!(
+                "{program} could not start: {error}. Check that it is installed and on your PATH."
+            )),
+        }
+    })
+}
+
 /// Puts the terminal back as it was, opens `path` in your editor, then
 /// takes the terminal again.
 pub fn suspend(terminal: &mut DefaultTerminal, path: &Path) -> Result<(), String> {
+    hand_over(terminal, || open(path))
+}
+
+/// Gives the terminal to `work`, then takes it back.
+fn hand_over(
+    terminal: &mut DefaultTerminal,
+    work: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
     ratatui::restore();
-    let result = open(path);
+    let result = work();
     let resumed = enable_raw_mode()
         .and_then(|()| execute!(io::stdout(), EnterAlternateScreen))
         .and_then(|()| terminal.clear());
