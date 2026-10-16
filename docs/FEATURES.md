@@ -12,6 +12,7 @@
 * [Dotfiles](#dotfiles)
 * [AI Tools](#ai-tools)
 * [Startup](#startup)
+* [Settings](#settings)
 * [The Program](#the-program)
 * [Planned Features](#planned-features)
 * [Terms](#terms)
@@ -154,11 +155,60 @@ What may change, and how, is in [SAFETY.md](SAFETY.md#dotfiles). neet runs chezm
 * If a plist changes after it was listed, neet refuses the turn action. Press `r` to look again before trying it.
 * If a turn action only partly finishes, the result says what changed and what failed. Saved attempts stay separate from completed changes.
 
+## Settings
+
+| Feature | What It Does | Status |
+| --- | --- | --- |
+| Power | Low Power Mode, display, system, and disk sleep, Power Nap, and wake for network, per battery and charger. Changes run `sudo pmset` once after review. | Done |
+| Sleep turned off | Flags `pmset disablesleep 1` and offers to turn it back off. | Done |
+| Keeping it awake | Lists the apps holding power assertions and what they stop. | Done |
+| Mac settings | 31 Finder, typing, Dock, screenshot, and saving settings through `defaults`, with reset to macOS's default. | Done |
+| Undo | Puts a power or Mac setting back as it was before neet's first change. | Done |
+| Preferences | Saves what Disk, Large Files, and AI Tools open with. | Done |
+| Display | Refresh rate for ProMotion and external displays. | Proposed |
+
+* What may change, and how, is in [SAFETY.md](SAFETY.md#settings).
+* Graphics switching and High Power Mode are left out: Apple silicon has no graphics switching, and High Power Mode exists only on some MacBook Pro models. Neither could be checked on this Mac.
+
+| Group | Setting | `defaults` key |
+| --- | --- | --- |
+| Finder | Show hidden files | `com.apple.finder AppleShowAllFiles` |
+| Finder | Show all file extensions | `NSGlobalDomain AppleShowAllExtensions` |
+| Finder | Show path bar | `com.apple.finder ShowPathbar` |
+| Finder | Show status bar | `com.apple.finder ShowStatusBar` |
+| Finder | Full path in window title | `com.apple.finder _FXShowPosixPathInTitle` |
+| Finder | Folders first | `com.apple.finder _FXSortFoldersFirst` |
+| Finder | Search this folder | `com.apple.finder FXDefaultSearchScope` |
+| Finder | Warn when changing an extension | `com.apple.finder FXEnableExtensionChangeWarning` |
+| Finder | No .DS_Store on network drives | `com.apple.desktopservices DSDontWriteNetworkStores` |
+| Finder | No .DS_Store on USB drives | `com.apple.desktopservices DSDontWriteUSBStores` |
+| Finder | Show desktop icons | `com.apple.finder CreateDesktop` |
+| Keyboard & typing | Hold a key to repeat it | `NSGlobalDomain ApplePressAndHoldEnabled` |
+| Keyboard & typing | Key repeat rate | `NSGlobalDomain KeyRepeat` |
+| Keyboard & typing | Delay until repeat | `NSGlobalDomain InitialKeyRepeat` |
+| Keyboard & typing | Smart quotes | `NSGlobalDomain NSAutomaticQuoteSubstitutionEnabled` |
+| Keyboard & typing | Smart dashes | `NSGlobalDomain NSAutomaticDashSubstitutionEnabled` |
+| Keyboard & typing | Auto-correct | `NSGlobalDomain NSAutomaticSpellingCorrectionEnabled` |
+| Keyboard & typing | Auto-capitalize | `NSGlobalDomain NSAutomaticCapitalizationEnabled` |
+| Keyboard & typing | Period with double space | `NSGlobalDomain NSAutomaticPeriodSubstitutionEnabled` |
+| Dock & Spaces | Hide the Dock | `com.apple.dock autohide` |
+| Dock & Spaces | Dock show delay | `com.apple.dock autohide-delay` |
+| Dock & Spaces | Recent apps in Dock | `com.apple.dock show-recents` |
+| Dock & Spaces | Minimize into app icon | `com.apple.dock minimize-to-application` |
+| Dock & Spaces | Rearrange Spaces | `com.apple.dock mru-spaces` |
+| Screenshots | Save screenshots to | `com.apple.screencapture location` |
+| Screenshots | Screenshot format | `com.apple.screencapture type` |
+| Screenshots | Window shadow | `com.apple.screencapture disable-shadow` |
+| Screenshots | Floating thumbnail | `com.apple.screencapture show-thumbnail` |
+| Saving & backups | Expanded save dialogs | `NSGlobalDomain NSNavPanelExpandedStateForSaveMode` |
+| Saving & backups | Save new files to iCloud | `NSGlobalDomain NSDocumentSaveNewDocumentsToCloud` |
+| Saving & backups | Ask to back up new disks | `com.apple.TimeMachine DoNotOfferNewDisksForBackup` |
+
 ## The Program
 
 | Feature | What It Does | Status |
 | --- | --- | --- |
-| Home menu | Disk first. Features not built yet are marked soon. | Done |
+| Home menu | Disk first, then every screen by number. | Done |
 | Help | `?` lists the keys for the current screen. | Done |
 | Command line | `neet` opens the app. The only options are `--help` and `--version`. | Done |
 | Refuse to run as root | Stops with an explanation if started with `sudo`. | Done |
@@ -172,9 +222,8 @@ These features are not built yet. Each needs checking on real Macs.
 | Area | What It Would Do |
 | --- | --- |
 | Shell PATH | Show the folders your shell searches for programs, in order, flag problems, show which copy of a program runs, and reorder them with a backup. |
-| Power and display | Switch power modes, graphics switching, and display refresh rate, and show what keeps the Mac awake. Every change can be undone. |
+| Display | Switch a ProMotion or external display's refresh rate, switching back unless you keep it. |
 | Treemap | Show folder sizes as areas. |
-| Saved preferences | Remember your choices between runs. |
 
 ## Terms
 

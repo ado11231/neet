@@ -85,6 +85,13 @@
 * Space splits used disk space into the home folder, other folders, macOS volumes, and what cannot be measured.
 * Quick Clean and Simulators show leftover simulator downloads macOS keeps, and how to reuse them.
 
+### Settings
+
+* Power settings change with `sudo pmset` after review, and undo per battery and charger.
+* Sleep turned off with `disablesleep` is flagged, with what keeps the Mac awake.
+* 31 Mac settings change through `defaults`, with undo and reset to macOS's default.
+* Preferences set what Disk, Large Files, and AI Tools open with.
+
 ## Next
 
 * Test Startup on macOS 13, 14, and 15 in [#22](https://github.com/ado11231/neet/issues/22). macOS 26.5 is checked.
@@ -95,9 +102,8 @@
 | Work | Issue |
 | --- | --- |
 | Shell PATH inspection and reviewed edits | [#25](https://github.com/ado11231/neet/issues/25) |
-| Power and display settings with undo | [#27](https://github.com/ado11231/neet/issues/27) |
+| Display refresh rate with undo | [#144](https://github.com/ado11231/neet/issues/144) |
 | Folder sizes shown as areas | [#29](https://github.com/ado11231/neet/issues/29) |
-| Saved preferences | [#30](https://github.com/ado11231/neet/issues/30) |
 | Decide whether Mail attachment cleanup is safe | [#32](https://github.com/ado11231/neet/issues/32) |
 | Decide whether system log cleanup is safe | [#33](https://github.com/ado11231/neet/issues/33) |
 
