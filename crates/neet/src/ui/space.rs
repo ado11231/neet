@@ -382,7 +382,9 @@ impl Space {
             ),
             field(
                 "Other volumes",
-                Span::raw(format::size(container.used().saturating_sub(data))),
+                Span::raw(format::size(
+                    self.size(breakdown, Part::Heading(Group::Volumes)),
+                )),
             ),
             field("Used", Span::raw(format::size(container.used())).bold()),
         ]
