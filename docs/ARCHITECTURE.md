@@ -45,6 +45,7 @@
 | `space.rs` | Volumes and folders outside the home scan. |
 | `settings.rs`, `settings/` | Power, Mac settings, and neet preferences. |
 | `program.rs` | Programs neet hands the terminal to. |
+| `path.rs` | Shell PATH folders, problems, and where each was added. |
 | `large.rs` | Find large or old files in a scan. |
 | `clutter.rs` | Find build folders, installers, and other space to review. |
 | `rules.rs` | Load and check cleanup rules. |

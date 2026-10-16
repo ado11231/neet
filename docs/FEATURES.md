@@ -165,6 +165,7 @@ What may change, and how, is in [SAFETY.md](SAFETY.md#dotfiles). neet runs chezm
 | Mac settings | 31 Finder, typing, Dock, screenshot, and saving settings through `defaults`, with reset to macOS's default. | Done |
 | Undo | Puts a power or Mac setting back as it was before neet's first change. | Done |
 | Preferences | Saves what Disk, Large Files, and AI Tools open with. | Done |
+| Shell PATH | Lists PATH folders in order, flags missing, repeated, relative, and world-writable ones, shows where each was added, and which copy of a program runs. View only. | Done |
 | Display | Refresh rate for ProMotion and external displays. | Proposed |
 
 * What may change, and how, is in [SAFETY.md](SAFETY.md#settings).
@@ -221,7 +222,7 @@ These features are not built yet. Each needs checking on real Macs.
 
 | Area | What It Would Do |
 | --- | --- |
-| Shell PATH | Show the folders your shell searches for programs, in order, flag problems, show which copy of a program runs, and reorder them with a backup. |
+| PATH edits | Remove missing or repeated PATH folders and reorder them, with a backup. |
 | Display | Switch a ProMotion or external display's refresh rate, switching back unless you keep it. |
 
 ## Terms
