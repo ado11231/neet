@@ -446,7 +446,7 @@ mod tests {
 
     #[test]
     fn empty_and_zero_inputs_draw_nothing() {
-        assert!(squarify(&[], Rect::new(0, 0, 10, 10)).is_empty());
+        assert_eq!(squarify(&[], Rect::new(0, 0, 10, 10)), Vec::new());
         assert_eq!(
             squarify(&[0, 0], Rect::new(0, 0, 10, 10)),
             vec![Rect::default(); 2]
