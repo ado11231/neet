@@ -147,6 +147,13 @@ impl AiTools {
 
     pub fn new() -> Self {
         let mut screen = Self::at(Locations::from_env());
+        screen.provider = match super::settings::saved_prefs().ai_tool.as_str() {
+            "claude" => Some(Provider::Claude),
+            "codex" => Some(Provider::Codex),
+            "gemini" => Some(Provider::Gemini),
+            "shared" => Some(Provider::Shared),
+            _ => None,
+        };
         screen.refresh();
         screen
     }

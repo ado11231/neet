@@ -15,6 +15,7 @@ mod pick;
 mod quick;
 mod review;
 mod scan;
+mod settings;
 mod skipped;
 mod space;
 mod startup;

@@ -48,6 +48,15 @@ impl Sort {
             Self::Items => "items",
         }
     }
+
+    /// The sort a preference names, or by size
+    fn from_label(label: &str) -> Self {
+        match label {
+            "name" => Self::Name,
+            "items" => Self::Items,
+            _ => Self::Size,
+        }
+    }
 }
 
 /// Where the user is in the scan tree.
@@ -61,12 +70,17 @@ struct Browser {
 }
 
 impl Browser {
+    #[cfg(test)]
     fn new(tree: &Tree) -> Self {
+        Self::sorted(tree, Sort::Size)
+    }
+
+    fn sorted(tree: &Tree, sort: Sort) -> Self {
         let mut browser = Self {
             current: tree.root(),
             rows: Vec::new(),
             list: TableState::default(),
-            sort: Sort::Size,
+            sort,
             roots: CleanupRoots::new(&tree.path(tree.root())).ok(),
         };
         browser.show(tree, tree.root(), None);
@@ -658,21 +672,28 @@ fn meaning(tree: &Tree, id: NodeId) -> Option<&'static str> {
 /// Browses the home folder scan by size.
 pub struct Disk {
     browser: Option<Browser>,
+    /// The sort to open with, from Settings, Preferences
+    sort: Sort,
 }
 
 impl Disk {
     pub fn new() -> Self {
-        Self { browser: None }
+        Self {
+            browser: None,
+            sort: Sort::from_label(&super::settings::saved_prefs().disk_sort),
+        }
     }
 
     /// Opens on the folder holding `id`, with `id` selected.
     pub fn showing(tree: &Tree, id: NodeId) -> Self {
-        let mut browser = Browser::new(tree);
+        let sort = Sort::from_label(&super::settings::saved_prefs().disk_sort);
+        let mut browser = Browser::sorted(tree, sort);
         if let Some(parent) = tree.get(id).parent {
             browser.show(tree, parent, Some(id));
         }
         Self {
             browser: Some(browser),
+            sort,
         }
     }
 }
@@ -682,7 +703,10 @@ impl Screen for Disk {
         let progress = match context.scan {
             ScanStatus::Done { scan, .. } => {
                 let tree = &scan.tree;
-                let browser = self.browser.get_or_insert_with(|| Browser::new(tree));
+                let sort = self.sort;
+                let browser = self
+                    .browser
+                    .get_or_insert_with(|| Browser::sorted(tree, sort));
                 if area.width >= MIN_PREVIEW_WIDTH {
                     let [folder, preview] =
                         Layout::horizontal([Constraint::Percentage(55), Constraint::Fill(1)])

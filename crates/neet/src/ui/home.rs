@@ -38,7 +38,6 @@ const MAX_RIGHT_WIDTH: u16 = 72;
 
 enum Target {
     Screen(fn() -> Box<dyn Screen>),
-    Soon,
     Quit,
 }
 
@@ -46,12 +45,6 @@ struct Entry {
     label: &'static str,
     about: &'static str,
     target: Target,
-}
-
-impl Entry {
-    fn is_selectable(&self) -> bool {
-        !matches!(self.target, Target::Soon)
-    }
 }
 
 const ENTRIES: &[Entry] = &[
@@ -97,8 +90,8 @@ const ENTRIES: &[Entry] = &[
     },
     Entry {
         label: "Settings",
-        about: "Manage power and display settings.",
-        target: Target::Soon,
+        about: "Power, sleep, and Mac settings for Finder, typing, and the Dock.",
+        target: Target::Screen(|| Box::new(super::settings::Settings::new())),
     },
     Entry {
         label: "Quit",
@@ -133,25 +126,19 @@ impl Home {
     /// Moves to the next selectable row in `step` direction, wrapping around.
     fn step(&mut self, forward: bool) {
         let len = ENTRIES.len();
-        let mut index = self.selected();
-        for _ in 0..len {
-            index = if forward {
-                (index + 1) % len
-            } else {
-                (index + len - 1) % len
-            };
-            if ENTRIES[index].is_selectable() {
-                break;
-            }
-        }
-        self.list.select(Some(index));
+        let index = self.selected();
+        self.list.select(Some(if forward {
+            (index + 1) % len
+        } else {
+            (index + len - 1) % len
+        }));
     }
 
     fn open(index: usize) -> Action {
         match ENTRIES.get(index).map(|entry| &entry.target) {
             Some(Target::Screen(make)) => Action::Open(make()),
             Some(Target::Quit) => Action::Quit,
-            Some(Target::Soon) | None => Action::None,
+            None => Action::None,
         }
     }
 
@@ -161,16 +148,12 @@ impl Home {
             let number = match entry.target {
                 Target::Quit => "  ".to_string(),
                 _ if index >= 9 => "  ".to_string(),
-                _ => format!("{} ", index + 1),
+                Target::Screen(_) => format!("{} ", index + 1),
             };
-            let mut spans = vec![
+            ListItem::new(Line::from(vec![
                 Span::raw(number).fg(super::visual::ACCENT),
                 Span::raw(format!("{:<14}", entry.label)),
-            ];
-            if matches!(entry.target, Target::Soon) {
-                spans.push(Span::raw("soon").yellow().italic());
-            }
-            ListItem::new(Line::from(spans))
+            ]))
         });
         let list = List::new(items)
             .block(
@@ -508,7 +491,7 @@ mod tests {
     }
 
     #[test]
-    fn down_skips_rows_that_are_not_built() {
+    fn down_moves_through_every_row() {
         let mut home = Home::new();
         assert_eq!(ENTRIES[home.selected()].label, "Disk");
         press(&mut home, KeyCode::Down);
@@ -525,6 +508,8 @@ mod tests {
         assert_eq!(ENTRIES[home.selected()].label, "Dotfiles");
         press(&mut home, KeyCode::Down);
         assert_eq!(ENTRIES[home.selected()].label, "AI Tools");
+        press(&mut home, KeyCode::Down);
+        assert_eq!(ENTRIES[home.selected()].label, "Settings");
         press(&mut home, KeyCode::Down);
         assert_eq!(ENTRIES[home.selected()].label, "Quit");
     }
@@ -551,7 +536,10 @@ mod tests {
             ENTRIES[key_of("AI Tools") - 1].target,
             Target::Screen(_)
         ));
-        assert!(matches!(press(&mut home, KeyCode::Char('9')), Action::None));
+        // 9 opens Settings, which reads pmset, so only its row is checked.
+        assert_eq!(key_of("Settings"), 9);
+        assert!(matches!(ENTRIES[8].target, Target::Screen(_)));
+        assert!(matches!(press(&mut home, KeyCode::Char('0')), Action::None));
     }
 
     /// Draws Home and writes it as `docs/images/home.svg`, the README's
@@ -643,7 +631,7 @@ mod tests {
         assert!(screen.contains("███"));
         assert!(screen.contains("⣿"));
         assert!(screen.contains("Disk"));
-        assert!(screen.contains("soon"));
+        assert!(screen.contains("Settings"));
         assert!(screen.contains("1,234 so far · 5.0 MB"));
         assert!(screen.contains("80% used"));
         assert!(screen.contains("Free     100.0 GB of 500.0 GB"));
@@ -770,8 +758,6 @@ mod tests {
         for (width, height) in view::SIZES {
             let buffer = view::render("home", &mut screen, &context, width, height);
             assert!(view::text(&buffer).contains("Quick Clean"));
-            let (x, y) = view::position(&buffer, "soon");
-            assert_eq!(buffer[(x, y)].fg, ratatui::style::Color::Yellow);
         }
     }
 }

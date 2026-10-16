@@ -86,9 +86,16 @@ pub struct LargeFiles {
 
 impl LargeFiles {
     pub fn new() -> Self {
+        let prefs = super::settings::saved_prefs();
         Self {
-            size: 2,
-            age: 0,
+            size: SIZES
+                .iter()
+                .position(|(size, _)| *size == prefs.large_min_size)
+                .unwrap_or(2),
+            age: AGES
+                .iter()
+                .position(|(days, _)| *days == prefs.large_unchanged_days)
+                .unwrap_or(0),
             found: None,
             table: TableState::default().with_selected(Some(0)),
         }
