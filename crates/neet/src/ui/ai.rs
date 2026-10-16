@@ -7,8 +7,8 @@ use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 
-use neet_core::ai::skills::{Edit, Install};
-use neet_core::ai::{self, Item, Kind, Listing, Locations, Provider};
+use neet_core::ai::skills::{Edit, Install, Relink, Unlink};
+use neet_core::ai::{self, Item, Kind, Listing, Locations, Provider, Source};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -38,6 +38,7 @@ enum Review {
         edit: Edit,
         contents: Vec<u8>,
     },
+    Unlink(Unlink),
 }
 
 struct Viewer {
@@ -126,6 +127,8 @@ pub struct AiTools {
     review: Option<Review>,
     editing: Option<Edit>,
     cleanup: Option<chats::Cleanup>,
+    /// The last skill link removed, to put back with `u`
+    relink: Option<Relink>,
     note: String,
 }
 
@@ -160,6 +163,7 @@ impl AiTools {
             review: None,
             editing: None,
             cleanup: None,
+            relink: None,
             note: String::new(),
         }
     }
@@ -428,6 +432,17 @@ impl AiTools {
                 }
                 Err(error) => error.to_string(),
             },
+            Review::Unlink(unlink) => match unlink.apply() {
+                Ok(relink) => {
+                    let note = format!(
+                        "Link removed. {} stays. u puts the link back. Restart the assistant or reload its skills.",
+                        self.shown_path(&unlink.source())
+                    );
+                    self.relink = Some(relink);
+                    note
+                }
+                Err(error) => error.to_string(),
+            },
             Review::Edit { edit, contents } => match edit.save(&contents) {
                 Ok(backup) => format!("Skill saved. Backup: {}", self.shown_path(&backup)),
                 Err(error) => {
@@ -438,6 +453,49 @@ impl AiTools {
         };
         self.viewer = None;
         self.refresh_select(selected);
+    }
+
+    /// Shows what removing the selected skill's link does, before `y`
+    fn review_unlink(&mut self) {
+        let Some(item) = self.selected().filter(|item| item.kind == Kind::Skill) else {
+            return;
+        };
+        match Unlink::prepare(&self.locations, &item) {
+            Ok(unlink) => {
+                let text = format!(
+                    "Remove the link {}
+It points to {}, which stays as it is.
+
+The assistant stops loading this skill. Restart it or reload its skills afterwards.
+u puts the link back while neet is open, and i can link the folder again later.
+y removes the link. Esc cancels.",
+                    self.shown_path(unlink.link()),
+                    self.shown_path(&unlink.source())
+                );
+                self.viewer = Some(Viewer::new("Review removing a skill link".into(), &text));
+                self.review = Some(Review::Unlink(unlink));
+            }
+            Err(error) => self.note = error.to_string(),
+        }
+    }
+
+    /// Puts the last removed skill link back
+    fn undo_unlink(&mut self) {
+        let Some(relink) = self.relink.take() else {
+            self.note = "Nothing to put back.".into();
+            return;
+        };
+        let selected = relink.link().join("SKILL.md");
+        match relink.apply() {
+            Ok(()) => {
+                self.note = "Link put back. Restart the assistant or reload its skills.".into();
+                self.refresh_select(Some(selected));
+            }
+            Err(error) => {
+                self.note = error.to_string();
+                self.relink = Some(relink);
+            }
+        }
     }
 
     fn draft_error(&mut self, edit: Edit, error: &str) {
@@ -545,10 +603,18 @@ impl AiTools {
                 } else {
                     ""
                 };
+                let source = item
+                    .source
+                    .as_ref()
+                    .map_or_else(String::new, |source| format!(" · {}", source.label()));
                 ListItem::new(vec![
                     Line::from(format::shorten_middle(
-                        &ai::display_text(&format!("{marker}{} · {}", title, item.provider.name()))
-                            .replace('\n', " "),
+                        &ai::display_text(&format!(
+                            "{marker}{} · {}{source}",
+                            title,
+                            item.provider.name()
+                        ))
+                        .replace('\n', " "),
                         usize::from(area.width.saturating_sub(6)),
                     ))
                     .style(visual::HEADING),
@@ -652,6 +718,33 @@ impl AiTools {
         lines
     }
 
+    /// Where a skill comes from, in a sentence
+    fn source_text(&self, source: &Source) -> String {
+        match source {
+            Source::Copy => "Source: your copy, in the tool's skill folder.".into(),
+            Source::Link(target) => format!("Source: a link to {}.", self.shown_path(target)),
+            Source::Bundled => "Source: ships with the tool.".into(),
+            Source::Plugin(plugin) => {
+                let from = if plugin.marketplace.is_empty() {
+                    String::new()
+                } else {
+                    format!(" from {}", plugin.marketplace)
+                };
+                let version = if plugin.version.is_empty() {
+                    String::new()
+                } else {
+                    format!(", version {}", plugin.version)
+                };
+                let state = match plugin.enabled {
+                    Some(true) => ", turned on",
+                    Some(false) => ", turned off",
+                    None => "",
+                };
+                format!("Source: plugin {}{from}{version}{state}.", plugin.name)
+            }
+        }
+    }
+
     fn details(&self) -> Vec<Line<'static>> {
         let Some(item) = self.selected() else {
             return vec![
@@ -677,12 +770,17 @@ impl AiTools {
                 lines.push(Line::from(format!("Updated {}", format::age(age))));
             }
         }
-        lines.push(Line::from(match item.kind {
-            Kind::Chat => "Enter reads · Space selects · a selects all shown · d reviews removal.",
-            Kind::Settings => "Enter shows settings, which may include tokens. View only.",
-            Kind::Instructions => "Enter shows instructions. View only.",
-            Kind::Skill if item.bundled => "Bundled skill. Enter previews it. View only.",
-            Kind::Skill => "Enter previews · e edits · b restores the latest backup. Every change is reviewed first.",
+        if let Some(source) = &item.source {
+            lines.push(Line::from(ai::display_text(&self.source_text(source))));
+        }
+        lines.push(Line::from(match (item.kind, &item.source) {
+            (Kind::Chat, _) => "Enter reads · Space selects · a selects all shown · d reviews removal.",
+            (Kind::Settings, _) => "Enter shows settings, which may include tokens. View only.",
+            (Kind::Instructions, _) => "Enter shows instructions. View only.",
+            (Kind::Skill, Some(Source::Plugin(_))) => "The tool updates plugin skills. Enter previews it. View only. Turn the plugin on or off in the tool, such as /plugin in Claude Code.",
+            (Kind::Skill, _) if item.bundled => "Bundled skill. Enter previews it. View only.",
+            (Kind::Skill, Some(Source::Link(_))) => "Enter previews · e edits the source · b restores the latest backup · x removes the link. Every change is reviewed first.",
+            (Kind::Skill, _) => "Enter previews · e edits · b restores the latest backup. Every change is reviewed first.",
         }));
         lines.push(Line::from("o reveals the file in Finder."));
         lines
@@ -847,6 +945,8 @@ impl Screen for AiTools {
                     target: 0,
                 });
             }
+            KeyCode::Char('x') if self.tab == 2 => self.review_unlink(),
+            KeyCode::Char('u') if self.tab == 2 => self.undo_unlink(),
             KeyCode::Char('e') => return self.edit(false),
             KeyCode::Char('b') => return self.edit(true),
             KeyCode::Char('r') => self.refresh(),
@@ -936,7 +1036,7 @@ impl Screen for AiTools {
         } else if self.tab == 1 {
             "↑↓ move · Enter read · Space select · a all shown · d delete · / find · p tool · Tab section · ? help · Esc back"
         } else if self.tab == 2 {
-            "↑↓ move · Tab section · Enter read · i link skill · e edit · b restore · / find · p tool · ? help · Esc back"
+            "↑↓ move · Tab section · Enter read · i link skill · e edit · b restore · x remove link · u undo · / find · p tool · ? help · Esc back"
         } else {
             "↑↓ move · Tab section · Enter read · / find · p tool · o Finder · r refresh · ? help · Esc back"
         }
@@ -972,6 +1072,11 @@ impl Screen for AiTools {
                 "Edit your SKILL.md in $VISUAL or $EDITOR, then review.",
             ),
             ("b", "Review restoring the latest skill backup."),
+            (
+                "x",
+                "Review removing a skill's link. The folder it points to stays.",
+            ),
+            ("u", "Put the last removed skill link back."),
             ("y", "Confirm the listed change on the review screen."),
             ("o", "Reveal the selected file in Finder."),
             ("r / w", "Refresh files / show skipped paths."),
