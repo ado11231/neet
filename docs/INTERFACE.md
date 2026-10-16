@@ -99,6 +99,7 @@
 * Build folders and installers go through selection and review.
 * Docker and simulator removal is permanent and asks first.
 * Temporary files are left to macOS.
+* Simulator downloads macOS kept after their runtime was removed are listed as cleared by no one. Nobody can delete them, so they stay out of the totals.
 * If Trash cannot be read, the screen says `no access` and explains Full Disk Access.
 * Looking changes nothing. Open a row to see its actions.
 
@@ -106,7 +107,7 @@
 | --- | --- |
 | `Up` / `Down` | Move the selection. |
 | `g` / `G` | Jump to the first or last row. |
-| `Enter`, `Right`, or `l` | On Caches & logs, open [Deep Clean](#deep-clean). On build folders or installers, open [Pick](#pick). On Docker or simulator runtimes, open [Docker And Simulators](#docker-and-simulators). On the Trash, open the [Trash](#trash) screen. |
+| `Enter`, `Right`, or `l` | On Caches & logs, open [Deep Clean](#deep-clean). On build folders or installers, open [Pick](#pick). On Docker, simulator runtimes, or simulator downloads, open [Docker And Simulators](#docker-and-simulators). On the Trash, open the [Trash](#trash) screen. |
 | `d` | Show the largest item of the row in [Disk](#disk). |
 
 ### Pick
@@ -127,6 +128,7 @@
 * Permanent actions ask in a red box. Only `y` confirms.
 * Simulators lists runtimes and their devices. Nothing starts selected.
 * Removing a runtime also removes its simulators. Devices without a runtime have a separate row.
+* Leftover simulator downloads have their own rows, which cannot be selected. Details say why macOS keeps them and give the `xcrun simctl runtime add` command that reinstalls one without downloading it.
 * Docker shows reported sizes and unused volumes. No volumes start selected.
 * Prune removes unused Docker data and the volumes you select.
 * Docker's sizes are estimates. Savings stay unknown until prune finishes.
