@@ -33,6 +33,9 @@ pub enum Kind {
     DockerImage,
     /// iOS and other simulator runtimes Xcode downloaded
     SimulatorRuntimes,
+    /// Simulator runtime downloads macOS keeps after their runtime is gone.
+    /// Nobody can delete them, so they are shown, never cleared.
+    SimulatorDownloads,
     /// Your temporary and cache folders under `/private/var/folders`
     TempFiles,
 }
@@ -315,6 +318,27 @@ pub fn simulator_runtimes() -> io::Result<Option<Finding>> {
             .sum::<u64>()
             + stranded.iter().map(|device| device.size).sum::<u64>(),
         count: runtimes.len() + stranded.len(),
+        node: None,
+    }))
+}
+
+/// Simulator runtime downloads left in `/System/Library/AssetsV2` after
+/// their runtime was removed. `None` when there are none. `simctl` is only
+/// asked when there are downloads to compare with its runtimes.
+///
+/// # Errors
+///
+/// Returns an error if `simctl` could not list the runtimes.
+pub fn simulator_downloads() -> io::Result<Option<Finding>> {
+    let assets = Path::new(tools::ASSETS);
+    if tools::leftover_downloads(assets, &[]).is_empty() {
+        return Ok(None);
+    }
+    let found = tools::leftover_downloads(assets, &tools::runtimes()?);
+    Ok((!found.is_empty()).then(|| Finding {
+        kind: Kind::SimulatorDownloads,
+        size: found.iter().map(|download| download.size).sum(),
+        count: found.len(),
         node: None,
     }))
 }

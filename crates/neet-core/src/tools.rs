@@ -148,6 +148,129 @@ pub fn delete_runtime(identifier: &str) -> io::Result<()> {
     }
 }
 
+/// Where macOS keeps the files it downloads, simulator runtimes among them
+pub const ASSETS: &str = "/System/Library/AssetsV2";
+
+/// A simulator runtime download macOS still keeps after its runtime was
+/// removed. macOS never clears these on its own, and System Integrity
+/// Protection stops anyone deleting them, admin or not.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Download {
+    /// The platform and version, such as `iOS 18.6`
+    pub name: String,
+    pub build: String,
+    pub size: u64,
+    /// The runtime's disk image, which `xcrun simctl runtime add` can
+    /// install again without downloading it
+    pub disk_image: Option<std::path::PathBuf>,
+}
+
+#[derive(Deserialize)]
+struct RawAsset {
+    #[serde(rename = "MobileAssetProperties")]
+    properties: RawAssetProperties,
+}
+
+#[derive(Deserialize)]
+struct RawAssetProperties {
+    #[serde(rename = "SimulatorVersion", default)]
+    version: String,
+    #[serde(rename = "Build", default)]
+    build: String,
+}
+
+/// The platform a download folder holds, such as `iOS` for
+/// `com_apple_MobileAsset_iOSSimulatorRuntime`
+fn download_platform(folder: &str) -> Option<&str> {
+    folder
+        .strip_prefix("com_apple_MobileAsset_")?
+        .strip_suffix("SimulatorRuntime")
+        .filter(|platform| !platform.is_empty())
+}
+
+/// The version and build in an asset's `Info.plist`, given as JSON
+fn parse_asset(json: &[u8]) -> Option<(String, String)> {
+    let raw: RawAsset = serde_json::from_slice(json).ok()?;
+    let RawAssetProperties { version, build } = raw.properties;
+    (!build.is_empty()).then_some((version, build))
+}
+
+/// Space `path` and everything in it uses
+fn folder_size(path: &Path) -> u64 {
+    let Ok(metadata) = std::fs::symlink_metadata(path) else {
+        return 0;
+    };
+    let own = allocated_size(&metadata);
+    if !metadata.is_dir() {
+        return own;
+    }
+    std::fs::read_dir(path).map_or(own, |entries| {
+        own + entries
+            .flatten()
+            .map(|entry| folder_size(&entry.path()))
+            .sum::<u64>()
+    })
+}
+
+/// Simulator runtime downloads in `assets` whose build no runtime in
+/// `runtimes` has, largest first. A download with a runtime is still in
+/// use, and goes when the runtime is removed.
+#[must_use]
+pub fn leftover_downloads(assets: &Path, runtimes: &[Runtime]) -> Vec<Download> {
+    let Ok(folders) = std::fs::read_dir(assets) else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+    for folder in folders.flatten() {
+        let name = folder.file_name();
+        let Some(platform) = name.to_str().and_then(download_platform) else {
+            continue;
+        };
+        let Ok(entries) = std::fs::read_dir(folder.path()) else {
+            continue;
+        };
+        for asset in entries.flatten() {
+            let path = asset.path();
+            if path.extension().and_then(|ending| ending.to_str()) != Some("asset") {
+                continue;
+            }
+            let Ok(output) = Command::new("/usr/bin/plutil")
+                .args(["-convert", "json", "-o", "-", "--"])
+                .arg(path.join("Info.plist"))
+                .output()
+            else {
+                continue;
+            };
+            let Some((version, build)) = output
+                .status
+                .success()
+                .then(|| parse_asset(&output.stdout))
+                .flatten()
+            else {
+                continue;
+            };
+            if runtimes.iter().any(|runtime| runtime.build == build) {
+                continue;
+            }
+            let data = path.join("AssetData");
+            let disk_image = std::fs::read_dir(&data).ok().and_then(|files| {
+                files
+                    .flatten()
+                    .map(|file| file.path())
+                    .find(|file| file.extension().is_some_and(|ending| ending == "dmg"))
+            });
+            found.push(Download {
+                name: format!("{platform} {version}").trim().to_string(),
+                build,
+                size: folder_size(&path),
+                disk_image,
+            });
+        }
+    }
+    found.sort_by(|a, b| b.size.cmp(&a.size).then_with(|| a.name.cmp(&b.name)));
+    found
+}
+
 /// One simulator, such as an iPhone 16 Pro, and the runtime it runs on
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Device {
@@ -596,9 +719,96 @@ fn prune_space(text: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_not_running, is_runtime_id, is_volume_name, parse_devices, parse_docker_containers,
+        Runtime, download_platform, is_not_running, is_runtime_id, is_volume_name,
+        leftover_downloads, parse_asset, parse_devices, parse_docker_containers,
         parse_docker_usage, parse_runtimes, parse_unused_volumes,
     };
+
+    #[test]
+    fn download_folders_name_their_platform() {
+        assert_eq!(
+            download_platform("com_apple_MobileAsset_iOSSimulatorRuntime"),
+            Some("iOS")
+        );
+        assert_eq!(
+            download_platform("com_apple_MobileAsset_watchOSSimulatorRuntime"),
+            Some("watchOS")
+        );
+        assert_eq!(download_platform("com_apple_MobileAsset_Font8"), None);
+        assert_eq!(
+            download_platform("com_apple_MobileAsset_SimulatorRuntime"),
+            None
+        );
+    }
+
+    #[test]
+    fn reads_an_assets_version_and_build() {
+        let json = br#"{"CFBundleName":"SimulatorRuntimeAsset","MobileAssetProperties":{"Build":"22G86","SimulatorVersion":"18.6"}}"#;
+
+        assert_eq!(
+            parse_asset(json),
+            Some(("18.6".to_string(), "22G86".to_string()))
+        );
+        assert_eq!(parse_asset(br#"{"MobileAssetProperties":{}}"#), None);
+        assert_eq!(parse_asset(b"not json"), None);
+    }
+
+    /// An asset folder like the ones macOS writes, with an `Info.plist`
+    fn asset(assets: &std::path::Path, name: &str, version: &str, build: &str) {
+        let folder = assets.join(format!(
+            "com_apple_MobileAsset_iOSSimulatorRuntime/{name}.asset"
+        ));
+        std::fs::create_dir_all(folder.join("AssetData")).unwrap();
+        std::fs::write(
+            folder.join("Info.plist"),
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>MobileAssetProperties</key><dict>
+<key>Build</key><string>{build}</string>
+<key>SimulatorVersion</key><string>{version}</string>
+</dict></dict></plist>"#
+            ),
+        )
+        .unwrap();
+        std::fs::write(folder.join("AssetData/043-1-100.dmg"), vec![1; 64 * 1024]).unwrap();
+    }
+
+    #[test]
+    fn finds_downloads_left_without_a_runtime() {
+        let root = tempfile::tempdir().unwrap();
+        asset(root.path(), "old", "18.6", "22G86");
+        asset(root.path(), "used", "26.5", "23F77");
+        std::fs::create_dir_all(root.path().join("com_apple_MobileAsset_Font8/x.asset")).unwrap();
+        let installed = Runtime {
+            identifier: "A".to_string(),
+            runtime_identifier: String::new(),
+            name: "iOS 26.5".to_string(),
+            build: "23F77".to_string(),
+            size: 1,
+            last_used: None,
+            deletable: true,
+        };
+
+        let found = leftover_downloads(root.path(), &[installed]);
+
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].name, "iOS 18.6");
+        assert_eq!(found[0].build, "22G86");
+        assert!(found[0].size >= 64 * 1024);
+        assert!(
+            found[0]
+                .disk_image
+                .as_ref()
+                .is_some_and(|image| image.ends_with("AssetData/043-1-100.dmg"))
+        );
+    }
+
+    #[test]
+    fn no_asset_folder_finds_nothing() {
+        let root = tempfile::tempdir().unwrap();
+
+        assert!(leftover_downloads(&root.path().join("missing"), &[]).is_empty());
+    }
 
     #[test]
     fn prune_space_keeps_zero_distinct_from_missing_output() {
