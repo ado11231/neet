@@ -135,3 +135,57 @@ fn only_a_clean_lsof_exit_one_means_the_file_is_closed() {
     assert!(check_open_result(result(Some(1), "permission denied")).is_err());
     assert!(check_open_result(None).is_err());
 }
+
+#[test]
+fn moves_claude_folders_for_the_chat_and_keeps_changed_ones() {
+    let (_dir, locations) = setup();
+    let id = "0df8fdc8-b9e2-48ed-bc04-d2dc4b6e8fd0";
+    write(
+        &locations.claude.join(format!("projects/repo/{id}.jsonl")),
+        "original",
+    );
+    write(
+        &locations
+            .claude
+            .join(format!("projects/repo/{id}/subagents/a.jsonl")),
+        "x",
+    );
+    write(&locations.claude.join(format!("file-history/{id}/v1")), "x");
+    write(&locations.claude.join(format!("session-env/{id}/env")), "x");
+    let item = locations
+        .list()
+        .items
+        .into_iter()
+        .find(|item| item.kind == Kind::Chat)
+        .unwrap();
+    let removal = Removal::prepare(&locations, &item).unwrap();
+    assert_eq!(removal.related().count(), 3);
+    // One folder is replaced after review, so it must stay.
+    let env = locations.claude.join(format!("session-env/{id}"));
+    fs::remove_dir_all(&env).unwrap();
+    write(&env.join("new"), "y");
+    let trash = locations.home.join("Trash");
+    fs::create_dir(&trash).unwrap();
+
+    let moved = removal
+        .apply_with(&|_| Ok(()), &|path| {
+            // Each item keeps its parent's name, as Trash would keep them apart.
+            let parent = path.parent().unwrap().file_name().unwrap();
+            let folder = trash.join(parent);
+            fs::create_dir_all(&folder)?;
+            fs::rename(path, folder.join(path.file_name().unwrap()))
+        })
+        .unwrap();
+
+    assert_eq!(moved.related, 2);
+    assert_eq!(moved.kept.len(), 1, "{:?}", moved.kept);
+    assert!(env.join("new").exists());
+    assert!(
+        trash
+            .join("repo")
+            .join(id)
+            .join("subagents/a.jsonl")
+            .exists()
+    );
+    assert!(!locations.claude.join(format!("file-history/{id}")).exists());
+}
