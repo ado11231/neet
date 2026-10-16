@@ -750,7 +750,7 @@ fn removal_takes_related_folders_and_history_entries() {
         )]))
         .unwrap();
     drop(sender);
-    screen.poll();
+    screen.poll_cleanup();
     finish_refresh(&mut screen);
     let text = render(&mut screen, 140, 40);
     assert!(
