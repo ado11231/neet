@@ -37,7 +37,7 @@ Shows where your disk space goes. Looking never changes a file.
 | Disk browser | Browse folders by size, with selected file details. View only. | Done |
 | Large Files | Filter files by size and last change, then show one in Disk. | Done |
 | Space breakdown | Splits used space into the home folder, other Data volume folders, macOS volumes, and what cannot be measured without admin rights. View only. | Done |
-| Treemap | A view where each folder's area shows its size. | Proposed |
+| Treemap | Disk's `t` draws the folder as boxes sized by space. Folders open with Enter. View only. | Done |
 
 * Sizes are estimates. On APFS, the file system macOS uses, copied files can share space, so a cleanup may free less than it shows.
 * A file's age means when it last changed, not when it was last opened.
@@ -223,7 +223,6 @@ These features are not built yet. Each needs checking on real Macs.
 | --- | --- |
 | Shell PATH | Show the folders your shell searches for programs, in order, flag problems, show which copy of a program runs, and reorder them with a backup. |
 | Display | Switch a ProMotion or external display's refresh rate, switching back unless you keep it. |
-| Treemap | Show folder sizes as areas. |
 
 ## Terms
 
