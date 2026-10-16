@@ -130,14 +130,16 @@ What may change, and how, is in [SAFETY.md](SAFETY.md#dotfiles). neet runs chezm
 | --- | --- | --- |
 | Browse | Known Claude Code, Codex, and Gemini files, chats, and skills, including shared and current project files. | Done |
 | Read | Text previews and supported chat messages. Credentials and databases stay excluded. | Done |
-| Chat cleanup | Select chats by title and project, review, then move transcripts to Trash. Results show failures and unknown outcomes. | Done |
+| Chat cleanup | Select chats by title and project, review, then move transcripts and Claude Code's related folders to Trash. History and index entries are removed with a backup. Results show failures and unknown outcomes. | Done |
+| Continue a chat | Opens the chat in Claude Code or Codex from its project folder, then returns to neet. | Done |
+| Archive | Archives or unarchives a Codex chat with `codex archive` and `codex unarchive`. | Done |
 | Link a skill | Review a local skill folder, then link it into the chosen tool. Keep the source folder in place. | Done |
 | Edit and restore | Review user skill edits and backups. Keep failed drafts for repair. Bundled skills stay view only. | Done |
 | Skill sources | Mark each skill as your copy, a link, bundled, or from a plugin, with the plugin's version and on or off state. | Done |
 | Remove a skill link | Review removing a linked skill. The folder it points to stays, and `u` puts the link back. | Done |
 | Finder | Reveals the selected file, including hidden files. | Done |
 
-* Settings and instructions are view only. Chat cleanup leaves assistant indexes, related files, and cloud history. Resume and archive are still planned.
+* Settings and instructions are view only. Chat cleanup leaves cloud history and Codex's own database.
 * Only known folders are searched. See [AI Tools safety](SAFETY.md#ai-tools) for paths and read limits.
 
 ## Startup
