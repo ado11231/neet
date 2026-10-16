@@ -38,25 +38,31 @@ fn open(path: &Path) -> Result<(), String> {
     }
 }
 
-/// Puts the terminal back as it was, runs an assistant on a chat in its
-/// project folder, then takes the terminal again once it quits.
+/// Puts the terminal back as it was, runs each program in turn in its
+/// folder, such as an assistant on a chat or `sudo` asking for your
+/// password, then takes the terminal again. Stops at the first that fails.
 pub fn run(
     terminal: &mut DefaultTerminal,
-    resume: &neet_core::ai::actions::Resume,
+    programs: &[neet_core::program::Program],
 ) -> Result<(), String> {
     hand_over(terminal, || {
-        let program = resume.program;
-        match Command::new(program)
-            .args(&resume.args)
-            .current_dir(&resume.folder)
-            .status()
-        {
-            Ok(status) if status.success() => Ok(()),
-            Ok(_) => Err(format!("{program} quit with an error.")),
-            Err(error) => Err(format!(
-                "{program} could not start: {error}. Check that it is installed and on your PATH."
-            )),
+        for step in programs {
+            let program = step.program;
+            match Command::new(program)
+                .args(&step.args)
+                .current_dir(&step.folder)
+                .status()
+            {
+                Ok(status) if status.success() => {}
+                Ok(_) => return Err(format!("{} did not finish.", step.shown())),
+                Err(error) => {
+                    return Err(format!(
+                        "{program} could not start: {error}. Check that it is installed and on your PATH."
+                    ));
+                }
+            }
         }
+        Ok(())
     })
 }
 

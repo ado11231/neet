@@ -52,12 +52,7 @@ pub fn session_id(item: &Item) -> Option<String> {
 }
 
 /// A tool's command to continue a chat, and the folder to run it in
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Resume {
-    pub program: &'static str,
-    pub args: Vec<String>,
-    pub folder: PathBuf,
-}
+pub type Resume = crate::program::Program;
 
 /// How to continue `item` in its own tool.
 ///

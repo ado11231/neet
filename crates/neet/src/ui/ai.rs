@@ -504,7 +504,7 @@ y removes the link. Esc cancels.",
             return Action::None;
         };
         match ai::actions::resume(&self.locations, &item) {
-            Ok(resume) => Action::Run(resume),
+            Ok(resume) => Action::Run(vec![resume]),
             Err(error) => {
                 self.note = error.to_string();
                 Action::None
