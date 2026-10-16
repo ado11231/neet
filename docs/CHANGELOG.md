@@ -5,6 +5,45 @@
 
 ## Unreleased
 
+## [0.3.0](https://github.com/ado11231/neet/compare/neet-v0.2.0...neet-v0.3.0)
+
+### Added
+
+
+* add a Shell PATH tab to Settings
+
+* show folder sizes as areas
+
+* add the Settings screen
+
+* read and change power, Mac, and neet settings
+
+* continue, archive, and fully clean up chats
+
+* show skill sources and review removing a skill link
+
+* explain leftover runtime downloads
+
+* explain space outside the home scan
+
+### Fixed
+
+
+* show the same size for other volumes everywhere
+
+### Other
+
+
+* add Settings and the new Disk and AI Tools features
+
+* compare the empty layout directly
+
+* wait for the refresh the cleanup starts
+
+* install with cargo and tidy the Use section
+
+Released 2026-10-16
+
 ## [0.2.0](https://github.com/ado11231/neet/compare/neet-v0.1.0...neet-v0.2.0)
 
 ### Added
