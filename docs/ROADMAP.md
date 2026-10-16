@@ -96,6 +96,7 @@
 * Sleep turned off with `disablesleep` is flagged, with what keeps the Mac awake.
 * 31 Mac settings change through `defaults`, with undo and reset to macOS's default.
 * Preferences set what Disk, Large Files, and AI Tools open with.
+* Shell PATH lists folders in order, flags problems, and shows where each was added and which copy of a program runs.
 
 ## Next
 
@@ -106,7 +107,7 @@
 
 | Work | Issue |
 | --- | --- |
-| Shell PATH inspection and reviewed edits | [#25](https://github.com/ado11231/neet/issues/25) |
+| Reviewed PATH edits with backups | [#148](https://github.com/ado11231/neet/issues/148) |
 | Display refresh rate with undo | [#144](https://github.com/ado11231/neet/issues/144) |
 
 * These features must follow [SAFETY.md](SAFETY.md), with tests for refused changes and undo.

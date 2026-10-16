@@ -386,12 +386,13 @@
 
 ## Settings
 
-* Three tabs: Power, Mac settings, and Preferences.
+* Four tabs: Power, Mac settings, Preferences, and Shell PATH.
 * Power lists `pmset` settings this Mac supports, with battery and charger values when they differ. It flags sleep turned off with `pmset disablesleep 1`, and lists what keeps the Mac awake and the battery level.
 * Mac settings lists Finder, typing, Dock, screenshot, and saving settings by group, each with its value now. `(default)` means the key is not set.
 * Preferences sets what Disk, Large Files, and AI Tools open with. They save right away to `~/.config/neet/settings.toml`.
 * Enter opens a picker that shows the exact command for the highlighted value. Power changes run `sudo pmset` once in the terminal, which asks for your password. Mac settings run `defaults` and restart Finder, the Dock, or the menu bar when needed.
 * `•` marks what neet changed. `u` puts it back as it was before neet's first change.
+* Shell PATH lists the folders your shell searches, first to last, from the terminal neet started in. Each shows its programs or problems, and where it was added: a shell file line, a tool such as mise or Homebrew, or `/etc/paths`. It is view only.
 
 | Key | Action |
 | --- | --- |
@@ -401,6 +402,7 @@
 | `y` | Apply the picked value, or the undo. |
 | `u` | Review putting a setting back as it was before neet changed it. |
 | `r` | Read every setting again. |
+| `/` | In Shell PATH, type a program name to see every copy and which one runs. |
 
 ## Planned Screens
 
@@ -408,5 +410,5 @@ These screens are not built. Keys and layouts are still undecided.
 
 | Screen | Plan |
 | --- | --- |
-| PATH | Show shell search folders and review edits with backups. |
+| PATH edits | Remove and reorder PATH folders, with backups. |
 | Display | Refresh rate for ProMotion and external displays, switching back unless you keep it. |

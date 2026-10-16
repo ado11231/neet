@@ -477,6 +477,12 @@ Only your own launch agents in `~/Library/LaunchAgents` may be turned off and ba
 * After a change, `killall` restarts Finder, the Dock, or SystemUIServer when the setting needs it. They start again on their own. Keyboard settings apply to apps when they next open, and some need you to log out.
 * Choosing `~/Pictures/Screenshots` makes that folder if it is missing.
 
+### Shell PATH
+
+* View only. neet reads its own `PATH`, which it got from the terminal it started in, and never runs your shell.
+* To find where a folder was added, neet reads `~/.zshenv`, `~/.zprofile`, `~/.zshrc`, `~/.zlogin`, `~/.bash_profile`, `~/.bashrc`, `~/.profile`, and `~/.config/fish/config.fish`, each up to 1 MiB, and `/etc/paths` and `/etc/paths.d`. Commented lines are skipped.
+* Folder contents are read only to count programs and find which copy of a name runs. No program is run.
+
 ### Preferences
 
 * Saved to `~/.config/neet/settings.toml`, written as a new copy and swapped in. A link there is refused.
@@ -498,7 +504,7 @@ Later features change files or settings in place, not through the Trash. Each ha
 
 | Feature | May Change | How |
 | --- | --- | --- |
-| Shell PATH | Only the shell files in [Dotfiles](#which-files-1). Never `/etc/paths`. | Edit with a backup |
+| PATH edits | Only the shell files in [Dotfiles](#which-files-1). Never `/etc/paths`, `/etc/paths.d`, or lines that run a tool. | Edit with a backup |
 | Refresh rate | The mode of a connected display. It switches back after 15 seconds unless you keep it. | CoreGraphics |
 
 * Every change:
