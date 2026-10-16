@@ -21,7 +21,7 @@ use super::loading::Loading;
 pub use trash::Trash;
 
 /// Runs `work` on its own thread, for the answer to arrive later
-fn spawn<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> Receiver<T> {
+pub(super) fn spawn<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> Receiver<T> {
     let (sender, answer) = mpsc::channel();
     thread::spawn(move || {
         // The receiver is gone only when the screen was closed.
