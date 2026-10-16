@@ -3,7 +3,7 @@
 [workspace]
 # Release only when a release pull request is merged, not on every push.
 release_always = false
-# Keep each crate's changelog in docs.
+# Keep one changelog, docs/CHANGELOG.md, for the app and the library.
 changelog_update = true
 # Check public library changes against the last published version.
 semver_check = true
@@ -28,13 +28,16 @@ Released {{ timestamp | date(format="%Y-%m-%d") }}
 [[package]]
 name = "neet"
 changelog_path = "docs/CHANGELOG.md"
+# Library commits go in the app's notes, so there is one changelog.
+changelog_include = ["neet-core"]
 # release-plz only tags the program. The tag starts dist, in release.yml,
 # which builds the programs and makes the GitHub release.
 git_release_enable = false
 
 [[package]]
 name = "neet-core"
-changelog_path = "docs/CHANGELOG-CORE.md"
+# Its changes are listed in docs/CHANGELOG.md, with the app's.
+changelog_update = false
 # The library is only published to crates.io. No tag, so no GitHub release.
 git_tag_enable = false
 git_release_enable = false

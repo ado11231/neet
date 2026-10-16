@@ -19,8 +19,7 @@
 | [SAFETY.md](SAFETY.md) | What neet may change, what it must refuse, and how it checks. |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Code layout, builds, and releases. |
 | [ROADMAP.md](ROADMAP.md) | Finished work and next steps. |
-| [CHANGELOG.md](CHANGELOG.md) | App release notes. |
-| [CHANGELOG-CORE.md](CHANGELOG-CORE.md) | Library release notes. |
+| [CHANGELOG.md](CHANGELOG.md) | Release notes for the app and library. |
 | [Wiki](https://github.com/ado11231/neet/wiki) | Links to these docs. |
 
 ## Where Changes Go
