@@ -304,6 +304,7 @@ fn marks_copies_links_bundled_and_plugin_skills() {
     fs::create_dir_all(home.join(".agents/skills")).unwrap();
     symlink(home.join("code/linked"), home.join(".agents/skills/linked")).unwrap();
     write(&home.join(".codex/skills/.system/helper/SKILL.md"), SKILL);
+    write(&home.join(".codex/skills/.system/.marker"), "");
     let install = home.join(".claude/plugins/cache/market/tools/1.2.0");
     write(&install.join("skills/deploy/SKILL.md"), SKILL);
     write(
@@ -362,6 +363,18 @@ fn marks_copies_links_bundled_and_plugin_skills() {
         panic!("the Gemini extension skill should be listed");
     };
     assert_eq!(notes.version, "2.0.1");
+    let skills: Vec<_> = listing
+        .items
+        .iter()
+        .filter(|item| item.kind == Kind::Skill && item.provider == Provider::Claude)
+        .collect();
+    assert!(
+        matches!(
+            skills.last().and_then(|item| item.source.as_ref()),
+            Some(Source::Plugin(_))
+        ),
+        "plugin skills come after your own"
+    );
     // Plugin and bundled skills are view only.
     for item in listing.items.iter().filter(|item| item.kind == Kind::Skill) {
         let view_only = matches!(item.source, Some(Source::Bundled | Source::Plugin(_)));
@@ -388,7 +401,12 @@ fn plugin_install_paths_outside_home_are_skipped() {
     let listing = locations.list();
 
     assert!(listing.items.iter().all(|item| item.kind != Kind::Skill));
-    assert!(listing.warnings.iter().any(|warning| warning.contains("outside")));
+    assert!(
+        listing
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("outside"))
+    );
 }
 
 #[test]

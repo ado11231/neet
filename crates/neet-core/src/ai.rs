@@ -215,6 +215,11 @@ impl Locations {
                         a.provider.cmp(&b.provider)
                     }
                 })
+                // Your own skills first, then the many a plugin can bring
+                .then_with(|| {
+                    let plugin = |item: &Item| matches!(item.source, Some(Source::Plugin(_)));
+                    plugin(a).cmp(&plugin(b))
+                })
                 .then_with(|| a.path.cmp(&b.path))
         });
         scanner.listing.items.dedup_by(|a, b| a.path == b.path);
@@ -319,6 +324,10 @@ impl Scanner<'_> {
             let bundled = folder.file_name().is_some_and(|name| name == ".system");
             if bundled {
                 for system in self.children(&folder) {
+                    // Loose files, such as the tool's own marker, are not skills.
+                    if fs::symlink_metadata(&system).is_ok_and(|meta| meta.is_file()) {
+                        continue;
+                    }
                     self.add_skill(system.join("SKILL.md"), provider, scope, Source::Bundled);
                 }
             } else if meta.file_type().is_symlink() {
