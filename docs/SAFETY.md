@@ -223,6 +223,13 @@ App removal has its own path check, then uses the normal review, confirmation, a
 * `docker container ls` checks running containers, images, and Compose labels before and after prune, with a ten second limit. Failed checks stay visible.
 * None of these commands uses admin rights. neet never starts Docker on its own; `o` opens Docker Desktop only when you press it.
 
+### Leftover Simulator Downloads
+
+* macOS keeps a runtime's download in `/System/Library/AssetsV2/com_apple_MobileAsset_*SimulatorRuntime` after `simctl` removes the runtime. It marks them never collected, and System Integrity Protection blocks deleting them, even with `sudo`.
+* Checked on macOS 26.5 with Xcode 26.6: adding the runtime again from the download with `xcrun simctl runtime add` and deleting it with `simctl` left the download in place.
+* neet reads each download's `Info.plist` with `plutil` and its size from file details. A download whose build matches an installed runtime is in use and is not listed.
+* neet only shows them. It never deletes, moves, or changes system files, and never offers to.
+
 ### Resetting Docker
 
 * Reset moves Docker's whole disk image, including containers and volumes, to Trash. It can be restored by hand.

@@ -61,6 +61,7 @@ Shows where your disk space goes. Looking never changes a file.
 | Your own rules | Loads rules from `~/.config/neet/rules/`. Fixed path limits still apply. None start selected. | Done |
 | Project build folders | Review selected `target` folders beside `Cargo.toml`, and `node_modules`, before moving to Trash. | Done |
 | Simulators and Docker | Review runtime and device removal, or Docker prune and selected unused volumes. Permanent, with a warning first. | Done |
+| Leftover simulator downloads | Shows runtime downloads macOS keeps after the runtime is removed, and how to reuse them. View only, since macOS protects them. | Done |
 | Docker space details | Labels estimates and lists running containers, images, and Compose projects. Explains when prune frees no space. | Done |
 | Reset Docker | Stops Docker Desktop and moves its disk image to Trash. Restore it by hand before reopening Docker. | Done |
 | Installers in Downloads | Review selected `.dmg`, `.pkg`, `.iso`, and `.xip` files before moving to Trash. | Done |
