@@ -18,6 +18,7 @@
 * [Emptying The Trash](#emptying-the-trash)
 * [Dotfiles](#dotfiles)
 * [Startup Items](#startup-items)
+* [Space Breakdown](#space-breakdown)
 * [Planned Features](#planned-features)
 * [AI Tools](#ai-tools)
 * [Tests](#tests)
@@ -440,6 +441,14 @@ Only your own launch agents in `~/Library/LaunchAgents` may be turned off and ba
 * Items in `/Library/LaunchAgents` and `/Library/LaunchDaemons`. An admin installed them for every user, sometimes for device management.
 * Background items inside apps, and apps that open at login. `o` opens System Settings, where macOS turns them off and on.
 * Items signed by Apple, and everything in `/System/Library`.
+
+## Space Breakdown
+
+* View only. Nothing is changed, and nothing asks for admin rights.
+* `diskutil info -plist /` and `diskutil apfs list -plist` give the startup disk's volumes and their sizes.
+* `tmutil listlocalsnapshots /` counts local snapshots. Their size needs admin rights, so it stays in Not measured.
+* Folder sizes come from file details on the Data volume at `/System/Volumes/Data`, leaving out the home folder, other volumes, and other disks. No file is opened.
+* Folders macOS will not let neet read are counted, not retried with more rights.
 
 ## Planned Features
 

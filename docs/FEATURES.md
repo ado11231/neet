@@ -35,7 +35,7 @@ Shows where your disk space goes. Looking never changes a file.
 | Skipped folders | Lists unreadable folders and Full Disk Access help. | Done |
 | Disk browser | Browse folders by size, with selected file details. View only. | Done |
 | Large Files | Filter files by size and last change, then show one in Disk. | Done |
-| Space breakdown | Explain used disk space outside the home scan. View only. | Proposed |
+| Space breakdown | Splits used space into the home folder, other Data volume folders, macOS volumes, and what cannot be measured without admin rights. View only. | Done |
 | Treemap | A view where each folder's area shows its size. | Proposed |
 
 * Sizes are estimates. On APFS, the file system macOS uses, copied files can share space, so a cleanup may free less than it shows.
@@ -168,7 +168,6 @@ These features are not built yet. Each needs checking on real Macs.
 | --- | --- |
 | Shell PATH | Show the folders your shell searches for programs, in order, flag problems, show which copy of a program runs, and reorder them with a backup. |
 | Power and display | Switch power modes, graphics switching, and display refresh rate, and show what keeps the Mac awake. Every change can be undone. |
-| Space breakdown | Explain the gap between the disk's used space and the scan. |
 | Treemap | Show folder sizes as areas. |
 | Saved preferences | Remember your choices between runs. |
 
