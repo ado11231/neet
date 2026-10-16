@@ -85,6 +85,10 @@
 * Space splits used disk space into the home folder, other folders, macOS volumes, and what cannot be measured.
 * Quick Clean and Simulators show leftover simulator downloads macOS keeps, and how to reuse them.
 
+### Decisions
+
+* Mail attachment cleanup and system log cleanup are left out. The reasons are in [SAFETY.md](SAFETY.md#left-out).
+
 ### Settings
 
 * Power settings change with `sudo pmset` after review, and undo per battery and charger.
@@ -104,8 +108,6 @@
 | Shell PATH inspection and reviewed edits | [#25](https://github.com/ado11231/neet/issues/25) |
 | Display refresh rate with undo | [#144](https://github.com/ado11231/neet/issues/144) |
 | Folder sizes shown as areas | [#29](https://github.com/ado11231/neet/issues/29) |
-| Decide whether Mail attachment cleanup is safe | [#32](https://github.com/ado11231/neet/issues/32) |
-| Decide whether system log cleanup is safe | [#33](https://github.com/ado11231/neet/issues/33) |
 
 * These features must follow [SAFETY.md](SAFETY.md), with tests for refused changes and undo.
 * Homebrew remains a later option. Current installs use crates.io or GitHub Releases.

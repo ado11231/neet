@@ -20,6 +20,7 @@
 * [Startup Items](#startup-items)
 * [Space Breakdown](#space-breakdown)
 * [Settings](#settings)
+* [Left Out](#left-out)
 * [Planned Features](#planned-features)
 * [AI Tools](#ai-tools)
 * [Tests](#tests)
@@ -80,6 +81,7 @@ neet refuses these, and everything inside them:
 | `~/Documents`, `~/Desktop`, `~/Downloads` | Your own files. Only [build folders and installers](#build-folders-and-installers) may be taken from them. |
 | `~/Library/Mobile Documents`, `~/Library/CloudStorage` | iCloud and other cloud files. |
 | `~/Library/Keychains`, `~/.ssh` | Passwords and keys. |
+| `~/Library/Mail`, `~/Library/Messages` | Mail and Messages, with their attachments. Some may be the only copy. |
 | Any `.git` folder | Project history. |
 | `~/Library/Developer/Xcode/Archives` | Builds of apps you shipped. They cannot be made again. |
 | The top folder of any disk | Far too broad. |
@@ -480,6 +482,15 @@ Only your own launch agents in `~/Library/LaunchAgents` may be turned off and ba
 * Saved to `~/.config/neet/settings.toml`, written as a new copy and swapped in. A link there is refused.
 * A missing file uses the defaults. Unknown values and broken files fall back to the defaults with a warning in Preferences. Keys from newer versions are ignored.
 * Preferences only choose what screens open with. Every review, confirmation, and check still applies.
+
+## Left Out
+
+Checked and decided against, on macOS 26.5. Each stays protected.
+
+| Idea | Why it is left out |
+| --- | --- |
+| Mail attachment cleanup | Attachments live inside Mail's mailbox folders. For POP and On My Mac mailboxes they can be the only copy, and telling accounts apart means reading Mail's account data. Mail's own Settings, General, Remove unedited downloads clears the copies it opens. |
+| System log cleanup | `/private/var/log` and `/Library/Logs` belong to root, and `log erase` needs root. macOS rotates those logs and caps the unified log store in `/private/var/db/diagnostics` on its own. Your own logs in `~/Library/Logs` are a Deep Clean rule. Space shows the rest under macOS data. |
 
 ## Planned Features
 
