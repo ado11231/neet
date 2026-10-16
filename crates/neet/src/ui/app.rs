@@ -31,9 +31,9 @@ pub enum Action {
     /// Leave the screen to open this file in your editor, then tell the
     /// screen with [`Screen::edited`]
     Edit(PathBuf),
-    /// Leave the screen to run an assistant on a chat, then tell the screen
-    /// with [`Screen::ran`]
-    Run(neet_core::ai::actions::Resume),
+    /// Leave the screen to run these programs in turn, such as an assistant
+    /// on a chat or `sudo pmset`, then tell the screen with [`Screen::ran`]
+    Run(Vec<neet_core::program::Program>),
     Quit,
 }
 
@@ -184,7 +184,7 @@ pub struct App {
     /// A file to open in your editor, once the screen is left
     edit: Option<PathBuf>,
     /// A program to run, once the screen is left
-    run: Option<neet_core::ai::actions::Resume>,
+    run: Option<Vec<neet_core::program::Program>>,
     quit: bool,
 }
 
@@ -229,7 +229,7 @@ impl App {
     }
 
     /// The program a screen asked to run, if any
-    pub fn take_run(&mut self) -> Option<neet_core::ai::actions::Resume> {
+    pub fn take_run(&mut self) -> Option<Vec<neet_core::program::Program>> {
         self.run.take()
     }
 
@@ -312,7 +312,7 @@ impl App {
             }
             Action::Replan => self.estimate = Estimate::start(self.home.clone()),
             Action::Edit(path) => self.edit = Some(path),
-            Action::Run(resume) => self.run = Some(resume),
+            Action::Run(programs) => self.run = Some(programs),
             Action::Quit => self.quit = true,
         }
     }

@@ -664,9 +664,10 @@ fn c_continues_a_chat_in_its_tool_from_its_project() {
     claude_chat(&mut screen, &project);
     assert!(render(&mut screen, 120, 30).contains("c continues"));
 
-    let Action::Run(resume) = press(&mut screen, KeyCode::Char('c')) else {
+    let Action::Run(programs) = press(&mut screen, KeyCode::Char('c')) else {
         panic!("c should leave neet to run Claude Code");
     };
+    let resume = &programs[0];
     assert_eq!(resume.program, "claude");
     assert_eq!(resume.args, ["--resume", ID]);
     assert_eq!(resume.folder, project);
