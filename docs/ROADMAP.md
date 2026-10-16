@@ -72,6 +72,7 @@
 * Startup lists items and turns user launch agents off and back on.
 * Changed plists are refused. Partial changes and failed checks stay visible.
 * AI Tools browses files and chats, reviews transcript cleanup, and manages local skill links and edits.
+* Skills show their source, including plugin skills, and linked skills can be removed and put back.
 * Tests cover file checks, backups, failed cleanup, draft recovery, and narrow screens.
 
 ### Clarity Pass
@@ -86,7 +87,6 @@
 ## Next
 
 * Finish chat actions, related file cleanup, restore, and reload checks in [#111](https://github.com/ado11231/neet/issues/111).
-* Add skill source and removal support in [#112](https://github.com/ado11231/neet/issues/112).
 * Test Startup on macOS 13, 14, and 15 in [#22](https://github.com/ado11231/neet/issues/22). macOS 26.5 is checked.
 * Review the next release, then verify the published crate and both Mac downloads.
 

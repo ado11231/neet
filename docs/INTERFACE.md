@@ -339,7 +339,9 @@
 * Linking a skill reviews its source, destination, and instructions. Keep its source folder in place and reload the assistant afterward.
 * Editing or restoring a user skill shows a diff and saves a backup after confirmation.
 * A failed edit keeps the draft. Use `e` to repair it or `Esc` to discard it.
-* Tool settings and bundled skills stay view only. See [AI Tools safety](SAFETY.md#ai-tools).
+* Each skill shows where it comes from: your copy, a link and what it points to, bundled with the tool, or a plugin with its version and whether the tool has it on.
+* Removing a linked skill reviews the link and the folder it points to. Only the link goes. `u` puts it back while neet is open.
+* Tool settings, bundled skills, and plugin skills stay view only. See [AI Tools safety](SAFETY.md#ai-tools).
 
 | Key | Action |
 | --- | --- |
@@ -353,6 +355,8 @@
 | `i` | Link a local skill folder. `Tab` or `Shift-Tab` chooses the tool while typing. |
 | `e` | Edit a user skill, or reopen a kept draft, then review. |
 | `b` | Review restoring the latest skill backup. |
+| `x` | Review removing the highlighted skill's link. The folder it points to stays. |
+| `u` | Put the last removed skill link back. |
 | `y` | Confirm a reviewed skill change or chat removal. |
 | `o` | Reveal the selected file in Finder, from the list or its preview. |
 | `r` / `w` | Refresh / show skipped paths. |
