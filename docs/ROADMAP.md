@@ -83,6 +83,7 @@
 * Chat cleanup keeps totals and actions visible while scrolling.
 * Docker labels estimates and shows containers keeping images in use.
 * Space splits used disk space into the home folder, other folders, macOS volumes, and what cannot be measured.
+* Treemap draws a folder as boxes sized by space.
 * Quick Clean and Simulators show leftover simulator downloads macOS keeps, and how to reuse them.
 
 ### Decisions
@@ -107,7 +108,6 @@
 | --- | --- |
 | Shell PATH inspection and reviewed edits | [#25](https://github.com/ado11231/neet/issues/25) |
 | Display refresh rate with undo | [#144](https://github.com/ado11231/neet/issues/144) |
-| Folder sizes shown as areas | [#29](https://github.com/ado11231/neet/issues/29) |
 
 * These features must follow [SAFETY.md](SAFETY.md), with tests for refused changes and undo.
 * Homebrew remains a later option. Current installs use crates.io or GitHub Releases.

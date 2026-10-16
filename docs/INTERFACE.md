@@ -77,8 +77,22 @@
 | `Right`, `Enter`, or `l` | Open the selected folder. |
 | `Left` or `h` | Go up to the parent folder, keeping your place. |
 | `s` | Sort by size, then name, then item count. |
+| `t` | Open [Treemap](#treemap) for this folder. |
 | `b` | Open [Space](#space), where used space outside the home folder goes. |
 | `g` / `G` | Jump to the first or last row. |
+
+### Treemap
+
+* The folder open in Disk, drawn as boxes sized by the space each item takes.
+* The 24 largest items get a box each. The rest share one box, which Disk lists one by one.
+* Red boxes hold 5 GB or more, yellow 1 GB or more. Other folders are blue and files green.
+* Treemap is view only.
+
+| Key | Action |
+| --- | --- |
+| Arrows, `Tab` | Move between boxes, largest first. |
+| `Enter` | Open the selected folder. |
+| `Backspace` or `Esc` | Go up a folder, then back to Disk. |
 
 ### Space
 
