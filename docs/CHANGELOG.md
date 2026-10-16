@@ -5,6 +5,29 @@
 
 ## Unreleased
 
+## [0.3.0](https://github.com/ado11231/neet/compare/neet-v0.2.0...neet-v0.3.0)
+
+### Added
+
+
+* show skill sources and review removing a skill link
+
+* explain leftover runtime downloads
+
+* explain space outside the home scan
+
+### Fixed
+
+
+* show the same size for other volumes everywhere
+
+### Other
+
+
+* install with cargo and tidy the Use section
+
+Released 2026-10-16
+
 ## [0.2.0](https://github.com/ado11231/neet/compare/neet-v0.1.0...neet-v0.2.0)
 
 ### Added

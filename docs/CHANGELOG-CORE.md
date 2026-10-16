@@ -142,6 +142,26 @@ Released 2026-10-14
 
 ## Unreleased
 
+## [0.3.0](https://github.com/ado11231/neet/compare/neet-core-v0.2.0...neet-core-v0.3.0)
+
+### Added
+
+
+* show where each skill comes from and remove skill links
+
+* explain leftover runtime downloads
+
+* find simulator downloads left without a runtime
+
+* read volumes and measure folders outside the home scan
+
+### Fixed
+
+
+* list plugin skills after your own and skip marker files
+
+Released 2026-10-16
+
 ## [0.1.0](https://crates.io/crates/neet-core/0.1.0)
 
 ### Added
