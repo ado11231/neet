@@ -108,18 +108,7 @@ pub(super) fn set(text: &str, setting: &Setting, value: Option<&str>) -> Result<
     let new = value.map(|value| line_for(setting, value)).transpose()?;
     let lines = lines(text);
     let Some(range) = block(&lines)? else {
-        let Some(new) = new else {
-            return Ok(text.to_string());
-        };
-        let mut out = text.to_string();
-        if !out.is_empty() {
-            if !out.ends_with('\n') {
-                out.push('\n');
-            }
-            out.push('\n');
-        }
-        let _ = write!(out, "{START}\n{ABOUT}\n{new}{END}\n");
-        return Ok(out);
+        return new.map_or_else(|| Ok(text.to_string()), |new| append(text, &new));
     };
 
     let inner = range.start + 1..range.end - 1;
@@ -159,6 +148,33 @@ pub(super) fn set(text: &str, setting: &Setting, value: Option<&str>) -> Result<
     }
     out.push_str(&lines[range.end..].concat());
     Ok(out)
+}
+
+/// `text` with `new`, whole lines, added at the end of the block. Without a
+/// block, one is added at the end, after an empty line.
+///
+/// # Errors
+///
+/// Returns why the block cannot be used.
+pub(crate) fn append(text: &str, new: &str) -> Result<String, String> {
+    let lines = lines(text);
+    let Some(range) = block(&lines)? else {
+        let mut out = text.to_string();
+        if !out.is_empty() {
+            if !out.ends_with('\n') {
+                out.push('\n');
+            }
+            out.push('\n');
+        }
+        let _ = write!(out, "{START}\n{ABOUT}\n{new}{END}\n");
+        return Ok(out);
+    };
+    let end = range.end - 1;
+    Ok(format!(
+        "{}{new}{}",
+        lines[..end].concat(),
+        lines[end..].concat()
+    ))
 }
 
 #[cfg(test)]
