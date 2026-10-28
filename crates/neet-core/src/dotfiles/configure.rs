@@ -11,7 +11,7 @@ mod ghostty;
 mod kitty;
 mod tmux;
 mod toml_file;
-mod zsh;
+pub(crate) mod zsh;
 
 /// How long Git may take to read or change one file
 const GIT_TIMEOUT: Duration = Duration::from_secs(10);

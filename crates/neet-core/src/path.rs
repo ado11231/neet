@@ -8,6 +8,8 @@ use std::fs;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
+pub mod edit;
+
 /// Shell files, from the home folder, searched for where a folder is added
 pub const SHELL_FILES: [&str; 8] = [
     ".zshenv",
@@ -298,14 +300,7 @@ fn origin(
     files: &[(PathBuf, Vec<String>)],
     system: &[(PathBuf, Vec<String>)],
 ) -> Origin {
-    let home_text = home.to_string_lossy();
-    // The ways a shell file can spell this folder
-    let mut spellings = vec![folder.to_string()];
-    if let Some(rest) = folder.strip_prefix(home_text.as_ref()) {
-        for prefix in ["$HOME", "${HOME}", "~"] {
-            spellings.push(format!("{prefix}{rest}"));
-        }
-    }
+    let spellings = spellings(folder, home);
     for (file, lines) in files {
         for (number, line) in lines.iter().enumerate() {
             if spellings
@@ -339,6 +334,17 @@ fn origin(
         }
     }
     Origin::Unknown
+}
+
+/// The ways a shell file can spell `folder`
+fn spellings(folder: &str, home: &Path) -> Vec<String> {
+    let mut spellings = vec![folder.to_string()];
+    if let Some(rest) = folder.strip_prefix(home.to_string_lossy().as_ref()) {
+        for prefix in ["$HOME", "${HOME}", "~"] {
+            spellings.push(format!("{prefix}{rest}"));
+        }
+    }
+    spellings
 }
 
 /// Whether `line` names `folder` as a whole path, not as the start of a
