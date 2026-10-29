@@ -240,18 +240,21 @@ fn shell_lines(home: &Path) -> Vec<(PathBuf, Vec<String>)> {
                 return None;
             }
             let text = fs::read_to_string(&path).ok()?;
-            let lines = text
-                .lines()
-                .map(|line| line.split_once(" #").map_or(line, |(code, _)| code))
-                .map(|line| {
-                    if line.trim_start().starts_with('#') {
-                        String::new()
-                    } else {
-                        line.to_string()
-                    }
-                })
-                .collect();
-            Some((path, lines))
+            Some((path, code_lines(&text)))
+        })
+        .collect()
+}
+
+/// The lines of a shell file's `text`, without comments
+fn code_lines(text: &str) -> Vec<String> {
+    text.lines()
+        .map(|line| line.split_once(" #").map_or(line, |(code, _)| code))
+        .map(|line| {
+            if line.trim_start().starts_with('#') {
+                String::new()
+            } else {
+                line.to_string()
+            }
         })
         .collect()
 }

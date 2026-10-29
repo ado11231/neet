@@ -13,14 +13,19 @@ use std::fs;
 use std::path::Path;
 use std::time::SystemTime;
 
-use super::{Entry as Folder, Listing, Origin, SHELL_FILES, names_folder, shell_lines, spellings};
+use super::{Entry as Folder, Listing, Origin, SHELL_FILES, code_lines, names_folder, spellings};
 use crate::dotfiles::change::{self, Checked, Done, Edit};
 use crate::dotfiles::configure::zsh;
 use crate::rewrite::Backups;
 
-/// The files zsh reads. neet's block is in `.zshrc`, so only folders added
-/// in one of these may move there.
+/// The files zsh reads. neet's block is in `.zshrc`, so folders added in
+/// another shell's files may not move there.
 const ZSH_FILES: [&str; 4] = [".zshenv", ".zprofile", ".zshrc", ".zlogin"];
+
+/// zsh files a folder may not move from either. Scripts and editors read
+/// `.zshenv`, and login shells read `.zprofile`, without `.zshrc`, so the
+/// folder would quietly go away for them.
+const SKIP_ZSHRC: [&str; 2] = [".zshenv", ".zprofile"];
 
 /// Where a moved folder goes
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -55,6 +60,24 @@ pub struct Planned {
     pub after: String,
 }
 
+/// The shell files' texts, each read once through `read`, by their place
+/// in [`SHELL_FILES`]
+struct Files<R> {
+    read: R,
+    texts: BTreeMap<usize, Result<String, String>>,
+}
+
+impl<R: FnMut(&'static str) -> Result<String, String>> Files<R> {
+    fn text(&mut self, file: usize) -> Result<&str, String> {
+        let read = &mut self.read;
+        self.texts
+            .entry(file)
+            .or_insert_with(|| read(SHELL_FILES[file]))
+            .as_deref()
+            .map_err(|e| format!("~/{}: {e}", SHELL_FILES[file]))
+    }
+}
+
 /// A line that only sets PATH, in pieces
 struct Line<'a> {
     /// Indentation, `export `, and `PATH=`
@@ -78,8 +101,12 @@ pub fn plan(
     listing: &Listing,
     changes: &[Change],
     home: &Path,
-    mut read: impl FnMut(&'static str) -> Result<String, String>,
+    read: impl FnMut(&'static str) -> Result<String, String>,
 ) -> Result<Vec<Planned>, String> {
+    let mut files = Files {
+        read,
+        texts: BTreeMap::new(),
+    };
     // The folders to take out of each line, by file and line number
     let mut out: BTreeMap<(usize, usize), Vec<&str>> = BTreeMap::new();
     for (number, &change) in changes.iter().enumerate() {
@@ -91,7 +118,7 @@ pub fn plan(
         if changes[..number].iter().any(|c| c.index() == index) {
             return Err(format!("{}: It is changed twice.", entry.folder));
         }
-        let source = source(entry, home, change, changes, listing)
+        let source = source(entry, home, change, changes, listing, &mut files)
             .map_err(|reason| format!("{}: {reason}", entry.folder))?;
         // Copies of one folder from the same line are taken out once.
         let folders = out.entry(source).or_default();
@@ -102,7 +129,7 @@ pub fn plan(
 
     let mut texts: BTreeMap<usize, (String, Vec<String>)> = BTreeMap::new();
     let mut open = |file: usize| -> Result<(String, Vec<String>), String> {
-        let text = read(SHELL_FILES[file]).map_err(|e| format!("~/{}: {e}", SHELL_FILES[file]))?;
+        let text = files.text(file)?.to_owned();
         let lines = text.split_inclusive('\n').map(str::to_owned).collect();
         Ok((text, lines))
     };
@@ -118,17 +145,19 @@ pub fn plan(
         lines[number - 1] = new;
     }
 
-    // Moved folders go in neet's block, at the front or back of PATH.
+    // Moved folders go in neet's block, at the front or back of PATH. Two
+    // copies of one folder go in once.
     let moved = |to: Place| -> Vec<&str> {
-        changes
-            .iter()
-            .filter_map(|change| match *change {
-                Change::Move(index, place) if place == to => {
-                    Some(spelled[listing.entries[index].folder.as_str()].as_str())
+        let mut folders = Vec::new();
+        for change in changes {
+            if let Change::Move(index, place) = *change {
+                let folder = spelled[listing.entries[index].folder.as_str()].as_str();
+                if place == to && !folders.contains(&folder) {
+                    folders.push(folder);
                 }
-                _ => None,
-            })
-            .collect()
+            }
+        }
+        folders
     };
     let (front, back) = (moved(Place::First), moved(Place::Last));
     let mut add = String::new();
@@ -164,12 +193,13 @@ pub fn plan(
 }
 
 /// The file, by its place in [`SHELL_FILES`], and line number `change` edits
-fn source(
+fn source<R: FnMut(&'static str) -> Result<String, String>>(
     entry: &Folder,
     home: &Path,
     change: Change,
     changes: &[Change],
     listing: &Listing,
+    files: &mut Files<R>,
 ) -> Result<(usize, usize), String> {
     let (file, line) = match &entry.origin {
         Origin::Line { file, line } => (file, *line),
@@ -192,10 +222,15 @@ fn source(
         .iter()
         .position(|name| home.join(name) == *file)
         .ok_or("It is added outside the shell files neet may change.")?;
-    if matches!(change, Change::Move(..)) && !ZSH_FILES.contains(&SHELL_FILES[index]) {
+    let name = SHELL_FILES[index];
+    if matches!(change, Change::Move(..)) && !ZSH_FILES.contains(&name) {
         return Err(format!(
-            "It is added in ~/{}, and neet's block is in ~/.zshrc, which only zsh reads.",
-            SHELL_FILES[index]
+            "It is added in ~/{name}, and neet's block is in ~/.zshrc, which only zsh reads."
+        ));
+    }
+    if matches!(change, Change::Move(..)) && SKIP_ZSHRC.contains(&name) {
+        return Err(format!(
+            "It is added in ~/{name}, which shells that skip ~/.zshrc also read, and neet's block is in ~/.zshrc."
         ));
     }
     // Every copy of a folder points at the first line naming it. Taking the
@@ -207,11 +242,16 @@ fn source(
         });
     if let (Change::Remove(_), Some((other, _))) = (change, kept) {
         let names = spellings(&entry.folder, home);
-        let lines = shell_lines(home)
-            .into_iter()
-            .flat_map(|(_, lines)| lines)
-            .filter(|line| names.iter().any(|name| names_folder(line, name)))
-            .count();
+        let mut lines = 0;
+        for file in 0..SHELL_FILES.len() {
+            // A file that cannot be read adds no copy neet can count on.
+            if let Ok(text) = files.text(file) {
+                lines += code_lines(text)
+                    .iter()
+                    .filter(|line| names.iter().any(|name| names_folder(line, name)))
+                    .count();
+            }
+        }
         if lines < 2 {
             return Err(format!(
                 "The same line adds the copy at #{}, so taking it out would remove both.",
