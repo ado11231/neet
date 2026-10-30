@@ -6,6 +6,27 @@
 
 ## Unreleased
 
+## [0.3.1](https://github.com/ado11231/neet/compare/neet-v0.3.0...neet-v0.3.1)
+
+### Added
+
+
+* plan and write reviewed PATH edits with backups
+
+### Fixed
+
+
+* refuse moves from .zlogin
+
+* plan without reading the disk, move copies once, refuse .zshenv and .zprofile
+
+### Other
+
+
+* start with the screens, then the keys
+
+Released 2026-10-30
+
 ## [0.3.0](https://github.com/ado11231/neet/compare/neet-v0.2.0...neet-v0.3.0)
 
 Settings arrives, so every screen on Home is now built. Disk explains space outside your home folder and draws folders as a treemap, and AI Tools can continue chats and manage skills.
