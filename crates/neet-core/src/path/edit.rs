@@ -23,9 +23,9 @@ use crate::rewrite::Backups;
 const ZSH_FILES: [&str; 4] = [".zshenv", ".zprofile", ".zshrc", ".zlogin"];
 
 /// zsh files a folder may not move from either. Scripts and editors read
-/// `.zshenv`, and login shells read `.zprofile`, without `.zshrc`, so the
-/// folder would quietly go away for them.
-const SKIP_ZSHRC: [&str; 2] = [".zshenv", ".zprofile"];
+/// `.zshenv`, and login shells read `.zprofile` and `.zlogin`, without
+/// `.zshrc`, so the folder would quietly go away for them.
+const SKIP_ZSHRC: [&str; 3] = [".zshenv", ".zprofile", ".zlogin"];
 
 /// Where a moved folder goes
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -167,16 +167,15 @@ fn refuses_tools_system_lists_and_unknown_folders() {
 
 #[test]
 fn moves_folders_into_the_neet_block() {
-    let zshrc = "export PATH=\"$HOME/a:$HOME/b:$PATH\"\n";
-    let zlogin = "PATH=~/c:$PATH\n";
+    let zshrc = "export PATH=\"$HOME/a:$HOME/b:$PATH\"\nPATH=~/c:$PATH\n";
     let moved = planned(
-        &[(".zshrc", zshrc), (".zlogin", zlogin)],
+        &[(".zshrc", zshrc)],
         &["~/a", "~/b", "~/c"],
         &[Move(1, First), Move(2, Last)],
     )
     .unwrap();
+    assert_eq!(moved.len(), 1);
     assert_eq!(moved[0].0, ".zshrc");
-    assert_eq!(moved[1], (".zlogin", String::new()));
     assert!(
         moved[0].1.starts_with(&format!(
             "export PATH=\"$HOME/a:$PATH\"\n\n{START}\n# Set by neet"
@@ -205,14 +204,18 @@ fn moves_folders_into_the_neet_block() {
         )]
     );
 
-    // A broken block, a bash file, and no ~/.zshrc are refused.
+    // A broken block, a bash file, and a ~/.zshrc neet cannot read are refused.
     let broken = format!("export PATH=\"$HOME/a:$PATH\"\n{START}\n");
     let error = planned(&[(".zshrc", &broken)], &["~/a"], &[Move(0, Last)]).unwrap_err();
     assert!(error.contains("not whole"), "{error}");
     let bashrc = "export PATH=\"$HOME/a:$PATH\"\n";
     let error = planned(&[(".bashrc", bashrc)], &["~/a"], &[Move(0, Last)]).unwrap_err();
     assert!(error.contains("which only zsh reads"), "{error}");
-    let error = planned(&[(".zlogin", zlogin)], &["~/c"], &[Move(0, Last)]).unwrap_err();
+    let (_dir, home, etc) = setup();
+    fs::write(home.join(".zshrc"), "PATH=~/c:$PATH\n").unwrap();
+    let listing = listing(&home, &etc, &["~/c"]);
+    let gone = |_| Err("not found".to_string());
+    let error = plan(&listing, &[Move(0, Last)], &home, gone).unwrap_err();
     assert!(error.starts_with("~/.zshrc: "), "{error}");
 }
 
@@ -273,14 +276,14 @@ fn writes_each_file_after_a_backup_and_restores_it() {
     let listing = listing(&home, &etc, &["~/a", "~/b", "~/c"]);
     let backups = Backups::dotfiles(&home);
 
-    let prepared = prepare(&listing, &[Remove(0), Move(2, Last)], &home).unwrap();
+    let prepared = prepare(&listing, &[Move(0, Last), Remove(2)], &home).unwrap();
     let done = write(&prepared, &home, &backups, at(100)).unwrap();
 
     assert_eq!(done, [Done::Written, Done::Written]);
     assert_eq!(fs::read_to_string(&zlogin).unwrap(), "");
     let new = fs::read_to_string(&zshrc).unwrap();
     assert!(new.starts_with("export PATH=\"$HOME/b:$PATH\"\n"), "{new}");
-    assert!(new.contains("\nexport PATH=\"$PATH:$HOME/c\"\n"), "{new}");
+    assert!(new.contains("\nexport PATH=\"$PATH:$HOME/a\"\n"), "{new}");
     let saved = backups.list(".zshrc").unwrap();
     assert_eq!(saved.len(), 1);
     assert_eq!(fs::read_to_string(&saved[0].path).unwrap(), old);
@@ -356,9 +359,9 @@ fn moves_two_copies_of_a_folder_once() {
 }
 
 #[test]
-fn refuses_moves_from_zshenv_and_zprofile() {
+fn refuses_moves_from_zshenv_zprofile_and_zlogin() {
     let line = "export PATH=\"$HOME/a:$PATH\"\n";
-    for name in [".zshenv", ".zprofile"] {
+    for name in [".zshenv", ".zprofile", ".zlogin"] {
         let error =
             planned(&[(name, line), (".zshrc", "")], &["~/a"], &[Move(0, First)]).unwrap_err();
         assert!(
