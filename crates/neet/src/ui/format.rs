@@ -82,14 +82,12 @@ pub fn age(elapsed: Duration) -> String {
     )
 }
 
-/// Like [`age`], with the number right aligned in two places, so in a column
-/// the ones line up and every unit starts at the same place: ` 3 days ago`,
-/// `39 days ago`, `   today`.
+/// Like [`age`], for a column: the number right aligned in two places and
+/// the unit padded, so the numbers, units, and `ago` each line up:
+/// ` 0 days   ago`, ` 1 year   ago`, `11 months ago`.
 pub fn age_aligned(elapsed: Duration) -> String {
-    age_parts(elapsed).map_or_else(
-        || format!("{:>2} today", ""),
-        |(value, unit)| format!("{value:>2} {unit} ago"),
-    )
+    let (value, unit) = age_parts(elapsed).unwrap_or((0, "days"));
+    format!("{value:>2} {unit:<6} ago")
 }
 
 /// The number and unit of an age, or `None` for today
@@ -221,11 +219,11 @@ mod tests {
         assert_eq!(
             ages,
             [
-                "   today",
-                " 3 days ago",
-                "39 days ago",
+                " 0 days   ago",
+                " 3 days   ago",
+                "39 days   ago",
                 " 3 months ago",
-                " 1 year ago"
+                " 1 year   ago"
             ]
         );
     }
