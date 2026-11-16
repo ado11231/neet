@@ -196,7 +196,7 @@
 | `Up` / `Down` | Move the selection. |
 | `g` / `G` | Jump to the first or last file. |
 | `s` | Change the size: 10 MB, 50 MB, 100 MB, 500 MB, 1 GB, 5 GB. |
-| `a` | Change how long files must be unchanged: any age, 30 days, 3 months, 6 months, 1 year, 2 years. |
+| `a` | Show only files not changed for a while: any age, 30 days, 3 months, 6 months, 1 year, 2 years. |
 | `Enter`, `Right`, or `l` | Show the file in Disk. `Esc` comes back. |
 
 ## Remove App
