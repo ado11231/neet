@@ -376,6 +376,137 @@ fn launchd(json: &str) -> Launchd {
     }
 }
 
+/// What a launchd plist tells launchd to do, as labels and plain values,
+/// in the order shown: the command, when it starts, and where it writes.
+/// Read with `plutil`, which never runs anything.
+///
+/// # Errors
+///
+/// Returns why the plist could not be read.
+pub fn facts(plist: &Path) -> Result<Vec<(&'static str, String)>, String> {
+    plist_json(plist).map(|json| facts_in(&json))
+}
+
+/// A number of seconds as launchd's `StartInterval` means it
+fn every(seconds: u64) -> String {
+    match seconds {
+        0 => "never".to_string(),
+        s if s % 86_400 == 0 => format!("every {} d", s / 86_400),
+        s if s % 3600 == 0 => format!("every {} h", s / 3600),
+        s if s % 60 == 0 => format!("every {} min", s / 60),
+        s => format!("every {s} s"),
+    }
+}
+
+/// One `StartCalendarInterval` entry, such as `at 03:30` or `Mondays at 09:00`
+fn calendar(entry: &serde_json::Value) -> Option<String> {
+    let map = entry.as_object()?;
+    let number = |key: &str| map.get(key).and_then(serde_json::Value::as_u64);
+    let mut parts = Vec::new();
+    if let Some(day) = number("Weekday") {
+        const DAYS: [&str; 7] = [
+            "Sundays",
+            "Mondays",
+            "Tuesdays",
+            "Wednesdays",
+            "Thursdays",
+            "Fridays",
+            "Saturdays",
+        ];
+        parts.push(DAYS[usize::try_from(day % 7).unwrap_or(0)].to_string());
+    }
+    if let Some(day) = number("Day") {
+        parts.push(format!("day {day} of the month"));
+    }
+    match (number("Hour"), number("Minute")) {
+        (Some(hour), minute) => parts.push(format!("at {hour:02}:{:02}", minute.unwrap_or(0))),
+        (None, Some(minute)) => parts.push(format!("every hour at :{minute:02}")),
+        (None, None) if parts.is_empty() => parts.push("every minute".to_string()),
+        (None, None) => {}
+    }
+    Some(parts.join(" "))
+}
+
+fn facts_in(json: &str) -> Vec<(&'static str, String)> {
+    use serde_json::Value;
+    let Ok(Value::Object(map)) = serde_json::from_str::<Value>(json) else {
+        return Vec::new();
+    };
+    let string = |key: &str| map.get(key).and_then(Value::as_str).map(str::to_string);
+    let list = |key: &str| -> Vec<String> {
+        match map.get(key) {
+            Some(Value::Array(items)) => items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect(),
+            Some(Value::Object(items)) => items.keys().cloned().collect(),
+            _ => Vec::new(),
+        }
+    };
+    let mut facts = Vec::new();
+    let arguments = list("ProgramArguments");
+    if !arguments.is_empty() {
+        facts.push(("Runs", arguments.join(" ")));
+    } else if let Some(program) = string("Program").or_else(|| string("BundleProgram")) {
+        facts.push(("Runs", program));
+    }
+
+    let mut starts = Vec::new();
+    if map.get("RunAtLoad").and_then(Value::as_bool) == Some(true) {
+        starts.push("when it loads".to_string());
+    }
+    match map.get("KeepAlive") {
+        Some(Value::Bool(true)) => starts.push("again whenever it quits".to_string()),
+        Some(Value::Object(_)) => starts.push("again when it quits, on a condition".to_string()),
+        _ => {}
+    }
+    if let Some(seconds) = map.get("StartInterval").and_then(Value::as_u64) {
+        starts.push(every(seconds));
+    }
+    match map.get("StartCalendarInterval") {
+        Some(Value::Array(entries)) => starts.extend(entries.iter().filter_map(calendar)),
+        Some(entry) => starts.extend(calendar(entry)),
+        None => {}
+    }
+    if !list("WatchPaths").is_empty() || !list("QueueDirectories").is_empty() {
+        starts.push("when a watched file changes".to_string());
+    }
+    if map.contains_key("MachServices") || map.contains_key("Sockets") {
+        starts.push("when a program asks for it".to_string());
+    }
+    if !starts.is_empty() {
+        facts.push(("Starts", starts.join(", ")));
+    }
+
+    let mut watched = list("WatchPaths");
+    watched.extend(list("QueueDirectories"));
+    if !watched.is_empty() {
+        facts.push(("Watches", watched.join(", ")));
+    }
+    if let Some(folder) = string("WorkingDirectory") {
+        facts.push(("Folder", folder));
+    }
+    if let Some(user) = string("UserName") {
+        facts.push(("User", user));
+    }
+    let (out, error) = (string("StandardOutPath"), string("StandardErrorPath"));
+    if let Some(out) = &out {
+        facts.push(("Log", out.clone()));
+    }
+    if let Some(error) = error.filter(|error| Some(error) != out.as_ref()) {
+        facts.push(("Errors", error));
+    }
+    let variables = list("EnvironmentVariables");
+    if !variables.is_empty() {
+        facts.push(("Sets", variables.join(", ")));
+    }
+    if map.get("Disabled").and_then(Value::as_bool) == Some(true) {
+        facts.push(("Disabled", "in the plist itself".to_string()));
+    }
+    facts
+}
+
 /// `launchctl list`: each label with its process ID, or `None` when
 /// loaded but not running
 fn gui_list(text: &str) -> HashMap<String, Option<u32>> {
@@ -713,6 +844,40 @@ mod tests {
         assert!(plist.disabled);
         assert!(launchd("{}").empty);
         assert!(!launchd("not json").empty);
+    }
+
+    #[test]
+    fn says_what_a_plist_runs_and_when() {
+        let facts = facts_in(
+            r#"{"Label":"a.b","ProgramArguments":["/x/y","--z"],"RunAtLoad":true,
+            "StartInterval":3600,"StandardOutPath":"/tmp/a.log","StandardErrorPath":"/tmp/a.log",
+            "EnvironmentVariables":{"TOKEN":"secret"},"WorkingDirectory":"/x"}"#,
+        );
+        assert_eq!(
+            facts,
+            [
+                ("Runs", "/x/y --z".to_string()),
+                ("Starts", "when it loads, every 1 h".to_string()),
+                ("Folder", "/x".to_string()),
+                ("Log", "/tmp/a.log".to_string()),
+                ("Sets", "TOKEN".to_string()),
+            ]
+        );
+        let facts = facts_in(
+            r#"{"Program":"/p","KeepAlive":{"SuccessfulExit":false},
+            "StartCalendarInterval":[{"Hour":3,"Minute":30},{"Weekday":1,"Hour":9}],
+            "WatchPaths":["/etc/hosts"],"Disabled":true}"#,
+        );
+        assert_eq!(facts[0], ("Runs", "/p".to_string()));
+        assert_eq!(
+            facts[1].1,
+            "again when it quits, on a condition, at 03:30, Mondays at 09:00, when a watched file changes"
+        );
+        assert_eq!(facts[2], ("Watches", "/etc/hosts".to_string()));
+        assert_eq!(facts.last().unwrap().0, "Disabled");
+        assert_eq!(every(90), "every 90 s");
+        assert_eq!(every(120), "every 2 min");
+        assert_eq!(facts_in("not json"), []);
     }
 
     #[test]

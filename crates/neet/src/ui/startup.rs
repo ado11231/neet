@@ -1,6 +1,7 @@
 //! Startup: programs that start on their own, grouped by kind, with whether
-//! each runs, is turned off, and who signed it. `t` turns your own launch
-//! agents off and back on, after a question; everything else is view only.
+//! each runs, is turned off, and who signed it. `Enter` shows what a plist
+//! runs and when. `t` turns your own launch agents off and back on, after a
+//! question; everything else is view only.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -94,6 +95,11 @@ pub struct Startup {
     reselect: Option<PathBuf>,
     /// Whether the list has a blank row between kinds
     gaps: bool,
+    /// `Enter`: what the selected plist runs, until a key is pressed
+    inside: Option<(String, Vec<Line<'static>>)>,
+    /// Text typed to find a program, and whether typing
+    find: String,
+    typing: bool,
 }
 
 impl Startup {
@@ -110,6 +116,9 @@ impl Startup {
             note: None,
             reselect: None,
             gaps: false,
+            inside: None,
+            find: String::new(),
+            typing: false,
         };
         screen.look();
         screen
@@ -126,6 +135,9 @@ impl Startup {
             note: None,
             reselect: None,
             gaps: false,
+            inside: None,
+            find: String::new(),
+            typing: false,
         };
         screen.read_saved();
         screen.select_first();
@@ -286,11 +298,19 @@ impl Startup {
         let Some(listing) = self.listing() else {
             return Vec::new();
         };
+        let find = self.find.to_lowercase();
+        let found = |item: &Item| {
+            find.is_empty()
+                || [Some(&item.name), item.label.as_ref(), item.app.as_ref()]
+                    .into_iter()
+                    .flatten()
+                    .any(|text| text.to_lowercase().contains(&find))
+        };
         let mut rows = Vec::new();
         for kind in Kind::ALL {
             let mut first = true;
             for (index, item) in listing.items.iter().enumerate() {
-                if item.kind != kind {
+                if item.kind != kind || !found(item) {
                     continue;
                 }
                 if first {
@@ -414,8 +434,14 @@ impl Startup {
 
     fn draw_table(&mut self, frame: &mut Frame, area: Rect) {
         let rows = self.rows();
+        let finding = self.typing || !self.find.is_empty();
         let block = visual::block()
-            .title(" Programs ")
+            .title(if finding {
+                let cursor = if self.typing { "▏" } else { "" };
+                format!(" Programs · find: {}{cursor} ", self.find)
+            } else {
+                " Programs ".to_string()
+            })
             .padding(Padding::horizontal(1));
         let Some(listing) = self.listing() else {
             return;
@@ -424,9 +450,13 @@ impl Startup {
             let inner = block.inner(area);
             frame.render_widget(block, area);
             frame.render_widget(
-                Paragraph::new("Nothing starts on its own, other than macOS itself.")
-                    .centered()
-                    .wrap(Wrap { trim: true }),
+                Paragraph::new(if finding {
+                    "No program matches. Esc clears the search."
+                } else {
+                    "Nothing starts on its own, other than macOS itself."
+                })
+                .centered()
+                .wrap(Wrap { trim: true }),
                 inner,
             );
             return;
@@ -529,13 +559,14 @@ impl Startup {
         }
         lines.push(match item.kind {
             Kind::YourAgent => Line::from(vec![
-                Span::raw("Press "),
                 Span::raw("t").fg(visual::ACCENT).bold(),
                 Span::raw(if item.off {
-                    " to turn it back on."
+                    " turns it back on. "
                 } else {
-                    " to turn it off. Its plist stays as it is."
+                    " turns it off. Its plist stays as it is. "
                 }),
+                Span::raw("Enter").fg(visual::ACCENT).bold(),
+                Span::raw(" shows what it runs."),
             ]),
             kind => Line::from(view_only(kind)),
         });
@@ -558,12 +589,10 @@ impl Startup {
     fn about(&self) -> Vec<Line<'static>> {
         let mut login = vec![
             Line::from("Open at login").style(visual::HEADING),
-            Line::from(
-                "macOS shows apps that open at login only to an admin, so they are not listed here.",
-            ),
+            Line::from("Not listed. macOS shows apps that open at login only to an admin."),
             Line::from(vec![
                 Span::raw("o").fg(visual::ACCENT).bold(),
-                Span::raw(" opens them in System Settings, where you can turn them off."),
+                Span::raw(" opens them in System Settings, to turn them off there."),
             ]),
         ];
         if let Some(listing) = self.listing() {
@@ -572,7 +601,7 @@ impl Startup {
             }
             if listing.from_macos > 0 {
                 login.push(Line::from(format!(
-                    "{} more belong to macOS, and are not listed.",
+                    "{} more belong to macOS. Not listed.",
                     listing.from_macos
                 )));
             }
@@ -585,9 +614,10 @@ impl Startup {
         let mut lines = vec![
             Line::from("Turning off").style(visual::HEADING),
             Line::from(vec![
-                Span::raw("Select one of your launch agents and press "),
                 Span::raw("t").fg(visual::ACCENT).bold(),
-                Span::raw(". neet asks first, and never changes its plist."),
+                Span::raw(
+                    " on one of your launch agents. A question shows first, and the plist is never changed.",
+                ),
             ]),
         ];
         let Some(listing) = self.listing() else {
@@ -605,9 +635,9 @@ impl Startup {
             .collect();
         off.sort_unstable();
         if off.is_empty() {
-            lines.push(Line::from("No completed turn off actions are recorded."));
+            lines.push(Line::from("Nothing turned off here yet."));
         } else {
-            lines.push(Line::from("Turned off by neet, t turns each back on:"));
+            lines.push(Line::from("Turned off here. t turns each back on:"));
             for (name, day) in off {
                 lines.push(Line::from(vec![
                     Span::raw(format!("  {name}  ")).yellow(),
@@ -757,9 +787,19 @@ impl Startup {
             let about = vec![self.about(), self.turning(), Self::legend()];
             match selected {
                 Some(item) => {
-                    let lines = self.details(&item, usize::from(side.width.saturating_sub(4)));
-                    let height = (visual::wrapped_rows(&lines, side.width.saturating_sub(4)) + 2)
-                        .min(side.height);
+                    // As tall as the longest item's details, so the boxes
+                    // below stay put while the selection moves
+                    let inner = side.width.saturating_sub(4);
+                    let tallest = self
+                        .listing()
+                        .into_iter()
+                        .flat_map(|listing| &listing.items)
+                        .map(|item| {
+                            visual::wrapped_rows(&self.details(item, usize::from(inner)), inner)
+                        })
+                        .max()
+                        .unwrap_or(1);
+                    let height = (tallest + 2).min(side.height * 3 / 5);
                     let [details, below] =
                         Layout::vertical([Constraint::Length(height), Constraint::Fill(1)])
                             .areas(side);
@@ -782,6 +822,53 @@ impl Startup {
             }
             _ => self.draw_table(frame, body),
         }
+    }
+
+    /// `Enter`: what the selected item's plist runs, when, and where it
+    /// writes
+    fn show_inside(&mut self) {
+        let Some(item) = self.selected() else {
+            return;
+        };
+        let name = item.name.clone();
+        let is_plist = item.file.extension().is_some_and(|ext| ext == "plist");
+        let mut lines = Vec::new();
+        if is_plist {
+            match startup::facts(&item.file) {
+                Ok(facts) if facts.is_empty() => {
+                    lines.push(Line::from("The plist is empty, so it does nothing.").yellow());
+                }
+                Ok(facts) => {
+                    for (label, value) in facts {
+                        lines.extend(visual::hanging(
+                            vec![Span::raw(format!("{label:<9}")).bold()],
+                            9,
+                            &value,
+                            ratatui::style::Style::default(),
+                            64,
+                        ));
+                    }
+                }
+                Err(error) => {
+                    lines.push(Line::from(format!("The plist could not be read: {error}")).red());
+                }
+            }
+        } else {
+            lines.push(Line::from(match &item.app {
+                Some(app) => format!("A helper inside {app}. It has no plist of its own."),
+                None => "A helper inside an app. It has no plist of its own.".to_string(),
+            }));
+            if let Some(program) = &item.program {
+                lines.extend(visual::hanging(
+                    vec![Span::raw(format!("{:<9}", "Runs")).bold()],
+                    9,
+                    &self.tilde(program),
+                    ratatui::style::Style::default(),
+                    64,
+                ));
+            }
+        }
+        self.inside = Some((name, lines));
     }
 
     /// Opens Login Items in System Settings.
@@ -927,7 +1014,7 @@ impl Screen for Startup {
                 title: "Startup",
                 doing: "Looking for startup programs",
                 progress: format!("{}s", started.elapsed().as_secs()),
-                note: "Nothing is changed while neet looks.",
+                note: "Looking changes nothing.",
             }
             .draw(frame, area);
             return;
@@ -942,6 +1029,11 @@ impl Screen for Startup {
                 Turn::On => ("Turn back on", "turn it on", visual::ACCENT),
             };
             tools::ask(frame, area, title, self.question(asked), yes, color);
+        } else if let Some((name, lines)) = &self.inside {
+            let mut lines = lines.clone();
+            lines.push(Line::default());
+            lines.push(Line::from("Press any key to go on."));
+            tools::message(frame, area, name, lines, visual::ACCENT);
         } else if let Some(note) = &self.note {
             let mut lines = note.lines.clone();
             lines.push(Line::default());
@@ -966,10 +1058,28 @@ impl Screen for Startup {
             }
             return Action::None;
         }
-        if self.note.take().is_some() {
+        if self.note.take().is_some() || self.inside.take().is_some() {
+            return Action::None;
+        }
+        if self.typing {
+            match key.code {
+                KeyCode::Enter => self.typing = false,
+                KeyCode::Backspace => {
+                    self.find.pop();
+                }
+                KeyCode::Char(c) => self.find.push(c),
+                _ => {}
+            }
+            self.select_first();
             return Action::None;
         }
         match key.code {
+            KeyCode::Enter => self.show_inside(),
+            KeyCode::Char('/') => {
+                self.typing = true;
+                self.find.clear();
+                self.select_first();
+            }
             KeyCode::Char('t') => self.ask_turn(),
             KeyCode::Up | KeyCode::Char('k') => self.step(false),
             KeyCode::Down | KeyCode::Char('j') => self.step(true),
@@ -984,14 +1094,25 @@ impl Screen for Startup {
     }
 
     fn back(&mut self) -> Action {
-        if self.asked.take().is_some() || self.note.take().is_some() {
+        if self.asked.take().is_some() || self.note.take().is_some() || self.inside.take().is_some()
+        {
+            return Action::None;
+        }
+        if self.typing || !self.find.is_empty() {
+            self.typing = false;
+            self.find.clear();
+            self.select_first();
             return Action::None;
         }
         Action::Back
     }
 
     fn is_dialog(&self) -> bool {
-        self.asked.is_some() || self.note.is_some()
+        self.asked.is_some() || self.note.is_some() || self.inside.is_some()
+    }
+
+    fn takes_text(&self) -> bool {
+        self.typing
     }
 
     fn hints(&self) -> &'static str {
@@ -999,10 +1120,12 @@ impl Screen for Startup {
             "r look again · esc home · ? help"
         } else if self.asked.is_some() {
             "y go ahead · n or esc go back"
-        } else if self.note.is_some() {
+        } else if self.note.is_some() || self.inside.is_some() {
             "any key go on"
+        } else if self.typing {
+            "type a name · enter done · esc clear"
         } else {
-            "↑↓ move · t turn off or on · o login items · f show in Finder · r look again · esc home · ? help"
+            "↑↓ move · enter what it runs · t turn off or on · / find · o login items · f Finder · r look again · esc home · ? help"
         }
     }
 
@@ -1010,6 +1133,8 @@ impl Screen for Startup {
         &[
             ("↑↓", "Move between programs"),
             ("g G", "First or last program"),
+            ("Enter", "Show what the plist runs, when, and where it logs"),
+            ("/", "Find a program by name, label, or app. Esc clears it"),
             (
                 "t",
                 "Turn your own launch agent off, or back on, after a question",
@@ -1218,7 +1343,7 @@ mod tests {
         assert!(text.contains("· not loaded !"), "{text}");
         assert!(text.contains("off"));
         assert!(text.contains("3 more belong to macOS"));
-        assert!(text.contains("o opens them in System Settings"));
+        assert!(text.contains("o opens them in System Settings"), "{text}");
         assert!(
             text.contains("Launch daemons                  1 █  · 1 running"),
             "{text}"
@@ -1245,10 +1370,7 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("! Its plist is empty"), "{text}");
-        assert!(
-            text.contains("Press t to turn it off. Its plist stays"),
-            "{text}"
-        );
+        assert!(text.contains("t turns it off. Its plist stays"), "{text}");
 
         press(&mut screen, KeyCode::Char('G'));
         let text = render(&mut screen, 140, 40);
@@ -1306,6 +1428,78 @@ mod tests {
         press(&mut screen, KeyCode::Char('t'));
         let text = render(&mut screen, 140, 40);
         assert!(text.contains("could not be read"), "{text}");
+    }
+
+    #[test]
+    fn enter_shows_what_a_plist_runs() {
+        let dir = tempfile::tempdir().unwrap();
+        let plist = dir.path().join("com.example.sync.plist");
+        std::fs::write(
+            &plist,
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>Label</key><string>com.example.sync</string>
+<key>ProgramArguments</key><array><string>/usr/local/bin/sync</string><string>--quiet</string></array>
+<key>StartInterval</key><integer>1800</integer>
+<key>StandardOutPath</key><string>/tmp/sync.log</string>
+</dict></plist>"#,
+        )
+        .unwrap();
+        let mut listing = sample();
+        listing.items[1].file = plist;
+        let mut screen = Startup::from_listing(PathBuf::from("/home"), listing);
+        press(&mut screen, KeyCode::Down);
+        press(&mut screen, KeyCode::Enter);
+        assert!(screen.is_dialog());
+        let text = render(&mut screen, 140, 40);
+        assert!(
+            text.contains("Runs     /usr/local/bin/sync --quiet"),
+            "{text}"
+        );
+        assert!(text.contains("Starts   every 30 min"), "{text}");
+        assert!(text.contains("Log      /tmp/sync.log"), "{text}");
+        press(&mut screen, KeyCode::Char('x'));
+        assert!(!screen.is_dialog());
+
+        // A helper inside an app has no plist to read.
+        press(&mut screen, KeyCode::Char('g'));
+        press(&mut screen, KeyCode::Enter);
+        let text = render(&mut screen, 140, 40);
+        assert!(text.contains("A helper inside Docker"), "{text}");
+    }
+
+    #[test]
+    fn slash_finds_programs_and_esc_clears_it() {
+        let mut screen = Startup::from_listing(PathBuf::from("/home"), sample());
+        press(&mut screen, KeyCode::Char('/'));
+        assert!(screen.takes_text());
+        for c in "google".chars() {
+            press(&mut screen, KeyCode::Char(c));
+        }
+        press(&mut screen, KeyCode::Enter);
+        let text = render(&mut screen, 140, 40);
+        assert!(text.contains("find: google"), "{text}");
+        assert!(text.contains("com.google.keystone.agent"), "{text}");
+        assert!(!text.contains("com.docker.vmnetd"), "{text}");
+        assert_eq!(
+            screen.selected().unwrap().name,
+            "com.google.GoogleUpdater.wake"
+        );
+        assert!(matches!(screen.back(), Action::None));
+        assert!(render(&mut screen, 140, 40).contains("com.docker.vmnetd"));
+        assert!(matches!(screen.back(), Action::Back));
+    }
+
+    #[test]
+    fn the_boxes_stay_put_while_the_selection_moves() {
+        let mut screen = Startup::from_listing(PathBuf::from("/home"), sample());
+        let top = |text: &str| text.lines().position(|line| line.contains("Open at login"));
+        let first = top(&render(&mut screen, 140, 40));
+        assert!(first.is_some());
+        for _ in 0..4 {
+            press(&mut screen, KeyCode::Down);
+            assert_eq!(top(&render(&mut screen, 140, 40)), first);
+        }
     }
 
     #[test]
