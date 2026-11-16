@@ -231,13 +231,11 @@ fn row(
     ])
 }
 
-fn draw_folder(frame: &mut Frame, area: Rect, tree: &Tree, browser: &mut Browser) {
+/// The folder's rows, with its size & item count on the bottom border when
+/// `summary` is set, that is when no box below says them
+fn draw_folder(frame: &mut Frame, area: Rect, tree: &Tree, browser: &mut Browser, summary: bool) {
     let folder = tree.get(browser.current);
-    let sort = format!(
-        " By {} · s sorts by {} ",
-        browser.sort.label(),
-        browser.sort.next().label()
-    );
+    let sort = format!(" By {} ", browser.sort.label());
     let title = format!(
         " Disk · {} ",
         format::shorten_path(
@@ -247,16 +245,17 @@ fn draw_folder(frame: &mut Frame, area: Rect, tree: &Tree, browser: &mut Browser
                 .max(10),
         )
     );
-    let summary = format!(
-        " {} · {} ",
-        items(folder.total_items),
-        format::size(folder.total_size)
-    );
-    let block = super::visual::block()
+    let mut block = super::visual::block()
         .title(title)
         .title(Line::from(sort).right_aligned())
-        .title_bottom(Line::from(summary))
         .padding(Padding::horizontal(1));
+    if summary {
+        block = block.title_bottom(Line::from(format!(
+            " {} · {} ",
+            items(folder.total_items),
+            format::size(folder.total_size)
+        )));
+    }
 
     if browser.rows.is_empty() {
         frame.render_widget(Paragraph::new("Empty folder.").block(block), area);
@@ -276,52 +275,114 @@ fn draw_folder(frame: &mut Frame, area: Rect, tree: &Tree, browser: &mut Browser
     frame.render_stateful_widget(table, area, &mut browser.list);
 }
 
-/// The selected item on the right, what is inside it when it is a folder,
-/// and the steps, `with_steps` when they are not on the left already
+/// The selected item on the right: its details, what is inside it, and the
+/// disk. The details & disk boxes keep one height, and Inside takes the
+/// rest, so moving between rows never resizes the boxes.
 fn draw_preview(
     frame: &mut Frame,
     area: Rect,
     tree: &Tree,
     browser: &Browser,
     disk: Option<&neet_core::disk::DiskSpace>,
-    with_steps: bool,
+    bottom: u16,
 ) {
     let Some(id) = browser.selected() else {
         frame.render_widget(super::visual::block(), area);
         return;
     };
     let width = usize::from(area.width.saturating_sub(4));
-    let mut sections = vec![about(tree, id, browser, width)];
-    if tree.get(id).kind == NodeKind::Directory {
-        sections.push(inside(tree, id, browser.sort, width));
+    let details = about(tree, id, browser, width);
+    let mac = this_mac(disk, tree.get(tree.root()).total_size, width);
+    let details_height = height_of(&details, area.width);
+    let mac_height = bottom;
+    let name = format::shorten_middle(&display_name(tree, id), width.saturating_sub(2));
+    let details_block = super::visual::block()
+        .title(format!(" {name} "))
+        .padding(Padding::horizontal(1));
+
+    // Leave out This Mac, then Inside, when the screen is too short
+    let with_mac = area.height >= details_height + mac_height + 4;
+    let with_inside = area.height >= details_height + 4;
+    if !with_inside {
+        frame.render_widget(
+            Paragraph::new(details)
+                .wrap(ratatui::widgets::Wrap { trim: false })
+                .block(details_block),
+            area,
+        );
+        return;
     }
-    sections.push(this_mac(disk, tree.get(tree.root()).total_size, width));
-    if with_steps {
-        sections.push(steps(width));
-    }
-    super::visual::sections(
-        frame,
-        area,
-        &format::shorten_middle(&display_name(tree, id), width.saturating_sub(2)),
-        sections,
+    let [top, middle, bottom] = Layout::vertical([
+        Constraint::Length(details_height),
+        Constraint::Fill(1),
+        Constraint::Length(if with_mac { mac_height } else { 0 }),
+    ])
+    .areas(area);
+    frame.render_widget(
+        Paragraph::new(details)
+            .wrap(ratatui::widgets::Wrap { trim: false })
+            .block(details_block),
+        top,
     );
+    let inside_block = super::visual::block()
+        .title(" Inside ")
+        .padding(Padding::horizontal(1));
+    let rows = usize::from(middle.height.saturating_sub(2));
+    let inside = if tree.get(id).kind == NodeKind::Directory {
+        inside(tree, id, browser.sort, width, rows)
+    } else {
+        Vec::new()
+    };
+    if inside.is_empty() {
+        let note = if tree.get(id).kind == NodeKind::Directory {
+            "Empty folder."
+        } else {
+            "Not a folder."
+        };
+        let inner = inside_block.inner(middle);
+        frame.render_widget(inside_block, middle);
+        let [line] = Layout::vertical([Constraint::Length(1)])
+            .flex(ratatui::layout::Flex::Center)
+            .areas(inner);
+        frame.render_widget(Paragraph::new(note).centered(), line);
+    } else {
+        frame.render_widget(Paragraph::new(inside).block(inside_block), middle);
+    }
+    if with_mac {
+        frame.render_widget(
+            Paragraph::new(mac).block(
+                super::visual::block()
+                    .title(" This Mac ")
+                    .padding(Padding::horizontal(1)),
+            ),
+            bottom,
+        );
+    }
 }
 
-/// What the selected folder holds, largest first, with a bar against the
-/// folder, as many as fit
-fn inside(tree: &Tree, id: NodeId, sort: Sort, width: usize) -> Vec<Line<'static>> {
+/// How tall a box is with `lines` in it, borders included
+fn height_of(lines: &[Line<'_>], width: u16) -> u16 {
+    super::visual::wrapped_rows(lines, width.saturating_sub(4)) + 2
+}
+
+/// What the selected folder holds, in the current sort, with a bar against
+/// the folder, as many as fit in `room` rows
+fn inside(tree: &Tree, id: NodeId, sort: Sort, width: usize, room: usize) -> Vec<Line<'static>> {
     let node = tree.get(id);
     let rows = sorted_children(tree, id, sort);
-    let mut lines =
-        vec![Line::from(format!("Inside · by {}", sort.label())).style(super::visual::HEADING)];
-    if rows.is_empty() {
-        lines.push(Line::from("Nothing, the folder is empty."));
-        return lines;
-    }
-    let room = width.saturating_sub(13 + BAR_WIDTH);
-    for &child in rows.iter().take(MAX_INSIDE) {
+    let shown = if rows.len() > room {
+        room.saturating_sub(1)
+    } else {
+        rows.len()
+    };
+    let name_room = width.saturating_sub(13 + BAR_WIDTH);
+    let mut lines = Vec::new();
+    for &child in rows.iter().take(shown) {
         let size = tree.get(child).total_size;
-        let name = Span::raw(format::shorten_middle(&display_name(tree, child), room));
+        let name = Span::raw(format::shorten_middle(
+            &display_name(tree, child),
+            name_room,
+        ));
         lines.push(Line::from(vec![
             format::size_span(size, format!("{:>9}  ", format::size(size))),
             format::size_bar(size, node.total_size, BAR_WIDTH),
@@ -333,29 +394,21 @@ fn inside(tree: &Tree, id: NodeId, sort: Sort, width: usize) -> Vec<Line<'static
             },
         ]));
     }
-    if rows.len() > MAX_INSIDE {
+    if rows.len() > shown && shown > 0 {
         lines.push(Line::from(format!(
             "{:>9}  & {} more",
             "",
-            format::count(u64::try_from(rows.len() - MAX_INSIDE).unwrap_or(u64::MAX))
+            format::count(u64::try_from(rows.len() - shown).unwrap_or(u64::MAX))
         )));
     }
     lines
 }
 
-/// The folder being listed: where it is, its size, how many items it
-/// holds, and its largest item
+/// The folder being listed: its size, how many items it holds, and its
+/// largest item
 fn this_folder(tree: &Tree, browser: &Browser, width: usize) -> Vec<Line<'static>> {
     let folder = tree.get(browser.current);
     let mut lines = vec![
-        field(
-            "Location",
-            Span::raw(format::shorten_path(
-                &display_path(tree, browser.current),
-                width.saturating_sub(LABEL),
-            ))
-            .fg(super::visual::ACCENT),
-        ),
         field(
             "Size",
             format::size_span(folder.total_size, format::size(folder.total_size)),
@@ -378,38 +431,13 @@ fn this_folder(tree: &Tree, browser: &Browser, width: usize) -> Vec<Line<'static
         );
         lines.push(field("Largest", Span::raw(format!("{name}{share}"))));
     }
-    lines
-}
-
-/// At most this many items are listed in the Inside box
-const MAX_INSIDE: usize = 12;
-
-/// How to move around, and that nothing is removed here
-fn steps(width: usize) -> Vec<Line<'static>> {
-    let mut lines = vec![Line::from("Steps").style(super::visual::HEADING)];
-    for (number, text) in [
-        "Press → or Enter to open a folder.",
-        "Press ← to go back up.",
-        "Press s to sort by size, name or items.",
-        "Press t to see this folder as boxes sized by space.",
-        "Press b to see where space outside your home folder goes.",
-        "Disk only shows files. Clean them with Deep Clean, Remove App or Large Files.",
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        lines.extend(super::visual::hanging(
-            vec![
-                Span::raw(format!("{}. ", number + 1))
-                    .fg(super::visual::ACCENT)
-                    .bold(),
-            ],
-            3,
-            text,
-            ratatui::style::Style::default(),
-            width,
-        ));
-    }
+    lines.extend(super::visual::hanging(
+        Vec::new(),
+        0,
+        "View only. Clean in Deep Clean, Remove App, or Large Files.",
+        ratatui::style::Style::default(),
+        width,
+    ));
     lines
 }
 
@@ -429,7 +457,7 @@ fn this_mac(
     home: u64,
     width: usize,
 ) -> Vec<Line<'static>> {
-    let mut lines = vec![Line::from("This Mac").style(super::visual::HEADING)];
+    let mut lines = Vec::new();
     let Some(disk) = disk else {
         lines.push(Line::from("Disk space unavailable.").yellow());
         return lines;
@@ -481,48 +509,39 @@ fn field(label: &str, value: Span<'static>) -> Line<'static> {
     Line::from(vec![Span::raw(format!("{label:<LABEL$}")).bold(), value])
 }
 
-/// What the selected item is, how big, and whether neet can clean it, with
-/// values fitted to `width`
+/// What the selected item is, how big, and whether it can be cleaned, with
+/// values fitted to `width`. Always the same rows, and room for a two line
+/// note, so the box keeps its height from row to row.
 fn about(tree: &Tree, id: NodeId, browser: &Browser, width: usize) -> Vec<Line<'static>> {
     let node = tree.get(id);
     let parent_total = tree.get(browser.current).total_size;
-    let path = display_path(tree, id);
-    let folder = path.rsplit_once('/').map_or("~", |(parent, _)| parent);
     let mut lines = vec![
         field(
-            "Folder",
-            Span::raw(format::shorten_path(folder, width.saturating_sub(LABEL)))
-                .fg(super::visual::ACCENT),
+            "Path",
+            Span::raw(format::shorten_path(
+                &display_path(tree, id),
+                width.saturating_sub(LABEL),
+            ))
+            .fg(super::visual::ACCENT),
         ),
-        field(
-            "Size",
+        Line::from(vec![
+            Span::raw(format!("{:<LABEL$}", "Size")).bold(),
             format::size_span(node.total_size, format::size(node.total_size)),
-        ),
-        field(
-            "Share",
-            Span::raw(format!(
-                "{} of {}",
-                share(node.total_size, parent_total),
-                if browser.current == tree.root() {
-                    "your home folder"
-                } else {
-                    "this folder"
-                }
-            )),
-        ),
+            Span::raw(format!(" · {}", share(node.total_size, parent_total))),
+        ]),
     ];
     let mut hint = meaning(tree, id);
     match node.kind {
         NodeKind::Directory => {
             lines.push(field("Items", Span::raw(format::count(node.total_items))));
         }
-        NodeKind::Symlink => lines.push(field("Type", Span::raw("a shortcut, not followed"))),
+        NodeKind::Symlink => lines.push(field("Type", Span::raw("link, not followed"))),
         NodeKind::File | NodeKind::Other => {
             let name = node.name.to_string_lossy();
             let (kind, about) = super::large::kind_of(&name);
             // Quick Clean can prune & reset Docker, so say where to go
             let about = if name == "Docker.raw" {
-                Some("Docker's disk image. Clear it from Quick Clean, Docker disk image.")
+                Some("Docker's disk. Clear it in Quick Clean.")
             } else {
                 about
             };
@@ -530,133 +549,108 @@ fn about(tree: &Tree, id: NodeId, browser: &Browser, width: usize) -> Vec<Line<'
             hint = hint.or(about);
         }
     }
-    if let Some(changed) = node
+    let changed = node
         .modified
         .and_then(|modified| SystemTime::now().duration_since(modified).ok())
-    {
-        lines.push(field("Changed", Span::raw(format::age(changed))));
-    }
-    let mut cleanup = field("Cleanup", Span::raw(""));
-    cleanup
+        .map_or_else(|| "unknown".to_string(), format::age);
+    lines.push(field("Changed", Span::raw(changed)));
+    let mut clean = field("Clean", Span::raw(""));
+    clean
         .spans
         .extend(cleanable(&tree.path(id), browser.roots.as_ref()).spans);
-    lines.push(cleanup);
-    if let Some(hint) = hint {
-        lines.push(Line::default());
-        lines.extend(super::visual::hanging(
-            Vec::new(),
-            0,
-            hint,
-            ratatui::style::Style::default(),
-            width,
-        ));
+    lines.push(clean);
+    lines.push(Line::default());
+    let mut hint_lines = hint
+        .map(|hint| {
+            super::visual::hanging(Vec::new(), 0, hint, ratatui::style::Style::default(), width)
+        })
+        .unwrap_or_default();
+    while hint_lines.len() < 2 {
+        hint_lines.push(Line::default());
     }
+    lines.extend(hint_lines);
     lines
 }
 
-/// Whether neet cleans an item, in one colored line.
+/// Whether an item can be cleaned, in one short colored word or two.
 fn cleanable(path: &std::path::Path, roots: Option<&CleanupRoots>) -> Line<'static> {
     let Some(roots) = roots else {
-        return Line::from("unknown, the home folder could not be read");
+        return Line::from("unknown");
     };
     match roots.validate_deletable(path) {
         Ok(_) => Line::from(vec![
             Span::raw("✓ ").green().bold(),
-            Span::raw("in a folder neet cleans").green(),
+            Span::raw("yes").green(),
         ]),
         Err(SafetyError::IsRoot) => Line::from(vec![
             Span::raw("◆ ").yellow(),
-            Span::raw("a folder neet cleans; only what's inside can go").yellow(),
+            Span::raw("what's inside").yellow(),
         ]),
         Err(SafetyError::Protected) => Line::from(vec![
             Span::raw("✗ ").red().bold(),
-            Span::raw("protected, neet never removes it").red(),
+            Span::raw("protected").red(),
         ]),
-        Err(_) => Line::from("not a folder neet cleans"),
+        Err(_) => Line::from("no"),
     }
 }
 
-/// What well known folders in the home folder hold, in plain words.
+/// What well known folders in the home folder hold, in a few words.
 const MEANINGS: &[(&str, &str)] = &[
-    (
-        "Library",
-        "Settings, caches, and data that apps keep for you.",
-    ),
+    ("Library", "App settings, caches, and data."),
     (
         "Library/Caches",
-        "Files apps can make again. Deep Clean empties these.",
+        "Files apps can make again. Deep Clean empties it.",
     ),
     (
         "Library/Application Support",
-        "Data apps keep, such as saved work, downloads, and settings.",
+        "App data: saved work, downloads, settings.",
     ),
     (
         "Library/Containers",
-        "Data of apps that run in a sandbox, such as App Store apps and Docker.",
+        "Data of sandboxed apps, like App Store apps and Docker.",
     ),
     (
         "Library/Group Containers",
-        "Data shared between apps from the same maker.",
+        "Data shared by apps from one maker.",
     ),
     (
         "Library/Developer",
-        "Xcode builds, simulators, and device support files.",
+        "Xcode builds, simulators, and device support.",
     ),
-    (
-        "Library/Logs",
-        "Logs apps write. Deep Clean can empty old ones.",
-    ),
-    ("Library/Messages", "Your Messages history and attachments."),
-    ("Library/Mail", "Your Mail messages and attachments."),
+    ("Library/Logs", "App logs. Deep Clean empties old ones."),
+    ("Library/Messages", "Messages history and attachments."),
+    ("Library/Mail", "Mail messages and attachments."),
     (
         "Library/Mobile Documents",
-        "iCloud Drive files kept on this Mac.",
+        "iCloud Drive files on this Mac.",
     ),
     (
         "Library/CloudStorage",
-        "Files from cloud services, such as Dropbox or Google Drive.",
+        "Dropbox, Google Drive, and other cloud files.",
     ),
-    (
-        "Library/Saved Application State",
-        "Windows apps reopen where you left off.",
-    ),
-    ("Documents", "Your own files. neet never touches them."),
-    ("Desktop", "Your own files. neet never touches them."),
-    (
-        "Downloads",
-        "Files you downloaded. neet never touches them.",
-    ),
-    ("Pictures", "Your photos, including the Photos library."),
-    ("Music", "Your music and the Music library."),
+    ("Library/Saved Application State", "Windows apps reopen."),
+    ("Documents", "Your files. Never cleaned."),
+    ("Desktop", "Your files. Never cleaned."),
+    ("Downloads", "Your downloads. Never cleaned."),
+    ("Pictures", "Photos and the Photos library."),
+    ("Music", "Music and the Music library."),
     ("Movies", "Your videos."),
-    (".Trash", "Your Trash. Emptying it frees this space."),
-    (
-        ".npm",
-        "npm, the Node.js package manager. Mostly its download cache.",
-    ),
-    (
-        ".cargo",
-        "Rust's package manager: downloaded packages and installed programs.",
-    ),
-    (".rustup", "Rust versions installed by rustup."),
-    (".pyenv", "Python versions installed by pyenv."),
-    (".cache", "Caches some command line tools keep."),
-    (".config", "Settings for command line tools."),
-    (
-        ".local",
-        "Programs and data some command line tools install.",
-    ),
+    (".Trash", "The Trash. Empty it to free this space."),
+    (".npm", "npm's download cache."),
+    (".cargo", "Rust packages and installed tools."),
+    (".rustup", "Rust versions."),
+    (".pyenv", "Python versions."),
+    (".cache", "Command line tool caches."),
+    (".config", "Command line tool settings."),
+    (".local", "Command line tool programs and data."),
     (
         ".docker",
-        "Docker settings. Its disk image is in Library/Containers.",
+        "Docker settings. Its disk is in Library/Containers.",
     ),
-    (".vscode", "Visual Studio Code extensions."),
-    (
-        ".gradle",
-        "Gradle, a Java build tool: downloaded packages and caches.",
-    ),
-    (".m2", "Maven, a Java build tool: downloaded packages."),
-    (".ssh", "Your SSH keys. neet never touches them."),
+    (".vscode", "VS Code extensions."),
+    (".gradle", "Gradle packages and caches."),
+    (".m2", "Maven packages."),
+    (".ssh", "SSH keys. Never cleaned."),
 ];
 
 /// What a well known folder holds, if `id` is one.
@@ -712,28 +706,38 @@ impl Screen for Disk {
                     let [folder, preview] =
                         Layout::horizontal([Constraint::Percentage(55), Constraint::Fill(1)])
                             .areas(area);
-                    // The table, only as tall as its rows, and boxes about
-                    // the folder below it, when there is room
-                    let table = u16::try_from(browser.rows.len().max(1) + 3).unwrap_or(u16::MAX);
-                    let below = folder.height >= table.saturating_add(10);
-                    if below {
+                    // This folder & This Mac share one height, so the bottom
+                    // boxes line up, and the table fills the rest
+                    let left = usize::from(folder.width.saturating_sub(4));
+                    let right = usize::from(preview.width.saturating_sub(4));
+                    let this = this_folder(tree, browser, left);
+                    let mac = this_mac(
+                        context.disk.as_ref(),
+                        tree.get(tree.root()).total_size,
+                        right,
+                    );
+                    let bottom = height_of(&this, folder.width).max(height_of(&mac, preview.width));
+                    if folder.height >= bottom + 6 {
                         let [table, rest] =
-                            Layout::vertical([Constraint::Length(table), Constraint::Fill(1)])
+                            Layout::vertical([Constraint::Fill(1), Constraint::Length(bottom)])
                                 .areas(folder);
-                        draw_folder(frame, table, tree, browser);
-                        let width = usize::from(rest.width.saturating_sub(4));
-                        super::visual::sections(
-                            frame,
+                        draw_folder(frame, table, tree, browser, false);
+                        frame.render_widget(
+                            Paragraph::new(this)
+                                .wrap(ratatui::widgets::Wrap { trim: false })
+                                .block(
+                                    super::visual::block()
+                                        .title(" This folder ")
+                                        .padding(Padding::horizontal(1)),
+                                ),
                             rest,
-                            "This folder",
-                            vec![this_folder(tree, browser, width), steps(width)],
                         );
                     } else {
-                        draw_folder(frame, folder, tree, browser);
+                        draw_folder(frame, folder, tree, browser, true);
                     }
-                    draw_preview(frame, preview, tree, browser, context.disk.as_ref(), !below);
+                    draw_preview(frame, preview, tree, browser, context.disk.as_ref(), bottom);
                 } else {
-                    draw_folder(frame, area, tree, browser);
+                    draw_folder(frame, area, tree, browser, true);
                 }
                 return;
             }
@@ -902,7 +906,7 @@ mod tests {
     }
 
     fn render(disk: &mut Disk, scan: &ScanStatus, width: u16) -> String {
-        let mut terminal = Terminal::new(TestBackend::new(width, 12)).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(width, 24)).unwrap();
         let context = Context {
             scan,
             disk: None,
@@ -1003,10 +1007,10 @@ mod tests {
         let roots = CleanupRoots::new(dir.path()).expect("roots should be made");
         let status = |path: &str| cleanable(&dir.path().join(path), Some(&roots)).to_string();
 
-        assert!(status("Library/Caches/app").contains("in a folder neet cleans"));
-        assert!(status("Library/Caches").contains("only what's inside can go"));
+        assert!(status("Library/Caches/app").contains("yes"));
+        assert!(status("Library/Caches").contains("what's inside"));
         assert!(status("Documents").contains("protected"));
-        assert!(status("notes").contains("not a folder neet cleans"));
+        assert_eq!(status("notes"), "no");
     }
 
     #[test]
