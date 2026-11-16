@@ -23,15 +23,6 @@ use super::pick::Pick;
 use super::scan::ScanStatus;
 use super::tools::{DockerSpace, Simulators, Trash};
 
-/// Below this width the largest items are left out.
-const MIN_SIDE_WIDTH: u16 = 130;
-
-/// Width of the table and the box under it, when the largest items are beside them
-const TABLE_WIDTH: u16 = 86;
-
-/// From this height the table's rows stand a row apart.
-const TALL: u16 = 45;
-
 /// What the background work found, once it is done
 enum Asked {
     Waiting(Receiver<io::Result<Option<Finding>>>),
@@ -81,7 +72,7 @@ const ITEMS: [Item; 8] = [
 ];
 
 /// Width of the bar that shows each row's share of everything found
-const SHARE_BAR: usize = 14;
+const SHARE_BAR: u16 = 10;
 
 /// What a row shows: found, still looking, or nothing
 enum Status {
@@ -134,34 +125,29 @@ fn who(item: Item) -> Who {
     }
 }
 
+/// How an item is cleared, short, in the color the screen uses for it
 fn who_span(who: Who) -> Span<'static> {
     match who {
-        Who::Neet => Span::raw("neet").green(),
-        Who::Tool => Span::raw("neet, permanently").red(),
-        Who::You => Span::raw("you").yellow(),
-        Who::Mac => Span::raw("macOS").fg(super::visual::ACCENT),
-        Who::Nobody => Span::raw("no one").magenta(),
+        Who::Neet => Span::raw("to Trash").green(),
+        Who::Tool => Span::raw("deleted").red(),
+        Who::You => Span::raw("by you").yellow(),
+        Who::Mac => Span::raw("by macOS").fg(super::visual::ACCENT),
+        Who::Nobody => Span::raw("kept").magenta(),
     }
 }
 
 /// What the item is
 fn about(item: Item) -> &'static str {
     match item {
-        Item::Rules => "Saved files & logs from apps & tools.",
-        Item::Clutter(Kind::Trash) => "Files in the Trash still use space until you empty it.",
-        Item::Clutter(Kind::Installers) => {
-            "App installers in Downloads. You rarely need them after installing."
-        }
-        Item::Clutter(Kind::BuildFolders) => {
-            "Build files in your code projects. They come back when you build again."
-        }
-        Item::Clutter(Kind::DockerImage) => {
-            "The file Docker keeps all its data in. It does not shrink by itself."
-        }
-        Item::Clutter(Kind::SimulatorRuntimes) => "iPhone & iPad simulators that Xcode downloaded.",
-        Item::Clutter(Kind::TempFiles) => "Temporary files apps left behind.",
+        Item::Rules => "App and tool caches and logs.",
+        Item::Clutter(Kind::Trash) => "Files in the Trash still use space.",
+        Item::Clutter(Kind::Installers) => "App installers in Downloads.",
+        Item::Clutter(Kind::BuildFolders) => "node_modules and target folders in your projects.",
+        Item::Clutter(Kind::DockerImage) => "Docker's disk. It never shrinks by itself.",
+        Item::Clutter(Kind::SimulatorRuntimes) => "iPhone and iPad simulators from Xcode.",
+        Item::Clutter(Kind::TempFiles) => "Temp files apps left behind.",
         Item::Clutter(Kind::SimulatorDownloads) => {
-            "Simulator downloads macOS kept after their runtime was removed."
+            "Downloads macOS kept after a runtime was removed."
         }
     }
 }
@@ -169,10 +155,10 @@ fn about(item: Item) -> &'static str {
 /// Where the item's files are
 fn place(item: Item) -> &'static str {
     match item {
-        Item::Rules => "~/Library/Caches, ~/Library/Logs & tool caches like npm & pip.",
+        Item::Rules => "~/Library/Caches, ~/Library/Logs, tool caches",
         Item::Clutter(Kind::Trash) => "~/.Trash",
         Item::Clutter(Kind::Installers) => "~/Downloads",
-        Item::Clutter(Kind::BuildFolders) => "node_modules & target folders in your projects.",
+        Item::Clutter(Kind::BuildFolders) => "Your code projects",
         Item::Clutter(Kind::DockerImage) => "~/Library/Containers/com.docker.docker",
         Item::Clutter(Kind::SimulatorRuntimes) => "/Library/Developer/CoreSimulator",
         Item::Clutter(Kind::TempFiles) => "/private/var/folders",
@@ -183,77 +169,74 @@ fn place(item: Item) -> &'static str {
 /// What changes once the item is cleared
 fn afterwards(item: Item) -> &'static str {
     match item {
-        Item::Rules => "Apps make them again. Some may open a bit slower at first.",
-        Item::Clutter(Kind::Trash) => "The files are gone for good.",
-        Item::Clutter(Kind::Installers) => "Download it again if you ever need it.",
-        Item::Clutter(Kind::BuildFolders) => "Your next build takes a bit longer.",
-        Item::Clutter(Kind::DockerImage) => {
-            "Unused Docker data is deleted. A reset deletes all of it."
-        }
-        Item::Clutter(Kind::SimulatorRuntimes) => "Xcode downloads it again if you need it.",
-        Item::Clutter(Kind::TempFiles) => "Nothing to do. The space comes back by itself.",
-        Item::Clutter(Kind::SimulatorDownloads) => {
-            "macOS never clears them, and protects them, so neet & sudo can't delete them."
-        }
+        Item::Rules => "Apps rebuild them. Some open slower at first.",
+        Item::Clutter(Kind::Trash) => "Emptying is permanent.",
+        Item::Clutter(Kind::Installers) => "Download one again if needed.",
+        Item::Clutter(Kind::BuildFolders) => "The next build takes longer.",
+        Item::Clutter(Kind::DockerImage) => "Prune deletes unused data. Reset deletes all.",
+        Item::Clutter(Kind::SimulatorRuntimes) => "Xcode downloads them again if needed.",
+        Item::Clutter(Kind::TempFiles) => "macOS clears them. A restart clears more.",
+        Item::Clutter(Kind::SimulatorDownloads) => "macOS protects them. They can't be deleted.",
+    }
+}
+
+/// What Enter does on the item
+fn action(item: Item) -> &'static str {
+    match item {
+        Item::Rules => "Enter opens Deep Clean.",
+        Item::Clutter(Kind::BuildFolders | Kind::Installers) => "Enter lists them, all picked.",
+        Item::Clutter(Kind::Trash) => "Enter opens the Trash.",
+        Item::Clutter(Kind::DockerImage) => "Enter opens Docker.",
+        Item::Clutter(Kind::SimulatorRuntimes) => "Enter lists them.",
+        Item::Clutter(Kind::TempFiles) => "Nothing to do.",
+        Item::Clutter(Kind::SimulatorDownloads) => "Enter shows how to reuse one.",
     }
 }
 
 /// Whether clearing the item can be undone, in the color that says so
 fn undo(item: Item) -> Span<'static> {
     match who(item) {
-        Who::Neet => Span::raw("Yes, from the Trash").green(),
-        Who::Tool => Span::raw("No, deleted for good").red(),
+        Who::Neet => Span::raw("✓ from the Trash").green(),
+        Who::Tool => Span::raw("✗ no").red(),
         // Only the Trash is left to you, and emptying it cannot be undone.
-        Who::You => Span::raw("No, once emptied").red(),
-        Who::Mac => Span::raw("Not needed").fg(super::visual::ACCENT),
-        Who::Nobody => Span::raw("Nothing is removed").magenta(),
+        Who::You => Span::raw("✗ no, once emptied").red(),
+        Who::Mac => Span::raw("not needed").fg(super::visual::ACCENT),
+        Who::Nobody => Span::raw("nothing removed").magenta(),
     }
 }
 
-/// The steps that free an item
-fn steps_of(item: Item) -> &'static [&'static str] {
-    match item {
-        Item::Rules => &[
-            "Press Enter to open Deep Clean.",
-            "Press Space to pick what to clean.",
-            "Check the list, then confirm.",
-        ],
-        Item::Clutter(Kind::BuildFolders) => &[
-            "Press Enter to see the folders.",
-            "All are picked. Unpick projects you use.",
-            "Check the list, then confirm.",
-        ],
-        Item::Clutter(Kind::Installers) => &[
-            "Press Enter to see the installers.",
-            "All are picked. Unpick ones to keep.",
-            "Check the list, then confirm.",
-        ],
-        Item::Clutter(Kind::Trash) => &[
-            "Press Enter to see what is in the Trash.",
-            "Press e to empty it, then y to confirm.",
-            "Emptied files are gone for good.",
-        ],
-        Item::Clutter(Kind::DockerImage) => &[
-            "Press Enter to see what Docker uses.",
-            "Confirm to delete unused data.",
-            "Press x to reset Docker fully.",
-        ],
-        Item::Clutter(Kind::SimulatorRuntimes) => &[
-            "Press Enter to see the simulators.",
-            "Press Space to pick ones you don't need.",
-            "Confirm. They are deleted for good.",
-        ],
-        Item::Clutter(Kind::TempFiles) => &[
-            "macOS removes old ones by itself.",
-            "Restarting your Mac clears more.",
-            "Don't delete them yourself.",
-        ],
-        Item::Clutter(Kind::SimulatorDownloads) => &[
-            "Press Enter to see each download.",
-            "Reuse one instead of downloading it again.",
-            "neet never deletes system files.",
-        ],
+/// Width of the labels in the boxes
+const LABEL: usize = 11;
+
+/// A label and its value, lined up with the other labels
+fn field(label: &str, value: Vec<Span<'static>>) -> Line<'static> {
+    let mut spans = vec![Span::raw(format!("{label:<LABEL$}")).bold()];
+    spans.extend(value);
+    Line::from(spans)
+}
+
+/// How tall a box is with `lines` in it, borders included
+fn height_of(lines: &[Line<'_>], width: u16) -> u16 {
+    super::visual::wrapped_rows(lines, width.saturating_sub(4)) + 2
+}
+
+/// `sections` one after another, a blank row apart
+fn joined(sections: Vec<Vec<Line<'static>>>) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    for (index, section) in sections.into_iter().enumerate() {
+        if index > 0 {
+            lines.push(Line::default());
+        }
+        lines.extend(section);
     }
+    lines
+}
+
+/// A box with `title`, as the other boxes on the screen
+fn titled(title: &str) -> ratatui::widgets::Block<'static> {
+    super::visual::block()
+        .title(format!(" {title} "))
+        .padding(Padding::horizontal(1))
 }
 
 /// Everything taking space that can be cleared, in one table: what neet
@@ -424,9 +407,8 @@ impl QuickClean {
         ITEMS[self.table.selected().unwrap_or(0).min(ITEMS.len() - 1)]
     }
 
-    /// The table. With `spaced`, a blank row sits under each row, for a tall
-    /// screen.
-    fn draw_table(&mut self, frame: &mut Frame, area: Rect, context: &Context, spaced: bool) {
+    /// The table, its rows `gap` blank rows apart, so a tall box is filled
+    fn draw_table(&mut self, frame: &mut Frame, area: Rect, context: &Context, gap: u16) {
         let statuses: Vec<Status> = ITEMS
             .iter()
             .map(|&item| self.status(item, context))
@@ -437,7 +419,6 @@ impl QuickClean {
         };
         let largest = statuses.iter().map(size_of).max().unwrap_or(0);
         let columns = quick_columns(&statuses, area.width);
-        let (neet_total, your_total) = self.totals(context);
         let rows: Vec<Row> = ITEMS
             .iter()
             .zip(&statuses)
@@ -454,7 +435,7 @@ impl QuickClean {
                         });
                         (
                             format::size_span(size, text),
-                            format::size_bar(size, largest, SHARE_BAR),
+                            format::size_bar(size, largest, usize::from(SHARE_BAR)),
                             found,
                         )
                     }
@@ -463,7 +444,12 @@ impl QuickClean {
                         Span::raw(""),
                         String::new(),
                     ),
-                    Status::Nothing => (Span::raw("none"), Span::raw(""), String::new()),
+                    // An empty bar & zeros, so the row lines up with the rest
+                    Status::Nothing => (
+                        Span::raw("0 B"),
+                        format::size_bar(0, largest, usize::from(SHARE_BAR)),
+                        "0".to_string(),
+                    ),
                     Status::Failed => (Span::raw("unknown").yellow(), Span::raw(""), String::new()),
                     Status::NoAccess => (
                         Span::raw("no access").yellow(),
@@ -479,7 +465,7 @@ impl QuickClean {
                         Cell::from(Line::from(found).right_aligned()),
                         Cell::from(who_span(who(item))),
                     ])
-                    .bottom_margin(u16::from(spaced))
+                    .bottom_margin(gap)
             })
             .collect();
         let header = columns
@@ -488,105 +474,25 @@ impl QuickClean {
                 Cell::from(Line::from("Size").right_aligned()),
                 Cell::from(""),
                 Cell::from(Line::from("Found").right_aligned()),
-                Cell::from("Cleared by"),
+                Cell::from("How"),
             ])
             .style(super::visual::HEADING)
-            .bottom_margin(1);
-        let summary = Line::from(vec![
-            Span::raw(" Cleanup: "),
-            Span::raw(format!("~{}", format::size(neet_total)))
-                .green()
-                .bold(),
-            Span::raw(" · Manual: "),
-            Span::raw(format::size(your_total)).yellow().bold(),
-            Span::raw(" "),
-        ]);
+            .bottom_margin(u16::from(gap > 0));
         let table = Table::new(rows, columns.widths())
             .header(header)
             .column_spacing(2)
-            .block(
-                super::visual::block()
-                    .title(" Quick Clean ")
-                    .title_bottom(summary.right_aligned())
-                    .padding(Padding::horizontal(1)),
-            )
+            .block(titled("Quick Clean"))
             .highlight_symbol("▸ ")
             .row_highlight_style(super::visual::SELECTED);
         frame.render_stateful_widget(table, area, &mut self.table);
     }
 
-    /// The selected row's name, then its sections: the numbered steps that
-    /// clear it, what it is, where it is, and what happens after
-    fn about_lines(&self) -> (String, Vec<Vec<Line<'static>>>) {
+    /// The selected item in headed sections: its numbers, what it is, what
+    /// changes after, and what Enter does. Each section keeps the same
+    /// number of lines on every row, so spreading them never moves them.
+    fn details(&self, context: &Context, width: usize) -> Vec<Vec<Line<'static>>> {
         let item = self.selected();
-        let color = match who(item) {
-            Who::Neet => Color::Green,
-            Who::Tool => Color::Red,
-            Who::You => Color::Yellow,
-            Who::Mac => super::visual::ACCENT,
-            Who::Nobody => Color::Magenta,
-        };
-        let mut steps = Vec::new();
-        steps.extend(steps_of(item).iter().enumerate().map(|(number, step)| {
-            Line::from(vec![
-                Span::raw(format!("{}. ", number + 1)).fg(color),
-                Span::raw(*step),
-            ])
-        }));
-        let about = vec![
-            Line::from("About").style(super::visual::HEADING),
-            Line::from(about(item)),
-        ];
-        let place = vec![
-            Line::from("Location").style(super::visual::HEADING),
-            Line::from(place(item)).fg(super::visual::ACCENT),
-        ];
-        let after = vec![
-            Line::from("Impact").style(super::visual::HEADING),
-            Line::from(afterwards(item)),
-            Line::from(vec![
-                Span::raw(format!("{:<11}", "Undo")).bold(),
-                undo(item),
-            ]),
-        ];
-        (
-            format!(" {} ", name(item)),
-            vec![steps, about, place, after],
-        )
-    }
-
-    /// Every row that found something, largest first, with a bar in the
-    /// color of who clears it
-    fn found_lines(&self, context: &Context, width: u16) -> Vec<Line<'static>> {
-        let mut found: Vec<(Item, u64)> = ITEMS
-            .iter()
-            .filter_map(|&item| match self.status(item, context) {
-                Status::Found { size, .. } => Some((item, size)),
-                _ => None,
-            })
-            .collect();
-        found.sort_by_key(|&(_, size)| Reverse(size));
-        let largest = found.first().map_or(0, |&(_, size)| size);
-        let bar = usize::from(width).saturating_sub(36).clamp(8, 40);
-        let mut lines = vec![Line::from("Overview").style(super::visual::HEADING)];
-        if found.is_empty() {
-            lines.push(Line::from("Nothing yet."));
-        }
-        for (item, size) in found {
-            let style = who_span(who(item)).style;
-            lines.push(Line::from(vec![
-                Span::raw(format!("{:<24}", name(item))),
-                format::size_span(size, format!("{:>9}  ", format::size(size))),
-                Span::styled(format::bar(size, largest, bar), style),
-            ]));
-        }
-        lines
-    }
-
-    /// The selected row in numbers: its size, its share of everything found,
-    /// and who clears it
-    fn row_lines(&self, context: &Context) -> Vec<Line<'static>> {
-        let item = self.selected();
+        let status = self.status(item, context);
         let found: u64 = ITEMS
             .iter()
             .filter_map(|&item| match self.status(item, context) {
@@ -594,13 +500,7 @@ impl QuickClean {
                 _ => None,
             })
             .sum();
-        let field = |label: &str, value: Vec<Span<'static>>| {
-            let mut spans = vec![Span::raw(format!("{label:<11}")).bold()];
-            spans.extend(value);
-            Line::from(spans)
-        };
-        let mut lines = vec![Line::from("Summary").style(super::visual::HEADING)];
-        match self.status(item, context) {
+        let size = match status {
             Status::Found { size, count } => {
                 let mut value = vec![format::size_span(size, format::size(size)).bold()];
                 if let Some(count) = count {
@@ -610,47 +510,114 @@ impl QuickClean {
                         format::count(u64::try_from(count).unwrap_or(u64::MAX))
                     )));
                 }
-                lines.push(field("Size", value));
-                lines.push(field(
-                    "Share",
-                    vec![
-                        format::size_bar(size, found, SHARE_BAR),
-                        Span::raw(format!(" {}% of all found", format::percent(size, found))),
-                    ],
-                ));
+                value.push(Span::raw(format!(" · {}%", format::percent(size, found))));
+                value
             }
-            Status::Looking => lines.push(field(
-                "Size",
-                vec![Span::raw("scanning").fg(super::visual::ACCENT)],
-            )),
-            Status::Nothing => lines.push(field("Size", vec![Span::raw("none found")])),
-            Status::Failed => {
-                lines.push(field("Size", vec![Span::raw("unknown").yellow()]));
-            }
-            Status::NoAccess => {
-                lines.push(field("Size", vec![Span::raw("no access").yellow()]));
-                lines.push(Line::from(NO_ACCESS).yellow());
-            }
-        }
-        let how = match who(item) {
-            Who::Neet => "neet, to the Trash",
-            Who::Tool => "neet, deleted for good",
-            Who::You => "you",
-            Who::Mac => "macOS",
-            Who::Nobody => "no one, macOS keeps it",
+            Status::Looking => vec![Span::raw("scanning").fg(super::visual::ACCENT)],
+            Status::Nothing => vec![Span::raw("0 B")],
+            Status::Failed => vec![Span::raw("unknown").yellow()],
+            Status::NoAccess => vec![Span::raw("no access").yellow()],
         };
-        // In the color the table uses for who clears it
-        let style = who_span(who(item)).style;
-        lines.push(field("Cleared by", vec![Span::styled(how, style)]));
-        lines
+        let heading = |text: &str| Line::from(text.to_string()).style(super::visual::HEADING);
+        let numbers = vec![
+            heading("Details"),
+            field(
+                "Where",
+                vec![
+                    Span::raw(format::shorten_middle(
+                        place(item),
+                        width.saturating_sub(LABEL),
+                    ))
+                    .fg(super::visual::ACCENT),
+                ],
+            ),
+            field("Size", size),
+            field("Undo", vec![undo(item)]),
+        ];
+        let wrap = |text: &str, color: Option<Color>| {
+            let style = color.map_or_else(ratatui::style::Style::default, |color| {
+                ratatui::style::Style::default().fg(color)
+            });
+            super::visual::hanging(Vec::new(), 0, text, style, width)
+        };
+        // Missing sizes say why in place of what the item is
+        let what = match status {
+            Status::Failed => {
+                let mut lines = wrap("Could not read the size.", Some(Color::Yellow));
+                lines.extend(wrap(
+                    if item == Item::Rules {
+                        "Deep Clean shows why. r there tries again."
+                    } else {
+                        "Open Quick Clean again to retry."
+                    },
+                    None,
+                ));
+                lines
+            }
+            Status::NoAccess => wrap(NO_ACCESS, Some(Color::Yellow)),
+            _ => wrap(about(item), None),
+        };
+        let after = wrap(afterwards(item), None);
+        // Room for the longest text of any row, so the sections never move
+        let room = |texts: &mut dyn Iterator<Item = &'static str>| {
+            texts.map(|text| wrap(text, None).len()).max().unwrap_or(1)
+        };
+        let pad = |mut lines: Vec<Line<'static>>, room: usize| {
+            while lines.len() < room {
+                lines.push(Line::default());
+            }
+            lines
+        };
+        let what_room = room(&mut ITEMS.iter().map(|&item| about(item)));
+        let after_room = room(&mut ITEMS.iter().map(|&item| afterwards(item)));
+        let mut about_section = vec![heading("About")];
+        about_section.extend(pad(what, what_room));
+        let mut after_section = vec![heading("After")];
+        after_section.extend(pad(after, after_room));
+        vec![
+            numbers,
+            about_section,
+            after_section,
+            vec![heading("Next"), Line::from(action(item))],
+        ]
     }
 
-    /// Free space now, what the cleanup frees, and free space after it
+    /// What was found, by how it is cleared, and in all
+    fn totals_lines(&self, context: &Context) -> Vec<Line<'static>> {
+        let mut trash = 0;
+        let mut deleted = 0;
+        let mut yours = 0;
+        for item in ITEMS {
+            if let Status::Found { size, .. } = self.status(item, context) {
+                match who(item) {
+                    Who::Neet => trash += size,
+                    Who::Tool => deleted += size,
+                    Who::You => yours += size,
+                    Who::Mac | Who::Nobody => {}
+                }
+            }
+        }
+        vec![
+            field(
+                "To Trash",
+                vec![Span::raw(format!("~{}", format::size(trash))).green()],
+            ),
+            field("Deleted", vec![Span::raw(format::size(deleted)).red()]),
+            field("By you", vec![Span::raw(format::size(yours)).yellow()]),
+            field(
+                "Total",
+                vec![Span::raw(format!("~{}", format::size(trash + deleted + yours))).bold()],
+            ),
+        ]
+    }
+
+    /// Free space now and after the cleanup, with a gauge that shows the
+    /// part the cleanup frees in green
     fn after_lines(&self, context: &Context, width: u16) -> Vec<Line<'static>> {
         let Some(disk) = context.disk else {
             return vec![Line::from("Disk space unavailable.").yellow()];
         };
-        let (cleanup, manual) = self.totals(context);
+        let (cleanup, _) = self.totals(context);
         let freed = cleanup.min(disk.used());
         let after = disk.available.saturating_add(freed);
         // The bar: what stays used, then what the cleanup frees in green,
@@ -667,13 +634,7 @@ impl QuickClean {
         let rest = bar.saturating_sub(stays + green);
         let now = format::percent(disk.used(), disk.total);
         let then = format::percent(disk.used() - freed, disk.total);
-        let field = |label: &str, value: Vec<Span<'static>>| {
-            let mut spans = vec![Span::raw(format!("{label:<11}")).bold()];
-            spans.extend(value);
-            Line::from(spans)
-        };
-        let mut lines = vec![
-            Line::from("After cleanup").style(super::visual::HEADING),
+        vec![
             Line::from(vec![
                 Span::raw("█".repeat(stays)).fg(super::visual::ACCENT),
                 Span::raw("█".repeat(green)).green(),
@@ -689,33 +650,14 @@ impl QuickClean {
                 ))],
             ),
             field(
-                "Cleanup",
+                "Free after",
                 vec![
-                    Span::raw(format!("~{}", format::size(cleanup)))
+                    Span::raw(format!("~{}", format::size(after)))
                         .green()
                         .bold(),
-                    Span::raw(" by neet"),
                 ],
             ),
-        ];
-        if manual > 0 {
-            lines.push(field(
-                "By hand",
-                vec![
-                    Span::raw(format::size(manual)).yellow().bold(),
-                    Span::raw(" by you"),
-                ],
-            ));
-        }
-        lines.push(field(
-            "Free after",
-            vec![
-                Span::raw(format!("~{}", format::size(after)))
-                    .green()
-                    .bold(),
-            ],
-        ));
-        lines
+        ]
     }
 
     /// The largest items of the selected row, at most `rows` lines, or why
@@ -784,7 +726,7 @@ impl QuickClean {
             return Err(Line::from(match item {
                 Item::Clutter(
                     Kind::SimulatorRuntimes | Kind::TempFiles | Kind::SimulatorDownloads,
-                ) => "Outside home. No scan details.",
+                ) => "Outside home, not scanned.",
                 _ => "Nothing to list.",
             }));
         }
@@ -812,7 +754,7 @@ impl QuickClean {
 }
 
 /// How to let neet read the Trash
-const NO_ACCESS: &str = "macOS blocks your terminal from reading the Trash. Turn on Full Disk Access for your terminal app in System Settings, Privacy & Security, then restart it.";
+const NO_ACCESS: &str = "Turn on Full Disk Access for your terminal in System Settings, Privacy & Security, then restart it.";
 
 /// Whether macOS refused to let the scan read `~/.Trash`
 fn trash_blocked(context: &Context) -> bool {
@@ -846,10 +788,11 @@ fn quick_columns(statuses: &[Status], width: u16) -> super::visual::Columns<5> {
             _ => None,
         }),
     );
+    let names = format::column_width("Item", ITEMS.iter().map(|&item| name(item).to_string()));
     super::visual::Columns::new(
         width,
-        [(18, 1), (sizes, 0), (14, 0), (counts, 0), (17, 0)],
-        &[2],
+        [(names, 0), (sizes, 0), (SHARE_BAR, 0), (counts, 0), (8, 1)],
+        &[2, 3],
         true,
     )
 }
@@ -878,63 +821,87 @@ impl Screen for QuickClean {
             }
         };
         self.poll(tree);
-        // Border, header, gap, then one row per item
         let items = u16::try_from(ITEMS.len()).unwrap_or(u16::MAX);
-        // On a tall screen the table's rows stand a row apart.
-        let spaced = area.height >= TALL;
-        let table_height = if spaced { items * 2 + 3 } else { items + 4 };
-        // The table, with how to clear the selected row under it, and the
-        // row's largest items down the right. Each box spreads its sections
-        // from top to bottom, so a tall screen has no empty box.
-        let (title, mut sections) = self.about_lines();
-        if matches!(self.status(self.selected(), context), Status::Failed) {
-            let retry = if self.selected() == Item::Rules {
-                "Open Deep Clean to see why, then press r to try again."
-            } else {
-                "Go back and open Quick Clean again to try again."
-            };
-            sections[0] = vec![
-                Line::from("Could not read the size.").yellow(),
-                Line::from(retry),
-            ];
+        if area.width < super::visual::SIDE_BY_SIDE {
+            let [table, below] =
+                Layout::vertical([Constraint::Length(items + 3), Constraint::Fill(1)]).areas(area);
+            self.draw_table(frame, table, context, 0);
+            if below.height > 2 {
+                let width = usize::from(below.width.saturating_sub(4));
+                frame.render_widget(
+                    Paragraph::new(joined(self.details(context, width)))
+                        .wrap(Wrap { trim: false })
+                        .block(titled(name(self.selected()))),
+                    below,
+                );
+            }
+            return;
         }
-        sections.push(self.row_lines(context));
-        if area.width >= MIN_SIDE_WIDTH {
-            let [left, side] =
-                Layout::horizontal([Constraint::Length(TABLE_WIDTH), Constraint::Fill(1)])
-                    .areas(area);
-            let [table, below] =
-                Layout::vertical([Constraint::Length(table_height), Constraint::Fill(1)])
-                    .areas(left);
-            self.draw_table(frame, table, context, spaced);
-            super::visual::sections(frame, below, &title, sections);
-            let inner_width = side.width.saturating_sub(4);
-            let after = self.after_lines(context, inner_width);
-            let found = self.found_lines(context, inner_width);
-            let used = after.len() + found.len() + 2;
-            // As many as fit with the other two boxes below, each with its
-            // border, and their headings as titles
-            let rows = usize::from(side.height)
-                .saturating_sub(used + 2)
-                .clamp(1, 12);
-            let mut list = vec![Line::from("Largest items").style(super::visual::HEADING)];
-            list.extend(
-                self.largest_lines(context, side.width, rows)
-                    .unwrap_or_else(|note| vec![note]),
+        // Left: the table, the selected item under it, and the totals.
+        // Right: the largest items and the disk after cleanup. The item's
+        // box fits its sections, a blank row apart, and the table takes the
+        // rest, spacing its rows to fill it. Every box keeps its size as the
+        // selection moves, and the bottom boxes line up.
+        let [left, right] =
+            Layout::horizontal([Constraint::Percentage(55), Constraint::Fill(1)]).areas(area);
+        let inner = right.width.saturating_sub(4);
+        let totals = self.totals_lines(context);
+        let after = self.after_lines(context, inner);
+        let bottom = height_of(&totals, left.width).max(height_of(&after, right.width));
+        let details = joined(self.details(context, usize::from(left.width.saturating_sub(4))));
+        let details_height = height_of(&details, left.width);
+        let with_bottom = left.height >= items + 3 + details_height + bottom;
+        let with_details = left.height >= items + 3 + details_height;
+        let [table, middle, under] = Layout::vertical([
+            Constraint::Fill(1),
+            Constraint::Length(if with_details { details_height } else { 0 }),
+            Constraint::Length(if with_bottom { bottom } else { 0 }),
+        ])
+        .areas(left);
+        // A blank row under each row when the box holds them
+        let gap = u16::from(table.height >= items * 2 + 4);
+        self.draw_table(frame, table, context, gap);
+        if with_details {
+            frame.render_widget(
+                Paragraph::new(details)
+                    .wrap(Wrap { trim: false })
+                    .block(titled(name(self.selected()))),
+                middle,
             );
-            super::visual::sections(frame, side, "", vec![list, found, after]);
-        } else {
-            let [table, below] =
-                Layout::vertical([Constraint::Length(table_height), Constraint::Fill(1)])
-                    .areas(area);
-            self.draw_table(frame, table, context, spaced);
-            // A short screen keeps what matters most: the steps, what it
-            // is, its numbers, and the disk after the cleanup.
-            let numbers = sections.pop().unwrap_or_default();
-            let essentials = sections.drain(..2).chain([numbers]);
-            let mut shown: Vec<Vec<Line<'static>>> = essentials.collect();
-            shown.push(self.after_lines(context, below.width.saturating_sub(4)));
-            super::visual::sections(frame, below, &title, shown);
+        }
+        if with_bottom {
+            frame.render_widget(Paragraph::new(totals).block(titled("Found")), under);
+        }
+        let [list, under] = Layout::vertical([
+            Constraint::Fill(1),
+            Constraint::Length(if with_bottom { bottom } else { 0 }),
+        ])
+        .areas(right);
+        // A header & rows spaced as the table's, so the two line up
+        let largest_block = titled("Largest");
+        let step = usize::from(gap) + 1;
+        let room = usize::from(list.height.saturating_sub(2)).saturating_sub(step) / step;
+        let mut lines =
+            vec![Line::from(format!("{:>9}  {}", "Size", "Name")).style(super::visual::HEADING)];
+        match self.largest_lines(context, list.width, room) {
+            Ok(rows) => {
+                for row in rows {
+                    lines.extend(std::iter::repeat_n(Line::default(), usize::from(gap)));
+                    lines.push(row);
+                }
+                frame.render_widget(Paragraph::new(lines).block(largest_block), list);
+            }
+            Err(note) => {
+                let inner = largest_block.inner(list);
+                frame.render_widget(largest_block, list);
+                let [line] = Layout::vertical([Constraint::Length(1)])
+                    .flex(ratatui::layout::Flex::Center)
+                    .areas(inner);
+                frame.render_widget(Paragraph::new(note).centered(), line);
+            }
+        }
+        if with_bottom {
+            frame.render_widget(Paragraph::new(after).block(titled("After cleanup")), under);
         }
     }
 
@@ -1003,18 +970,15 @@ impl Screen for QuickClean {
     }
 
     fn hints(&self) -> &'static str {
-        "↑↓ move · enter clear it · d show in Disk · esc home · ? help · q quit"
+        "↑↓ move · enter open · d show in Disk · esc home · ? help"
     }
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
         &[
             ("↑ ↓  j k", "Move selection"),
             ("g  G", "Jump to the first or last row"),
-            (
-                "Enter  →  l",
-                "Rows neet clears: pick what to remove. Trash: show in Disk",
-            ),
-            ("d", "Show the largest item in Disk"),
+            ("Enter  →  l", "Open the selected row"),
+            ("d", "Show it in Disk"),
             ("Esc", "Back to Home"),
             ("q", "Quit"),
         ]
@@ -1136,7 +1100,7 @@ mod tests {
             let text = render(&mut screen, &scan);
             assert!(!text.contains("scanning"));
             assert!(text.contains("unknown"));
-            assert!(text.contains("open Quick Clean again"));
+            assert!(text.contains("Quick Clean again"));
             assert!(matches!(screen.back(), Action::Back));
         }
     }
@@ -1195,7 +1159,7 @@ mod tests {
         let text = crate::ui::visual::tests::text(terminal.backend().buffer());
         assert!(text.contains("unknown"));
         assert!(!text.contains("scanning"));
-        assert!(text.contains("Open Deep Clean"));
+        assert!(text.contains("Deep Clean shows why"));
         assert!(matches!(
             press(&mut screen, &scan, KeyCode::Enter),
             Action::Open(_)
@@ -1213,11 +1177,11 @@ mod tests {
         assert!(screen.contains("1.0 MB"));
         assert!(screen.contains("300.0 KB") || screen.contains("303.1 KB"));
         assert!(screen.contains("17.0 GB"));
-        assert!(screen.contains("none"));
-        assert!(screen.contains("Manual: 2.0 MB"));
-        assert!(screen.contains("neet, permanently"));
+        assert!(screen.contains("0 B"));
+        assert!(screen.contains("by you"));
+        assert!(screen.contains("deleted"));
         assert!(screen.contains("macOS"));
-        assert!(screen.contains("Press Enter to open Deep Clean"));
+        assert!(screen.contains("Enter opens Deep Clean"));
     }
 
     #[test]
@@ -1229,7 +1193,7 @@ mod tests {
         press(&mut screen, &scan, KeyCode::Down);
         let text = render(&mut screen, &scan);
         assert!(text.contains("~/code/web/node_modules"));
-        assert!(text.contains("Press Enter to see the folders"));
+        assert!(text.contains("Enter lists them"));
         assert!(matches!(
             press(&mut screen, &scan, KeyCode::Enter),
             Action::Open(_)
@@ -1277,7 +1241,7 @@ mod tests {
         ));
     }
     #[test]
-    fn tall_boxes_spread_their_sections_from_top_to_bottom() {
+    fn boxes_line_up_and_keep_their_size_as_the_selection_moves() {
         use crate::ui::visual::tests as view;
         let (_dir, scan) = done();
         let mut screen = quick();
@@ -1287,41 +1251,27 @@ mod tests {
             available: 100_000_000_000,
             purgeable: None,
         });
-        let buffer = view::render("quick", &mut screen, &context, 160, 50);
-        let text = view::text(&buffer);
-        let rows: Vec<&str> = text.lines().collect();
-        let row_of = |needle: &str| {
-            rows.iter()
-                .position(|row| row.contains(needle))
-                .unwrap_or_else(|| panic!("{needle:?} missing:\n{text}"))
-        };
-        // The boxes still run the full height, as before.
-        assert!(rows[0].contains("┌ Quick Clean") && rows[0].contains("┌ Largest items"));
-        let bottom = rows.iter().rposition(|row| row.contains('└')).unwrap();
-        assert!(bottom >= 46, "the boxes end at row {bottom}");
-        // Each section is a box of its own, titled with its heading, and
-        // the boxes share the height.
-        assert!(row_of("┌ Largest items") < row_of("┌ Overview"));
-        assert!(row_of("┌ Overview") < row_of("┌ After cleanup"));
-        assert!(row_of("Free after ~125.6 GB") < bottom - 3);
-        // The table's rows stand apart on a tall screen.
-        assert_eq!(
-            rows[row_of("Caches & logs") + 1].trim_matches(['│', ' ']),
-            ""
-        );
-        // Under the table: the steps, what it is, where, after, and the
-        // numbers, each in its own box, in order.
-        let order = [
-            "┌ Caches & logs",
-            "┌ About",
-            "┌ Location",
-            "┌ Impact",
-            "┌ Summary",
-        ];
-        for pair in order.windows(2) {
-            assert!(row_of(pair[0]) < row_of(pair[1]), "{pair:?}:\n{text}");
+        let mut layouts = Vec::new();
+        for _ in 0..ITEMS.len() {
+            let text = view::text(&view::render("quick", &mut screen, &context, 160, 50));
+            let rows: Vec<String> = text.lines().map(str::to_string).collect();
+            let row_of = |needle: &str| {
+                rows.iter()
+                    .position(|row| row.contains(needle))
+                    .unwrap_or_else(|| panic!("{needle:?} missing:\n{text}"))
+            };
+            // The bottom boxes share a row, so their borders line up.
+            assert_eq!(row_of("┌ Found"), row_of("┌ After cleanup"), "{text}");
+            assert!(rows[0].contains("┌ Quick Clean"));
+            assert!(rows[0].contains("┌ Largest"));
+            layouts.push((row_of("┌ Largest"), row_of("┌ Found")));
+            screen.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), &context);
         }
-        assert!(text.contains("Undo       Yes, from the Trash"));
+        // Every row draws the boxes in the same places.
+        assert!(
+            layouts.windows(2).all(|pair| pair[0] == pair[1]),
+            "{layouts:?}"
+        );
     }
 
     #[test]
@@ -1332,7 +1282,7 @@ mod tests {
         for (width, height) in view::SIZES {
             let buffer = view::render("quick", &mut screen, &context(&scan), width, height);
             view::aligned(&buffer, "Size", "~8.6 GB");
-            assert!(view::text(&buffer).contains("neet, permanently"));
+            assert!(view::text(&buffer).contains("deleted"));
             assert!(view::text(&buffer).contains("macOS"));
         }
     }
