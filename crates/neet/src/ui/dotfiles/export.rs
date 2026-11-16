@@ -302,6 +302,24 @@ pub(in crate::ui) fn push_lines(target: &str, ahead: Option<usize>) -> Vec<Line<
     ]
 }
 
+/// The lines of the question before a pull
+pub(in crate::ui) fn pull_lines(target: &str) -> Vec<Line<'static>> {
+    vec![
+        Line::from(format!("Get new commits from {target}?")).bold(),
+        Line::default(),
+        Line::from(
+            "Only saved copies change, and only by moving forward. Files on this Mac stay as they are until you use the saved version.",
+        ),
+        Line::default(),
+        Line::from(vec![
+            Span::raw("y").fg(visual::ACCENT).bold(),
+            Span::raw(" pull · "),
+            Span::raw("esc").fg(visual::ACCENT).bold(),
+            Span::raw(" not now"),
+        ]),
+    ]
+}
+
 /// The lines of the question about making a GitHub repository
 pub(in crate::ui) fn github_lines(folder: &str) -> Vec<Line<'static>> {
     vec![
