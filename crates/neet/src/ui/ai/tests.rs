@@ -534,7 +534,7 @@ fn skills_show_their_source_and_a_link_is_removed_only_after_review() {
 
     let text = render(&mut screen, 120, 30);
     assert!(text.contains("linked · Claude Code · link"), "{text}");
-    assert!(text.contains("Source: a link to ~/code/linked"), "{text}");
+    assert!(text.contains("Source   a link to ~/code/linked"), "{text}");
     assert!(text.contains("x removes the link"), "{text}");
 
     press(&mut screen, KeyCode::Char('x'));
@@ -606,7 +606,7 @@ fn a_copy_or_plugin_skill_is_never_removed() {
     );
     let text = render(&mut screen, 120, 30);
     assert!(text.contains("plugin tools"), "{text}");
-    assert!(text.contains("version 1.0.0, turned"), "{text}");
+    assert!(text.contains("plugin tools from m"), "{text}");
     assert!(
         screen
             .source_text(screen.selected().unwrap().source.as_ref().unwrap())
@@ -762,4 +762,59 @@ fn removal_takes_related_folders_and_history_entries() {
         text.contains("1 removed from ~/.claude/history.jsonl"),
         "{text}"
     );
+}
+
+#[test]
+fn s_sorts_and_keeps_the_selected_item() {
+    let (_dir, mut screen) = setup();
+    write(
+        &screen.locations.claude.join("projects/repo/big.jsonl"),
+        &format!(
+            "{{\"message\":{{\"role\":\"user\",\"content\":\"{}\"}}}}",
+            "long ".repeat(200)
+        ),
+    );
+    screen.listing = screen.locations.list();
+    press(&mut screen, KeyCode::Tab);
+    finish_refresh(&mut screen);
+    let selected = screen.selected().unwrap().path;
+    assert!(render(&mut screen, 120, 30).contains("by tool"));
+    for _ in 0..3 {
+        press(&mut screen, KeyCode::Char('s'));
+        assert_eq!(screen.selected().unwrap().path, selected);
+    }
+    assert_eq!(screen.sort, Sort::Largest);
+    assert!(render(&mut screen, 120, 30).contains("largest first"));
+    let sizes: Vec<u64> = screen.rows().iter().map(|item| item.size).collect();
+    assert!(sizes.windows(2).all(|pair| pair[0] >= pair[1]), "{sizes:?}");
+    assert!(sizes.len() >= 2);
+}
+
+#[test]
+fn m_selects_chats_whose_project_is_gone() {
+    let (_dir, mut screen) = setup();
+    claude_chat(&mut screen, Path::new("/nowhere/deleted-repo"));
+    press(&mut screen, KeyCode::Char('m'));
+    assert_eq!(screen.marked.len(), 1, "{}", screen.note);
+    let text = render(&mut screen, 140, 40);
+    assert!(text.contains("1 selected"), "{text}");
+    assert!(text.contains("By tool"), "{text}");
+    assert!(text.contains("Project gone"), "{text}");
+    press(&mut screen, KeyCode::Char('m'));
+    assert!(screen.marked.is_empty());
+}
+
+#[test]
+fn the_boxes_stay_put_while_the_selection_moves() {
+    let (_dir, mut screen) = setup();
+    write(&screen.locations.claude.join("CLAUDE.md"), "Be brief.");
+    write(&screen.locations.gemini.join("settings.json"), "{}");
+    screen.listing = screen.locations.list();
+    let top = |text: &str| text.lines().position(|line| line.contains("By tool"));
+    let first = top(&render(&mut screen, 140, 40));
+    assert!(first.is_some());
+    for _ in 0..3 {
+        press(&mut screen, KeyCode::Down);
+        assert_eq!(top(&render(&mut screen, 140, 40)), first);
+    }
 }
