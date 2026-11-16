@@ -211,7 +211,7 @@ fn mac_settings_are_grouped_and_show_the_command_before_anything_runs() {
     assert!(!screen.is_dialog());
 
     press(&mut screen, KeyCode::Char('u'));
-    assert!(screen.note.as_ref().unwrap().0.contains("nothing to undo"));
+    assert!(screen.note.as_ref().unwrap().0.contains("Nothing to undo"));
 }
 
 #[test]
@@ -299,9 +299,164 @@ fn shell_path_lists_folders_problems_and_where_they_are_added() {
     ] {
         assert!(text.contains(expected), "{expected} missing:\n{text}");
     }
+}
 
+/// A PATH set by plain lines in `.zshrc`: a folder twice, and a missing one
+fn editable_path() -> (tempfile::TempDir, Settings) {
+    let (home, mut screen) = screen(false);
+    let root = std::fs::canonicalize(home.path()).unwrap();
+    std::fs::create_dir_all(root.join("bin")).unwrap();
+    std::fs::create_dir_all(root.join("tools")).unwrap();
+    std::fs::write(
+        root.join(".zshrc"),
+        "export PATH=\"$HOME/bin:$PATH\"\nexport PATH=\"$HOME/gone:$PATH\"\nexport PATH=\"$HOME/tools:$PATH\"\nexport PATH=\"$HOME/bin:$PATH\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("etc")).unwrap();
+    let listing = neet_core::path::read(
+        &format!("{0}/bin:{0}/tools:{0}/gone:{0}/bin", root.display()),
+        &root,
+        &root.join("etc"),
+    );
+    screen.home = root;
+    if let State::Ready(found) = &mut screen.state {
+        found.path = listing;
+    }
+    screen.change_tab(PATH_TAB);
+    (home, screen)
+}
+
+#[test]
+fn enter_removes_a_path_folder_after_its_diff() {
+    let (_home, mut screen) = editable_path();
+    let zshrc = screen.home.join(".zshrc");
+    select_path(&mut screen, 2);
     press(&mut screen, KeyCode::Enter);
-    assert!(screen.note.as_ref().unwrap().0.contains("view only"));
+    let text = render(&mut screen, 140, 40);
+    for expected in ["Remove from PATH", "Move to front", "Move to back"] {
+        assert!(text.contains(expected), "{expected} missing:\n{text}");
+    }
+    press(&mut screen, KeyCode::Enter);
+    let text = render(&mut screen, 140, 40);
+    assert!(text.contains("Writes     ~/.zshrc"), "{text}");
+    assert!(
+        text.contains("- export PATH=\"$HOME/gone:$PATH\""),
+        "{text}"
+    );
+    assert!(text.contains("y write"), "{text}");
+    assert!(std::fs::read_to_string(&zshrc).unwrap().contains("gone"));
+
+    press(&mut screen, KeyCode::Char('y'));
+    let after = std::fs::read_to_string(&zshrc).unwrap();
+    assert!(!after.contains("gone"), "{after}");
+    assert!(after.contains("$HOME/tools"), "{after}");
+    let text = render(&mut screen, 140, 40);
+    assert!(text.contains("Open a new terminal"), "{text}");
+    assert!(
+        screen
+            .home
+            .join(".local/state/neet/backups/dotfiles")
+            .exists()
+    );
+}
+
+#[test]
+fn a_path_review_writes_nothing_until_y() {
+    let (_home, mut screen) = editable_path();
+    let zshrc = screen.home.join(".zshrc");
+    let before = std::fs::read_to_string(&zshrc).unwrap();
+    select_path(&mut screen, 1);
+    press(&mut screen, KeyCode::Enter);
+    press(&mut screen, KeyCode::Down);
+    press(&mut screen, KeyCode::Enter);
+    let text = render(&mut screen, 140, 40);
+    assert!(text.contains("Move to front"), "{text}");
+    assert!(text.contains("+ # >>> neet >>>"), "{text}");
+    assert!(matches!(screen.back(), Action::None));
+    assert!(screen.ask.is_none());
+    assert_eq!(std::fs::read_to_string(&zshrc).unwrap(), before);
+}
+
+#[test]
+fn c_takes_out_repeated_and_missing_folders_together() {
+    let (_home, mut screen) = editable_path();
+    let zshrc = screen.home.join(".zshrc");
+    press(&mut screen, KeyCode::Char('c'));
+    let text = render(&mut screen, 140, 40);
+    assert!(text.contains("Clean up 2 of 2"), "{text}");
+    press(&mut screen, KeyCode::Char('y'));
+    let after = std::fs::read_to_string(&zshrc).unwrap();
+    // The copy that stays is the last line, so ~/bin is still searched first.
+    assert_eq!(
+        after,
+        "export PATH=\"$HOME/tools:$PATH\"\nexport PATH=\"$HOME/bin:$PATH\"\n"
+    );
+}
+
+#[test]
+fn a_folder_no_plain_line_adds_is_refused_with_the_reason() {
+    let (_home, mut screen) = path_screen();
+    let before = std::fs::read_to_string(screen.home.join(".zshrc")).unwrap();
+    select_path(&mut screen, 3);
+    press(&mut screen, KeyCode::Enter);
+    press(&mut screen, KeyCode::Enter);
+    assert!(screen.ask.is_none());
+    let (note, _) = screen.note.clone().unwrap();
+    assert!(note.contains("usr/bin"), "{note}");
+    press(&mut screen, KeyCode::Char('x'));
+    press(&mut screen, KeyCode::Char('c'));
+    assert!(screen.ask.is_none(), "nothing here can be cleaned up");
+    assert!(screen.note.is_some());
+    assert_eq!(
+        std::fs::read_to_string(screen.home.join(".zshrc")).unwrap(),
+        before
+    );
+}
+
+#[test]
+fn slash_finds_a_mac_setting_and_esc_clears_it() {
+    let (_home, mut screen) = screen(false);
+    press(&mut screen, KeyCode::Tab);
+    press(&mut screen, KeyCode::Char('/'));
+    assert!(screen.takes_text());
+    for c in "dock".chars() {
+        press(&mut screen, KeyCode::Char(c));
+    }
+    let text = render(&mut screen, 130, 40);
+    assert!(text.contains("find: dock"), "{text}");
+    assert!(text.contains("Hide the Dock"), "{text}");
+    assert!(!text.contains("Smart quotes"), "{text}");
+    press(&mut screen, KeyCode::Enter);
+    assert!(!screen.takes_text());
+    assert!(matches!(screen.selected(), Some(Item::Mac(_))));
+    assert!(matches!(screen.back(), Action::None));
+    assert!(render(&mut screen, 130, 40).contains("Smart quotes"));
+}
+
+#[test]
+fn the_boxes_stay_put_while_the_selection_moves() {
+    let (_home, mut screen) = screen(false);
+    let top_of = |text: &str, title: &str| {
+        text.lines()
+            .position(|line| line.contains(title))
+            .unwrap_or_else(|| panic!("{title} missing:\n{text}"))
+    };
+    let first = render(&mut screen, 130, 40);
+    let mut tops = vec![top_of(&first, "Keeping it awake")];
+    for _ in 0..4 {
+        press(&mut screen, KeyCode::Down);
+        tops.push(top_of(&render(&mut screen, 130, 40), "Keeping it awake"));
+    }
+    assert!(tops.windows(2).all(|pair| pair[0] == pair[1]), "{tops:?}");
+}
+
+fn select_path(screen: &mut Settings, index: usize) {
+    let row = screen
+        .rows()
+        .iter()
+        .position(|row| *row == Item::Path(index))
+        .unwrap();
+    screen.table.select(Some(row));
 }
 
 #[test]
