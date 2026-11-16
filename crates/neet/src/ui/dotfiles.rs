@@ -24,7 +24,8 @@ mod configure;
 mod export;
 
 use actions::{Act, Menu};
-use change::{Diff, Fix, Mode, Review, Reviewed};
+pub(super) use change::{Diff, draw_ask as draw_diff};
+use change::{Fix, Mode, Review, Reviewed};
 use configure::Configure;
 use export::{Export, Step};
 use neet_core::dotfiles::configure as settings;
@@ -37,6 +38,9 @@ const MIN_SIDE_WIDTH: u16 = 96;
 /// The file list's width beside the details: wide enough for every name and
 /// status, never so wide that rows are mostly empty
 const LIST_WIDTH: (u16, u16) = (48, 64);
+
+/// Rows kept for the selected file: its fields, a blank row, and its notes
+const DETAIL_ROWS: u16 = 11;
 
 /// Width of the status column, such as `+ not saved · secret`
 const STATUS_WIDTH: u16 = 20;
@@ -408,7 +412,9 @@ impl Dotfiles {
                             Some((ahead, 0)) => {
                                 Span::raw(format!("{ahead} to push · x pushes")).yellow()
                             }
-                            Some((0, behind)) => Span::raw(format!("{behind} to pull")).yellow(),
+                            Some((0, behind)) => {
+                                Span::raw(format!("{behind} to pull · u pulls")).yellow()
+                            }
                             Some((ahead, behind)) => {
                                 Span::raw(format!("{ahead} to push, {behind} to pull")).yellow()
                             }
@@ -421,7 +427,7 @@ impl Dotfiles {
         if let Some(reason) = &chezmoi.may_not_run {
             lines.push(
                 Line::from(format!(
-                    "neet will not run chezmoi: {reason}. It writes the saved copies itself, and says what to run."
+                    "chezmoi is not run: {reason}. Saved copies are written directly, with what to run after."
                 ))
                 .yellow(),
             );
@@ -491,27 +497,33 @@ impl Dotfiles {
             "Path",
             Span::raw(format::shorten_path(&self.tilde(&file.path), room)),
         )];
-        if let Some(found) = &file.found {
-            if let Some(link) = &found.link {
-                lines.push(field(
-                    "Link to",
-                    Span::raw(format::shorten_path(&self.tilde(link), room)),
-                ));
-            }
-            if let Some(source) = self.source_name(file) {
-                lines.push(field(
-                    "Saved as",
-                    Span::raw(format::shorten_path(&source, room)),
-                ));
-            }
-            let changed = found
-                .modified
-                .and_then(|modified| SystemTime::now().duration_since(modified).ok())
-                .map_or_else(|| "unknown".to_string(), format::age);
-            lines.push(field("Changed", Span::raw(changed)));
-            let count = self.backup_count(file);
-            lines.push(field("Backups", Span::raw(count.to_string())));
-        }
+        // The same rows for every file, so the box keeps its height
+        let found = file.found.as_ref();
+        lines.push(field(
+            "Link to",
+            Span::raw(found.and_then(|found| found.link.as_ref()).map_or_else(
+                || "not a link".to_string(),
+                |link| format::shorten_path(&self.tilde(link), room),
+            )),
+        ));
+        lines.push(field(
+            "Saved as",
+            Span::raw(self.source_name(file).map_or_else(
+                || "not saved".to_string(),
+                |source| format::shorten_path(&source, room),
+            )),
+        ));
+        lines.push(field(
+            "Size",
+            Span::raw(found.map_or_else(|| "0 B".to_string(), |found| format::size(found.size))),
+        ));
+        let changed = found
+            .and_then(|found| found.modified)
+            .and_then(|modified| SystemTime::now().duration_since(modified).ok())
+            .map_or_else(|| "unknown".to_string(), format::age);
+        lines.push(field("Changed", Span::raw(changed)));
+        let count = self.backup_count(file);
+        lines.push(field("Backups", Span::raw(count.to_string())));
         lines.push(Line::default());
         lines.extend(Self::notes(file));
         (name, lines)
@@ -572,8 +584,10 @@ impl Dotfiles {
         };
         let width = usize::from(area.width.saturating_sub(4));
         let (name, lines) = self.details(index, width);
-        let height =
-            (visual::wrapped_rows(&lines, area.width.saturating_sub(4)) + 2).min(area.height);
+        // Six fields, a blank row, and room for the longest note
+        let height = (visual::wrapped_rows(&lines, area.width.saturating_sub(4)) + 2)
+            .max(DETAIL_ROWS + 2)
+            .min(area.height);
         let [details, preview] =
             Layout::vertical([Constraint::Length(height), Constraint::Fill(1)]).areas(area);
         frame.render_widget(
@@ -951,7 +965,7 @@ impl Dotfiles {
                 }
                 return Action::None;
             }
-            Mode::Push { .. } | Mode::CreateRepo { .. } => {
+            Mode::Push { .. } | Mode::Pull { .. } | Mode::CreateRepo { .. } => {
                 if key.code == KeyCode::Char('y') {
                     self.send();
                 }
@@ -1021,6 +1035,72 @@ impl Dotfiles {
         }
     }
 
+    /// `u`: asks before getting the remote's new commits.
+    fn start_pull(&mut self) {
+        let Some(chezmoi) = &self.listing.chezmoi else {
+            self.mode = Mode::Note {
+                title: "Nothing to pull".to_string(),
+                lines: vec![Line::from(
+                    "Your dotfiles are not in a repository yet. x starts one.",
+                )],
+                color: visual::ACCENT,
+            };
+            return;
+        };
+        let top = chezmoi.source.clone();
+        self.mode = match publish::push_target(&top) {
+            Ok(target) => Mode::Pull { top, target },
+            Err(error) => Mode::Note {
+                title: "Nothing to pull".to_string(),
+                lines: vec![Line::from(error)],
+                color: visual::ACCENT,
+            },
+        };
+    }
+
+    /// `y` on the pull question
+    fn pull(&mut self, top: &Path, target: &publish::PushTarget) {
+        self.mode = match publish::pull(top, target) {
+            Ok(0) => Mode::Note {
+                title: "Up to date".to_string(),
+                lines: vec![Line::from(format!("{} has nothing new.", target.label))],
+                color: visual::ACCENT,
+            },
+            Ok(count) => Mode::Note {
+                title: "Pulled".to_string(),
+                lines: vec![
+                    Line::from(format!(
+                        "✓ {count} {} from {}",
+                        if count == 1 { "commit" } else { "commits" },
+                        target.label
+                    ))
+                    .green()
+                    .bold(),
+                    Line::from(
+                        "Saved copies changed. Files on this Mac did not. Each one that differs shows ! changed: Enter, then Use the saved version.",
+                    ),
+                ],
+                color: ratatui::style::Color::Green,
+            },
+            Err(error) => change::done(Err(error), "", None),
+        };
+        self.reload();
+    }
+
+    /// `f`: shows the selected file in Finder.
+    fn show_in_finder(&self) {
+        if let Some(index) = self.selected() {
+            let file = &self.listing.files[index];
+            if file.found.is_some() {
+                // Finder opens on its own; nothing waits for it.
+                let _ = std::process::Command::new("/usr/bin/open")
+                    .arg("-R")
+                    .arg(&file.path)
+                    .spawn();
+            }
+        }
+    }
+
     /// `y` in Export: commits the chosen files, then asks about pushing.
     fn commit_export(&mut self) {
         let Mode::Export(mut export_view) = std::mem::replace(&mut self.mode, Mode::Browse) else {
@@ -1069,6 +1149,7 @@ impl Dotfiles {
     fn send(&mut self) {
         match std::mem::replace(&mut self.mode, Mode::Browse) {
             Mode::Push { top, target, .. } => self.push(&top, &target),
+            Mode::Pull { top, target } => self.pull(&top, &target),
             Mode::CreateRepo { top } => self.create_github(&top),
             other => self.mode = other,
         }
@@ -1274,6 +1355,13 @@ impl Dotfiles {
                 area,
                 "Push",
                 export::push_lines(&target.label, *ahead),
+                visual::ACCENT,
+            ),
+            Mode::Pull { target, .. } => super::tools::message(
+                frame,
+                area,
+                "Pull",
+                export::pull_lines(&target.label),
                 visual::ACCENT,
             ),
             Mode::CreateRepo { top } => super::tools::message(
@@ -1715,6 +1803,8 @@ impl Screen for Dotfiles {
             KeyCode::Char('d') => return self.run_act(Act::Changes),
             KeyCode::Char('c') => return self.run_act(Act::Configure),
             KeyCode::Char('x') => self.start_export(),
+            KeyCode::Char('u') => self.start_pull(),
+            KeyCode::Char('f') => self.show_in_finder(),
             _ => {}
         }
         Action::None
@@ -1749,6 +1839,7 @@ impl Screen for Dotfiles {
             Mode::Ask { .. }
             | Mode::Actions(_)
             | Mode::Push { .. }
+            | Mode::Pull { .. }
             | Mode::CreateRepo { .. }
             | Mode::Backups { .. }
             | Mode::Restore { .. }
@@ -1793,7 +1884,9 @@ impl Screen for Dotfiles {
 
     fn hints(&self) -> &'static str {
         match &self.mode {
-            Mode::Browse => "↑↓ move · enter actions · x export · . missing · esc home · ? help",
+            Mode::Browse => {
+                "↑↓ move · enter actions · x export · u pull · f Finder · . missing · esc home · ? help"
+            }
             Mode::Actions(_) => "↑↓ move · enter choose · esc go back",
             Mode::Editing { .. } => "Waiting for your editor to close",
             Mode::Review(review) if matches!(review.checked, Checked::Failed(_)) => {
@@ -1815,6 +1908,7 @@ impl Screen for Dotfiles {
             }
             Mode::Export(_) => "↑↓ move · space in or out · m message · y commit · esc go back",
             Mode::Push { .. } => "y push · esc not now",
+            Mode::Pull { .. } => "y pull · esc not now",
             Mode::CreateRepo { .. } => "y create · esc not now",
             Mode::Note { .. } => "any key continue",
         }
@@ -1839,6 +1933,11 @@ impl Screen for Dotfiles {
             ),
             ("b", "List its backups, then restore one"),
             ("x", "Export: review for secrets, commit, then push"),
+            (
+                "u",
+                "Pull: get the remote's new commits into your saved copies",
+            ),
+            ("f", "Show the file in Finder"),
             (".", "Show or hide the files that are not on this Mac"),
             ("Esc", "Go back"),
             ("q", "Quit"),
@@ -2797,6 +2896,72 @@ mod tests {
             git(&remote, &["log", "-1", "--format=%s", "main"]).trim(),
             "Use hx"
         );
+    }
+
+    #[test]
+    fn u_pulls_new_commits_into_the_saved_copies_only() {
+        let (dir, mut screen, remote) = export_screen();
+        let source = screen.home.join(".local/share/chezmoi");
+        // Saved copies with changes not exported are never pulled over.
+        press(&mut screen, KeyCode::Char('u'));
+        assert!(render(&mut screen, 120, 30).contains("Get new commits from origin/main?"));
+        press(&mut screen, KeyCode::Char('y'));
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains("Export them first"), "{text}");
+        press(&mut screen, KeyCode::Char('x'));
+
+        git(&source, &["checkout", "-q", "--", "."]);
+        let other = dir.path().join("other");
+        git(
+            dir.path(),
+            &[
+                "clone",
+                "-q",
+                remote.to_str().unwrap(),
+                other.to_str().unwrap(),
+            ],
+        );
+        git(&other, &["config", "user.name", "You"]);
+        git(&other, &["config", "user.email", "you@example.com"]);
+        write(&other.join("dot_zshrc"), "export A=9\n");
+        git(&other, &["commit", "-q", "-am", "From the other Mac"]);
+        git(&other, &["push", "-q", "origin", "main"]);
+
+        screen.reload();
+        press(&mut screen, KeyCode::Char('u'));
+        press(&mut screen, KeyCode::Esc);
+        assert!(matches!(screen.back(), Action::None));
+        assert_eq!(
+            fs::read_to_string(source.join("dot_zshrc")).unwrap(),
+            "export A=1\n"
+        );
+
+        press(&mut screen, KeyCode::Char('u'));
+        press(&mut screen, KeyCode::Char('y'));
+        let text = render(&mut screen, 120, 30);
+        assert!(text.contains("1 commit from origin/main"), "{text}");
+        assert_eq!(
+            fs::read_to_string(source.join("dot_zshrc")).unwrap(),
+            "export A=9\n"
+        );
+        assert_eq!(
+            fs::read_to_string(screen.home.join(".zshrc")).unwrap(),
+            "export A=2\n"
+        );
+        press(&mut screen, KeyCode::Char('x'));
+        press(&mut screen, KeyCode::Char('u'));
+        press(&mut screen, KeyCode::Char('y'));
+        assert!(render(&mut screen, 120, 30).contains("has nothing new"));
+    }
+
+    #[test]
+    fn the_preview_stays_put_while_the_selection_moves() {
+        let (_dir, mut screen, _remote) = export_screen();
+        let top = |text: &str| text.lines().position(|line| line.contains("┌ Preview"));
+        let first = top(&render(&mut screen, 140, 40));
+        assert!(first.is_some());
+        press(&mut screen, KeyCode::Down);
+        assert_eq!(top(&render(&mut screen, 140, 40)), first);
     }
 
     #[test]

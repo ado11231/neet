@@ -591,6 +591,69 @@ pub fn push(top: &Path, target: &PushTarget) -> Result<(), String> {
     Err(format!("git push failed: {message}"))
 }
 
+/// Fetches the remote branch the current branch tracks, and moves the
+/// branch forward to it. Returns how many commits came in, 0 when there
+/// were none. Never merges or rebases: when this Mac has commits the remote
+/// does not, or source files have changes not committed, nothing changes.
+/// No Git hook runs for the move.
+///
+/// # Errors
+///
+/// Returns why nothing was pulled, in plain words.
+pub fn pull(top: &Path, target: &PushTarget) -> Result<usize, String> {
+    if push_target(top)? != *target {
+        return Err("The branch or its remote changed. Try again.".to_string());
+    }
+    let status = git_ok(top, &["status", "--porcelain", "--untracked-files=no"])?;
+    if !status.trim().is_empty() {
+        return Err(
+            "Saved copies have changes not exported yet. Export them first, then pull.".to_string(),
+        );
+    }
+    let fetched = git(
+        top,
+        &["fetch", "--quiet", "--no-tags", "--", &target.remote],
+    )?;
+    if !fetched.success {
+        return Err(format!("git fetch failed: {}", fetched.stderr.trim()));
+    }
+    let counts = git_ok(
+        top,
+        &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"],
+    )?;
+    let (ahead, behind) = counts
+        .trim()
+        .split_once('\t')
+        .and_then(|(ahead, behind)| {
+            Some((ahead.parse::<usize>().ok()?, behind.parse::<usize>().ok()?))
+        })
+        .ok_or("Git did not say how the branch and its remote differ.")?;
+    if behind == 0 {
+        return Ok(0);
+    }
+    if ahead > 0 {
+        return Err(format!(
+            "This Mac has {ahead} commits the remote does not, and the remote has {behind} more. Nothing changed. Push first, or merge them with git."
+        ));
+    }
+    let merged = git(
+        top,
+        &[
+            "-c",
+            "core.hooksPath=/dev/null",
+            "merge",
+            "--ff-only",
+            "--quiet",
+            "@{upstream}",
+        ],
+    )?;
+    if merged.success {
+        Ok(behind)
+    } else {
+        Err(format!("git merge failed: {}", merged.stderr.trim()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

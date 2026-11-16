@@ -79,6 +79,11 @@ pub(super) enum Mode {
         target: neet_core::dotfiles::export::PushTarget,
         ahead: Option<usize>,
     },
+    /// `u`: whether to get the remote's new commits
+    Pull {
+        top: PathBuf,
+        target: neet_core::dotfiles::export::PushTarget,
+    },
     /// After starting a repository with no remote: whether `gh` should
     /// create a private GitHub repository and push to it
     CreateRepo {
@@ -133,7 +138,7 @@ pub(super) struct Review {
 }
 
 /// Lines of a diff, ready to draw, and how far it is scrolled
-pub(super) struct Diff {
+pub(in crate::ui) struct Diff {
     pub lines: Vec<Line<'static>>,
     pub added: usize,
     pub removed: usize,
@@ -255,7 +260,7 @@ pub(super) fn draw_review(frame: &mut Frame, area: Rect, review: &Review, writes
 }
 
 /// The question before `r` or `p`, with the diff of what changes
-pub(super) fn draw_ask(
+pub(in crate::ui) fn draw_ask(
     frame: &mut Frame,
     area: Rect,
     title: &str,
