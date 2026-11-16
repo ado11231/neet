@@ -121,6 +121,8 @@ What Remove App may find and remove is in [SAFETY.md](SAFETY.md#app-removal).
 | Diff | Compare with the chezmoi source or latest backup. | Done |
 | Configure | Review settings for Git, tmux, Starship, kitty, Ghostty, mise, and zsh. zsh edits stay in a marked block. | Done |
 | Export | Review files for secrets, commit selected files, then ask before pushing. Can start a private dotfiles repository. | Done |
+| Pull | Gets the remote's new commits into your saved copies, by moving forward only. Files on this Mac stay as they are until you use the saved version. | Done |
+| Finder | Shows the selected file in Finder. | Done |
 | Start a repository | Without chezmoi, writes the dotfiles you pick into a new repository in chezmoi's folder and layout, commits them, and offers to make a private GitHub repository with `gh`. | Done |
 
 What may change, and how, is in [SAFETY.md](SAFETY.md#dotfiles). neet runs chezmoi only when its templates and hooks cannot run a program.
@@ -139,6 +141,9 @@ What may change, and how, is in [SAFETY.md](SAFETY.md#dotfiles). neet runs chezm
 | Skill sources | Mark each skill as your copy, a link, bundled, or from a plugin, with the plugin's version and on or off state. | Done |
 | Remove a skill link | Review removing a linked skill. The folder it points to stays, and `u` puts the link back. | Done |
 | Finder | Reveals the selected file, including hidden files. | Done |
+| Sort | Order the list by tool, newest, oldest, or largest. | Done |
+| Chats of deleted projects | Selects the shown chats whose project folder is gone, ready for review. | Done |
+| Totals | Counts and sizes per tool, and the size of what is selected. | Done |
 
 * Settings and instructions are view only. Chat cleanup leaves cloud history and Codex's own database.
 * Only known folders are searched. See [AI Tools safety](SAFETY.md#ai-tools) for paths and read limits.
@@ -148,6 +153,8 @@ What may change, and how, is in [SAFETY.md](SAFETY.md#dotfiles). neet runs chezm
 | Feature | What It Does | Status |
 | --- | --- | --- |
 | List | Lists user agents, shared agents and daemons, and app helpers. Shows current state and signature. | Done |
+| What it runs | Shows a plist's command, when it starts, what it watches, and where it logs. Values of environment variables are not shown. | Done |
+| Find | Narrow the list by name, label, or app. | Done |
 | Open at login | Open System Settings to see and change login apps. | Done |
 | Turn off and back on | Review changes to your own launch agents. Saves the old state and leaves the plist alone. | Done |
 
@@ -162,10 +169,11 @@ What may change, and how, is in [SAFETY.md](SAFETY.md#dotfiles). neet runs chezm
 | Power | Low Power Mode, display, system, and disk sleep, Power Nap, and wake for network, per battery and charger. Changes run `sudo pmset` once after review. | Done |
 | Sleep turned off | Flags `pmset disablesleep 1` and offers to turn it back off. | Done |
 | Keeping it awake | Lists the apps holding power assertions and what they stop. | Done |
-| Mac settings | 31 Finder, typing, Dock, screenshot, and saving settings through `defaults`, with reset to macOS's default. | Done |
+| Mac settings | 31 Finder, typing, Dock, screenshot, and saving settings through `defaults`, with reset to macOS's default. Find a setting by name, and see every one that is set. | Done |
 | Undo | Puts a power or Mac setting back as it was before neet's first change. | Done |
 | Preferences | Saves what Disk, Large Files, and AI Tools open with. | Done |
-| Shell PATH | Lists PATH folders in order, flags missing, repeated, relative, and world-writable ones, shows where each was added, and which copy of a program runs. View only. | Done |
+| Shell PATH | Lists PATH folders in order, flags missing, repeated, relative, and world-writable ones, shows where each was added, and which copy of a program runs. | Done |
+| PATH edits | Remove a folder, move it to the front or back, or take out every repeated and missing one. Shows the shell file's diff first and keeps a backup that Dotfiles can restore. Only plain lines that set PATH are changed. | Done |
 | Display | Refresh rate for ProMotion and external displays. | Proposed |
 
 * What may change, and how, is in [SAFETY.md](SAFETY.md#settings).
@@ -222,7 +230,6 @@ These features are not built yet. Each needs checking on real Macs.
 
 | Area | What It Would Do |
 | --- | --- |
-| PATH edits | Remove missing or repeated PATH folders and reorder them, with a backup. |
 | Display | Switch a ProMotion or external display's refresh rate, switching back unless you keep it. |
 
 ## Terms

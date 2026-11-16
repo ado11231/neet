@@ -403,7 +403,8 @@ A check only reads the file. It never runs it.
 * **With chezmoi:** offer only changed source copies of listed dotfiles. Recheck selected files before staging and commit only those files, even if others are staged. Show the message first. Unreadable files block review. Repository Git hooks still run.
 * **Without chezmoi:** require a missing or empty source folder that is not a link, plus a Git name and email. Recheck all reviewed files and destinations, then create only selected copies, a README, and `.chezmoiignore` before `git init` and commit. Never overwrite existing files or follow protected links.
 * Push only after `y` confirms the reviewed commit, remote address, and tracked branch. Refuse changed commits or destinations. Other Git push settings must not add branches or tags. With no remote, a separate confirmation may create a private `dotfiles` repository through `gh`.
-* Never force push, pull, merge, or rebase. A rejected push says to pull with Git first.
+* Never force push, merge two histories, or rebase. A rejected push says to pull first.
+* Pull only after `y`. It fetches the tracked remote branch and moves your branch forward to it, with Git hooks off for the move. If saved copies have changes not committed, or this Mac has commits the remote does not, nothing changes. Files in your home folder are not touched: each one that then differs shows as changed, for you to review.
 * Git runs with fsmonitor and terminal password prompts turned off. Repository hooks still run.
 
 ## Startup Items
@@ -418,6 +419,7 @@ Startup only reads unless you confirm a change to your own launch agent.
 | Launch agents for every user | `/Library/LaunchAgents/*.plist` | neet reads the plist itself. |
 | Launch daemons | `/Library/LaunchDaemons/*.plist` | neet reads the plist itself. |
 | Allowed in the background | Helpers inside apps in `/Applications` and `~/Applications`: `Contents/Library/LoginItems`, `LaunchAgents`, and `LaunchDaemons` | neet reads them itself, and lists only those launchd knows, which the app asked macOS to run. |
+| What a plist runs, on `Enter` | The selected plist | `plutil -convert json`, which runs nothing. Names of environment variables show, never their values. |
 | Whether each is turned off, and runs | launchd | `launchctl list`, `launchctl print-disabled gui/<uid>` and `system`, and `launchctl print system/<label>` |
 | Who made it, and whether it is signed | The program file | `codesign --display`, which only reads it |
 
@@ -479,9 +481,13 @@ Only your own launch agents in `~/Library/LaunchAgents` may be turned off and ba
 
 ### Shell PATH
 
-* View only. neet reads its own `PATH`, which it got from the terminal it started in, and never runs your shell.
+* neet reads its own `PATH`, which it got from the terminal it started in, and never runs your shell.
 * To find where a folder was added, neet reads `~/.zshenv`, `~/.zprofile`, `~/.zshrc`, `~/.zlogin`, `~/.bash_profile`, `~/.bashrc`, `~/.profile`, and `~/.config/fish/config.fish`, each up to 1 MiB, and `/etc/paths` and `/etc/paths.d`. Commented lines are skipped.
 * Folder contents are read only to count programs and find which copy of a name runs. No program is run.
+* A change removes a folder from the plain line that adds it, such as `export PATH="$HOME/bin:$PATH"`, or moves it into neet's marked block in `~/.zshrc`. Lines that run a tool, `/etc/paths`, `/etc/paths.d`, and folders no shell file adds are refused, with the reason.
+* Only the shell files in [Dotfiles](#which-files-1) may change. The diff shows first, and `y` writes it. Each file is checked, backed up, and written as a dotfile edit is, so Dotfiles can restore it. A file that changed since the review is not written.
+* A folder is not moved out of `~/.zshenv`, `~/.zprofile`, or `~/.zlogin`, since shells that skip `~/.zshrc` read them.
+* The new PATH applies to the next terminal you open.
 
 ### Preferences
 
@@ -504,7 +510,6 @@ Later features change files or settings in place, not through the Trash. Each ha
 
 | Feature | May Change | How |
 | --- | --- | --- |
-| PATH edits | Only the shell files in [Dotfiles](#which-files-1). Never `/etc/paths`, `/etc/paths.d`, or lines that run a tool. | Edit with a backup |
 | Refresh rate | The mode of a connected display. It switches back after 15 seconds unless you keep it. | CoreGraphics |
 
 * Every change:
