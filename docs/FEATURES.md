@@ -80,7 +80,7 @@ Shows where your disk space goes. Looking never changes a file.
 
 | Rule | Folder | Level | Close First | Keeps Anything Newer Than |
 | --- | --- | --- | --- | --- |
-| Xcode DerivedData | `~/Library/Developer/Xcode/DerivedData` | `safe` | Xcode | |
+| Xcode build files | `~/Library/Developer/Xcode/DerivedData` | `safe` | Xcode | |
 | Simulator caches | `~/Library/Developer/CoreSimulator/Caches` | `safe` | Simulator | |
 | Xcode device support | `~/Library/Developer/Xcode/iOS DeviceSupport` | `caution` | Xcode | 30 days |
 | Playwright browsers | `~/Library/Caches/ms-playwright` | `caution` | | |
@@ -88,7 +88,7 @@ Shows where your disk space goes. Looking never changes a file.
 | Homebrew downloads | `~/Library/Caches/Homebrew` | `caution` | | |
 | pnpm cache | `~/Library/Caches/pnpm` | `caution` | | |
 | Cargo downloads | `~/.cargo/registry/cache` | `caution` | | |
-| node-gyp headers | `~/Library/Caches/node-gyp` | `caution` | | |
+| Node.js headers | `~/Library/Caches/node-gyp` | `caution` | | |
 | pip cache | `~/Library/Caches/pip`, `~/.cache/pip` | `caution` | | |
 | Yarn cache | `~/Library/Caches/Yarn` | `caution` | | |
 | Chrome cache | `~/Library/Caches/Google/Chrome` | `caution` | Chrome | |
