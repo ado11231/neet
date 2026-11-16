@@ -6,6 +6,51 @@
 
 ## Unreleased
 
+## [0.4.0](https://github.com/ado11231/neet/compare/neet-v0.3.0...neet-v0.4.0)
+
+### Added
+
+
+* plain labels and file types, lined up Changed column
+
+* review by group and folder, with what goes in place of an empty Kept box
+
+* split layout and plain text for build folders and simulators
+
+* steady boxes, aligned columns, plain short text
+
+* remove the treemap and the space breakdown
+
+* steady box heights, aligned columns, shorter text
+
+* sort, select chats of deleted projects, totals by tool
+
+* show what a plist runs, find by name, steady boxes
+
+* change Shell PATH, find a Mac setting, steady boxes
+
+* pull from the remote, show in Finder, steady details
+
+* plain names and descriptions for Deep Clean rules
+
+* plan and write reviewed PATH edits with backups
+
+### Fixed
+
+
+* refuse moves from .zlogin
+
+* plan without reading the disk, move copies once, refuse .zshenv and .zprofile
+
+### Other
+
+
+* start command under Install, drop the tables and License section
+
+* start with the screens, then the keys
+
+Released 2026-11-16
+
 ## [0.3.0](https://github.com/ado11231/neet/compare/neet-v0.2.0...neet-v0.3.0)
 
 Settings arrives, so every screen on Home is now built. Disk explains space outside your home folder and draws folders as a treemap, and AI Tools can continue chats and manage skills.
