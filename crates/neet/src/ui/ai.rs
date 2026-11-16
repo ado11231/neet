@@ -13,7 +13,7 @@ use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Stylize;
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState, Padding, Paragraph, Wrap};
 use similar::{ChangeTag, TextDiff};
 
@@ -22,6 +22,47 @@ use super::{format, visual};
 
 const TABS: [&str; 3] = ["Files", "Chats", "Skills"];
 const INSTALL_TARGETS: [Provider; 3] = [Provider::Claude, Provider::Codex, Provider::Gemini];
+
+/// The tools By tool counts, in the order shown
+const TOOLS: [Provider; 4] = [
+    Provider::Claude,
+    Provider::Codex,
+    Provider::Gemini,
+    Provider::Shared,
+];
+
+/// Lines kept for what the keys do, under the selected item's fields
+const KEY_LINES: u16 = 4;
+
+/// How the list is ordered. `s` steps through them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Sort {
+    /// As found: by tool, then by path
+    Listed,
+    Newest,
+    Oldest,
+    Largest,
+}
+
+impl Sort {
+    fn next(self) -> Self {
+        match self {
+            Self::Listed => Self::Newest,
+            Self::Newest => Self::Oldest,
+            Self::Oldest => Self::Largest,
+            Self::Largest => Self::Listed,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Listed => "by tool",
+            Self::Newest => "newest first",
+            Self::Oldest => "oldest first",
+            Self::Largest => "largest first",
+        }
+    }
+}
 
 enum Input {
     Search,
@@ -123,6 +164,7 @@ pub struct AiTools {
     marked: BTreeSet<PathBuf>,
     tab: usize,
     filter: String,
+    sort: Sort,
     provider: Option<Provider>,
     input: Option<Input>,
     viewer: Option<Viewer>,
@@ -168,6 +210,7 @@ impl AiTools {
             marked: BTreeSet::new(),
             tab: 0,
             filter: String::new(),
+            sort: Sort::Listed,
             provider: None,
             input: None,
             viewer: None,
@@ -231,18 +274,23 @@ impl AiTools {
         }
     }
 
+    /// Whether `item` belongs on the open tab
+    fn on_tab(&self, item: &Item) -> bool {
+        match self.tab {
+            1 => item.kind == Kind::Chat,
+            2 => item.kind == Kind::Skill,
+            _ => matches!(item.kind, Kind::Settings | Kind::Instructions),
+        }
+    }
+
     fn rows(&self) -> Vec<&Item> {
         let filter = self.filter.to_lowercase();
-        self.listing
+        let mut rows: Vec<&Item> = self
+            .listing
             .items
             .iter()
             .filter(|item| {
-                let category = match self.tab {
-                    1 => item.kind == Kind::Chat,
-                    2 => item.kind == Kind::Skill,
-                    _ => matches!(item.kind, Kind::Settings | Kind::Instructions),
-                };
-                category
+                self.on_tab(item)
                     && self.provider.is_none_or(|provider| {
                         item.provider == provider
                             || (item.provider == Provider::Shared
@@ -263,7 +311,65 @@ impl AiTools {
                     .to_lowercase()
                     .contains(&filter)
             })
-            .collect()
+            .collect();
+        // Stable, so items of one age or size keep the order they were found in.
+        match self.sort {
+            Sort::Listed => {}
+            Sort::Newest => rows.sort_by_key(|item| std::cmp::Reverse(item.modified)),
+            Sort::Oldest => rows.sort_by_key(|item| (item.modified.is_none(), item.modified)),
+            Sort::Largest => rows.sort_by_key(|item| std::cmp::Reverse(item.size)),
+        }
+        rows
+    }
+
+    /// `s`: the next order, with the same item still selected
+    fn next_sort(&mut self) {
+        let selected = self.selected().map(|item| item.path);
+        self.sort = self.sort.next();
+        let row = selected
+            .and_then(|path| self.rows().iter().position(|item| item.path == path))
+            .unwrap_or(0);
+        self.list.select(Some(row));
+    }
+
+    /// `m`: selects the shown chats whose project folder is gone, or clears
+    /// them when every one is selected already
+    fn toggle_orphans(&mut self) {
+        let paths: Vec<PathBuf> = self
+            .rows()
+            .iter()
+            .filter(|item| item.chat.as_ref().is_some_and(|chat| chat.missing_project))
+            .map(|item| item.path.clone())
+            .collect();
+        if paths.is_empty() {
+            self.note = "No shown chat has a missing project.".into();
+            return;
+        }
+        let clear = paths.iter().all(|path| self.marked.contains(path));
+        let count = paths.len();
+        for path in paths {
+            if clear {
+                self.marked.remove(&path);
+            } else {
+                self.marked.insert(path);
+            }
+        }
+        let chats = if count == 1 { "chat" } else { "chats" };
+        self.note = if clear {
+            format!("{count} {chats} with a missing project cleared.")
+        } else {
+            format!("{count} {chats} with a missing project selected. d reviews moving to Trash.")
+        };
+    }
+
+    /// The size of every selected chat, shown or not
+    fn marked_size(&self) -> u64 {
+        self.listing
+            .items
+            .iter()
+            .filter(|item| self.marked.contains(&item.path))
+            .map(|item| item.size)
+            .sum()
     }
 
     fn selected(&self) -> Option<Item> {
@@ -725,21 +831,20 @@ y archives it. Esc cancels."
                     .source
                     .as_ref()
                     .map_or_else(String::new, |source| format!(" · {}", source.label()));
-                ListItem::new(vec![
-                    Line::from(format::shorten_middle(
-                        &ai::display_text(&format!(
-                            "{marker}{} · {}{source}",
-                            title,
-                            item.provider.name()
-                        ))
-                        .replace('\n', " "),
-                        usize::from(area.width.saturating_sub(6)),
+                let room = usize::from(area.width.saturating_sub(6));
+                let name = format::shorten_middle(
+                    &ai::display_text(&format!(
+                        "{marker}{} · {}{source}",
+                        title,
+                        item.provider.name()
                     ))
-                    .style(visual::HEADING),
-                    Line::from(format::shorten_middle(
-                        &subtitle,
-                        usize::from(area.width.saturating_sub(6)),
-                    )),
+                    .replace('\n', " "),
+                    room,
+                );
+                let second = place_line(item, &subtitle, room);
+                ListItem::new(vec![
+                    Line::from(name).style(visual::HEADING),
+                    Line::from(second),
                 ])
             })
             .collect();
@@ -818,8 +923,9 @@ y archives it. Esc cancels."
                 .count();
             let hidden = self.marked.len().saturating_sub(visible);
             lines.push(Line::from(format!(
-                "{} selected · {hidden} hidden by filters",
-                self.marked.len()
+                "{} selected · {hidden} hidden by filters · {}",
+                self.marked.len(),
+                format::size(self.marked_size())
             )));
         }
         if !self.note.is_empty() {
@@ -863,48 +969,258 @@ y archives it. Esc cancels."
         }
     }
 
-    fn details(&self) -> Vec<Line<'static>> {
-        let Some(item) = self.selected() else {
-            return vec![
-                Line::from("Claude Code · Codex · Gemini CLI"),
-                Line::from("Shared skills: ~/.agents/skills"),
-            ];
+    /// The selected item's name, and its fields: the same rows for every
+    /// item on a tab, so the box keeps its height while the selection moves
+    fn details(&self, width: usize) -> (String, Vec<Line<'static>>) {
+        let room = width.saturating_sub(9);
+        let field = |label: &str, value: Span<'static>| {
+            Line::from(vec![Span::raw(format!("{label:<9}")).bold(), value])
         };
-        let mut lines = vec![
-            Line::from(format!("{} · {}", item.provider.name(), item.kind.name()))
-                .style(visual::HEADING),
-            Line::from(ai::display_text(&self.shown_path(&item.path))),
-            Line::from(ai::display_text(&item.scope)),
-            Line::from(format!("{} file size", format::size(item.size))),
-            Line::default(),
-        ];
-        if let Some(chat) = &item.chat {
-            lines.insert(1, Line::from(chat.title.clone()));
-            lines.insert(2, Line::from(chat.project_label()));
-            if !chat.note.is_empty() {
-                lines.push(Line::from(chat.note.clone()));
-            }
-            if let Some(age) = item.modified.and_then(|time| time.elapsed().ok()) {
-                lines.push(Line::from(format!("Updated {}", format::age(age))));
-            }
+        let Some(item) = self.selected() else {
+            return (
+                "Selected".into(),
+                vec![
+                    field("Tools", Span::raw("Claude Code · Codex · Gemini CLI")),
+                    field("Shared", Span::raw("~/.agents/skills")),
+                ],
+            );
+        };
+        let path = if item.kind == Kind::Skill {
+            item.path.parent().unwrap_or(&item.path).to_path_buf()
+        } else {
+            item.path.clone()
+        };
+        let name = item
+            .chat
+            .as_ref()
+            .filter(|chat| !chat.title.is_empty())
+            .map_or_else(
+                || {
+                    path.file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .into_owned()
+                },
+                |chat| chat.title.replace('\n', " "),
+            );
+        let mut lines = vec![field(
+            "Tool",
+            Span::raw(format!("{} · {}", item.provider.name(), item.kind.name())),
+        )];
+        if self.tab == 1 {
+            lines.push(field(
+                "Project",
+                match item.chat.as_ref().and_then(|chat| {
+                    chat.project
+                        .as_ref()
+                        .map(|project| (project, chat.missing_project))
+                }) {
+                    Some((project, true)) => Span::raw(format::shorten_path(
+                        &format!("gone: {}", self.shown_path(project)),
+                        room,
+                    ))
+                    .yellow(),
+                    Some((project, false)) => {
+                        Span::raw(format::shorten_path(&self.shown_path(project), room))
+                    }
+                    None => Span::raw("unknown"),
+                },
+            ));
         }
-        if let Some(source) = &item.source {
-            lines.push(Line::from(ai::display_text(&self.source_text(source))));
+        lines.push(field(
+            "Path",
+            Span::raw(format::shorten_path(&self.shown_path(&item.path), room)),
+        ));
+        lines.push(field(
+            "Where",
+            Span::raw(format::shorten_middle(&ai::display_text(&item.scope), room)),
+        ));
+        lines.push(field(
+            "Size",
+            format::size_span(item.size, format::size(item.size)),
+        ));
+        lines.push(field(
+            "Updated",
+            Span::raw(
+                item.modified
+                    .and_then(|time| time.elapsed().ok())
+                    .map_or_else(|| "unknown".to_string(), format::age),
+            ),
+        ));
+        if self.tab == 2 {
+            let source = item
+                .source
+                .as_ref()
+                .map_or_else(|| "unknown".to_string(), |source| self.source_text(source));
+            lines.extend(visual::hanging(
+                vec![Span::raw(format!("{:<9}", "Source")).bold()],
+                9,
+                &ai::display_text(source.strip_prefix("Source: ").unwrap_or(&source)),
+                ratatui::style::Style::default(),
+                width,
+            ));
         }
-        lines.push(Line::from(match (item.kind, &item.source) {
-            (Kind::Chat, _) if item.provider == Provider::Codex => "Enter reads · c continues · z archives · Space selects · d reviews removal.",
-            (Kind::Chat, _) if item.provider == Provider::Claude => "Enter reads · c continues · Space selects · d reviews removal.",
-            (Kind::Chat, _) => "Enter reads · Space selects · a selects all shown · d reviews removal.",
-            (Kind::Settings, _) => "Enter shows settings, which may include tokens. View only.",
-            (Kind::Instructions, _) => "Enter shows instructions. View only.",
-            (Kind::Skill, Some(Source::Plugin(_))) => "The tool updates plugin skills. Enter previews it. View only. Turn the plugin on or off in the tool, such as /plugin in Claude Code.",
-            (Kind::Skill, _) if item.bundled => "Bundled skill. Enter previews it. View only.",
-            (Kind::Skill, Some(Source::Link(_))) => "Enter previews · e edits the source · b restores the latest backup · x removes the link. Every change is reviewed first.",
-            (Kind::Skill, _) => "Enter previews · e edits · b restores the latest backup. Every change is reviewed first.",
-        }));
-        lines.push(Line::from("o reveals the file in Finder."));
+        if let Some(chat) = item.chat.as_ref().filter(|chat| !chat.note.is_empty()) {
+            lines.push(field("Note", Span::raw(chat.note.clone())));
+        }
+        lines.push(Line::default());
+        lines.push(Line::from(keys_for(&item)));
+        (ai::display_text(&name), lines)
+    }
+
+    /// How many items of the open tab each tool has, and their size
+    fn by_tool(&self, width: usize) -> Vec<Line<'static>> {
+        let mut lines = vec![Line::from("By tool").style(visual::HEADING)];
+        let totals: Vec<(Provider, usize, u64)> = TOOLS
+            .iter()
+            .map(|&tool| {
+                let items = self
+                    .listing
+                    .items
+                    .iter()
+                    .filter(|item| self.on_tab(item) && item.provider == tool);
+                let (count, size) =
+                    items.fold((0, 0), |(count, size), item| (count + 1, size + item.size));
+                (tool, count, size)
+            })
+            .collect();
+        let largest = totals.iter().map(|total| total.2).max().unwrap_or(0);
+        let bar = width.saturating_sub(31).min(24);
+        for (tool, count, size) in &totals {
+            let mut spans = vec![
+                Span::raw(format!("{:<12}", tool.name())).bold(),
+                Span::raw(format!("{count:>5}  ")),
+                format::size_span(*size, format!("{:>9}", format::size(*size))),
+            ];
+            if bar >= 6 {
+                spans.push(Span::raw("  "));
+                spans.push(format::size_bar(*size, largest, bar));
+            }
+            lines.push(Line::from(spans));
+        }
+        let (count, size) = totals.iter().fold((0, 0), |(count, size), total| {
+            (count + total.1, size + total.2)
+        });
+        lines.push(Line::from(vec![
+            Span::raw(format!("{:<12}", "All")).bold(),
+            Span::raw(format!("{count:>5}  ")).bold(),
+            format::size_span(size, format!("{:>9}", format::size(size))).bold(),
+        ]));
         lines
     }
+
+    /// What is selected for removal, and the quick ways to select
+    fn selection(&self) -> Vec<Line<'static>> {
+        let orphans = self
+            .listing
+            .items
+            .iter()
+            .filter(|item| item.chat.as_ref().is_some_and(|chat| chat.missing_project))
+            .count();
+        vec![
+            Line::from("Selected").style(visual::HEADING),
+            Line::from(vec![
+                Span::raw(format!("{:<12}", "Chats")).bold(),
+                Span::raw(format!("{:>5}  ", self.marked.len())),
+                format::size_span(
+                    self.marked_size(),
+                    format!("{:>9}", format::size(self.marked_size())),
+                ),
+            ]),
+            Line::from(vec![
+                Span::raw(format!("{:<12}", "Project gone")).bold(),
+                Span::raw(format!("{orphans:>5}  ")),
+                Span::raw("m").fg(visual::ACCENT).bold(),
+                Span::raw(" selects them"),
+            ]),
+        ]
+    }
+
+    /// The selected item's box, with the tab's totals under it
+    fn draw_side(&self, frame: &mut Frame, area: Rect) {
+        let width = usize::from(area.width.saturating_sub(4));
+        let (name, lines) = self.details(width);
+        let block = visual::block()
+            .title(Line::from(format!(" {} ", format::shorten_middle(&name, width))).bold())
+            .padding(Padding::horizontal(1));
+        // Fields, a blank row, and room for what the keys do
+        let fields = match self.tab {
+            1 => 6,
+            // The source can take a second row.
+            2 => 8,
+            _ => 5,
+        };
+        let height = fields + 1 + KEY_LINES + 2;
+        let mut extras = vec![self.by_tool(width)];
+        if self.tab == 1 {
+            extras.push(self.selection());
+        }
+        if self.selected().is_none() || area.height < height + 8 {
+            frame.render_widget(
+                Paragraph::new(lines)
+                    .wrap(Wrap { trim: false })
+                    .block(block),
+                area,
+            );
+            return;
+        }
+        let [top, below] =
+            Layout::vertical([Constraint::Length(height), Constraint::Fill(1)]).areas(area);
+        frame.render_widget(
+            Paragraph::new(lines)
+                .wrap(Wrap { trim: false })
+                .block(block),
+            top,
+        );
+        visual::sections(frame, below, "", extras);
+    }
+}
+
+/// What the keys do with `item`, in a line
+fn keys_for(item: &Item) -> &'static str {
+    match (item.kind, &item.source) {
+        (Kind::Chat, _) if item.provider == Provider::Codex => {
+            "Enter reads · c continues · z archives · Space selects · d reviews removal."
+        }
+        (Kind::Chat, _) if item.provider == Provider::Claude => {
+            "Enter reads · c continues · Space selects · d reviews removal."
+        }
+        (Kind::Chat, _) => "Enter reads · Space selects · a selects all shown · d reviews removal.",
+        (Kind::Settings, _) => "Enter shows settings, which may include tokens. View only.",
+        (Kind::Instructions, _) => "Enter shows instructions. View only.",
+        (Kind::Skill, Some(Source::Plugin(_))) => {
+            "The tool updates plugin skills. Enter previews it. View only. Turn the plugin on or off in the tool, such as /plugin in Claude Code."
+        }
+        (Kind::Skill, _) if item.bundled => "Bundled skill. Enter previews it. View only.",
+        (Kind::Skill, Some(Source::Link(_))) => {
+            "Enter previews · e edits the source · b restores the latest backup · x removes the link. Every change is reviewed first."
+        }
+        (Kind::Skill, _) => {
+            "Enter previews · e edits · b restores the latest backup. Every change is reviewed first."
+        }
+    }
+}
+
+/// Under an item's name: where it is, then its size and age, which stay
+/// whole while the path gives way
+fn place_line(item: &Item, place: &str, room: usize) -> Vec<Span<'static>> {
+    let age = item
+        .modified
+        .and_then(|time| time.elapsed().ok())
+        .map_or_else(String::new, |age| format!(" · {}", format::age(age)));
+    let size = format!("{:>9}", format::size(item.size));
+    let right = format::display_width(&size) + format::display_width(&age);
+    let wide = room > right + 20;
+    let place_room = if wide { room - right - 1 } else { room };
+    let place = format::shorten_middle(place, place_room);
+    let gap = place_room.saturating_sub(format::display_width(&place)) + 1;
+    let mut spans = vec![Span::raw(place)];
+    if wide {
+        spans.push(Span::raw(" ".repeat(gap)));
+        spans.push(format::size_span(item.size, size));
+        spans.push(Span::raw(age));
+    }
+    spans
 }
 
 impl Screen for AiTools {
@@ -954,24 +1270,24 @@ impl Screen for AiTools {
             Constraint::Length(status_height),
         ])
         .areas(area);
-        let tabs = TABS
-            .iter()
-            .enumerate()
-            .map(|(index, name)| {
-                if index == self.tab {
-                    format!("[{name}]")
-                } else {
-                    (*name).into()
-                }
-            })
-            .collect::<Vec<String>>()
-            .join("   ");
+        let mut tabs = Vec::new();
+        for (index, name) in TABS.iter().enumerate() {
+            if index > 0 {
+                tabs.push(Span::raw("   "));
+            }
+            tabs.push(if index == self.tab {
+                Span::raw(format!("[{name}]")).bold().fg(visual::ACCENT)
+            } else {
+                Span::raw((*name).to_string())
+            });
+        }
+        tabs.push(Span::raw(format!(
+            "   · {} · {}",
+            self.provider.map_or("All tools", Provider::name),
+            self.sort.name()
+        )));
         frame.render_widget(
-            Paragraph::new(format!(
-                "{tabs}   · {}",
-                self.provider.map_or("All tools", Provider::name)
-            ))
-            .block(
+            Paragraph::new(Line::from(tabs)).block(
                 visual::block()
                     .title(" AI Tools ")
                     .padding(Padding::horizontal(1)),
@@ -985,16 +1301,7 @@ impl Screen for AiTools {
             Layout::vertical([Constraint::Fill(1), Constraint::Length(detail_height)]).areas(body)
         };
         self.draw_list(frame, list);
-        frame.render_widget(
-            Paragraph::new(self.details())
-                .wrap(Wrap { trim: false })
-                .block(
-                    visual::block()
-                        .title(" Selected ")
-                        .padding(Padding::horizontal(1)),
-                ),
-            details,
-        );
+        self.draw_side(frame, details);
         frame.render_widget(
             Paragraph::new(status_lines)
                 .wrap(Wrap { trim: false })
@@ -1073,6 +1380,8 @@ impl Screen for AiTools {
             KeyCode::Char(' ') if self.tab == 1 => self.toggle_chat(),
             KeyCode::Char('a') if self.tab == 1 => self.toggle_all_chats(),
             KeyCode::Char('n') if self.tab == 1 => self.marked.clear(),
+            KeyCode::Char('m') if self.tab == 1 => self.toggle_orphans(),
+            KeyCode::Char('s') => self.next_sort(),
             KeyCode::Char('d') | KeyCode::Delete if self.tab == 1 => self.review_chat_removal(),
             KeyCode::Char('c') if self.tab == 1 => return self.continue_chat(),
             KeyCode::Char('z') if self.tab == 1 => self.review_archive(),
@@ -1190,11 +1499,11 @@ impl Screen for AiTools {
         } else if self.viewer.is_some() {
             "↑↓ scroll · PgUp/PgDn page · Esc back · ? help · q quit"
         } else if self.tab == 1 {
-            "↑↓ move · Enter read · c continue · z archive · Space select · a all shown · d delete · / find · p tool · Tab section · ? help · Esc back"
+            "↑↓ move · Enter read · Space select · d delete · c continue · s sort · / find · p tool · Tab section · ? help · Esc back"
         } else if self.tab == 2 {
-            "↑↓ move · Tab section · Enter read · i link skill · e edit · b restore · x remove link · u undo · / find · p tool · ? help · Esc back"
+            "↑↓ move · Enter read · i link skill · e edit · x remove link · s sort · / find · p tool · Tab section · ? help · Esc back"
         } else {
-            "↑↓ move · Tab section · Enter read · / find · p tool · o Finder · r refresh · ? help · Esc back"
+            "↑↓ move · Enter read · s sort · / find · p tool · o Finder · r refresh · Tab section · ? help · Esc back"
         }
     }
 
@@ -1210,7 +1519,15 @@ impl Screen for AiTools {
                 "Find by path, tool, or project. Esc clears the filter.",
             ),
             ("Enter", "Read the selected file or conversation locally."),
+            (
+                "s",
+                "Sort: by tool, newest first, oldest first, largest first.",
+            ),
             ("Space", "Select or deselect a chat."),
+            (
+                "m",
+                "Select the shown chats whose project folder is gone, or clear them.",
+            ),
             (
                 "a / n",
                 "Select all shown chats / clear every selection. n also cancels chat removal.",
