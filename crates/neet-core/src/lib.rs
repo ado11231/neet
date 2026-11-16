@@ -15,7 +15,6 @@ pub mod safety;
 pub mod scan;
 pub mod settings;
 pub mod size;
-pub mod space;
 pub mod startup;
 pub mod tools;
 pub mod trash;
