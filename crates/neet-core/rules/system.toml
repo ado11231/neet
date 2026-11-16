@@ -6,6 +6,6 @@ name = "Saved window state"
 category = "system"
 tier = "caution"
 paths = ["~/Library/Saved Application State/*"]
-description = "The windows each app had open, used to reopen an app where you left off. Apps open with fresh windows instead."
+description = "Windows each app had open. Apps open with fresh windows."
 regenerates = false
 min_age_days = 30

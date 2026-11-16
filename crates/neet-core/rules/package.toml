@@ -7,7 +7,7 @@ name = "npm cache"
 category = "package"
 tier = "caution"
 paths = ["~/.npm/_cacache/*"]
-description = "Packages npm downloaded before. Your projects keep their own node_modules. Later installs download the packages again."
+description = "Packages npm downloaded. Projects keep their own node_modules. Installs download them again."
 regenerates = true
 min_age_days = 0
 
@@ -17,7 +17,7 @@ name = "Homebrew downloads"
 category = "package"
 tier = "caution"
 paths = ["~/Library/Caches/Homebrew/*"]
-description = "Installers & bottles Homebrew downloaded. Installed programs are kept. Later installs & upgrades download them again."
+description = "Installers Homebrew downloaded. Installed programs are kept. Upgrades download them again."
 regenerates = true
 min_age_days = 0
 
@@ -27,7 +27,7 @@ name = "pnpm cache"
 category = "package"
 tier = "caution"
 paths = ["~/Library/Caches/pnpm/*"]
-description = "Package details pnpm downloaded. The package store is kept. Later installs download the details again."
+description = "Package info pnpm downloaded. The package store is kept. Installs download it again."
 regenerates = true
 min_age_days = 0
 
@@ -37,17 +37,17 @@ name = "Cargo downloads"
 category = "package"
 tier = "caution"
 paths = ["~/.cargo/registry/cache/*"]
-description = "Crate files Cargo downloaded. Builds that need them download them again & offline builds fail until then."
+description = "Packages Cargo downloaded. Builds download them again. Offline builds fail until then."
 regenerates = true
 min_age_days = 0
 
 [[rule]]
 id = "node-gyp-headers"
-name = "node-gyp headers"
+name = "Node.js headers"
 category = "package"
 tier = "caution"
 paths = ["~/Library/Caches/node-gyp/*"]
-description = "Node.js header files used to build native packages. The next native build downloads them again."
+description = "Files used to build native Node.js packages. The next build downloads them again."
 regenerates = true
 min_age_days = 0
 
@@ -57,7 +57,7 @@ name = "pip cache"
 category = "package"
 tier = "caution"
 paths = ["~/Library/Caches/pip/*", "~/.cache/pip/*"]
-description = "Packages & wheels pip downloaded or built. Installed packages are kept. Later installs download or build them again."
+description = "Packages pip downloaded or built. Installed packages are kept. Installs download them again."
 regenerates = true
 min_age_days = 0
 
@@ -67,6 +67,6 @@ name = "Yarn cache"
 category = "package"
 tier = "caution"
 paths = ["~/Library/Caches/Yarn/*"]
-description = "Packages Yarn downloaded. Your projects keep their own node_modules. Later installs download the packages again."
+description = "Packages Yarn downloaded. Projects keep their own node_modules. Installs download them again."
 regenerates = true
 min_age_days = 0
