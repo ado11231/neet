@@ -17,10 +17,8 @@ mod review;
 mod scan;
 mod settings;
 mod skipped;
-mod space;
 mod startup;
 mod tools;
-mod treemap;
 mod visual;
 
 use std::io;

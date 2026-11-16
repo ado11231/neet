@@ -39,7 +39,7 @@ neet
 
 | # | Screen | What it does |
 | --- | --- | --- |
-| 1 | Disk | Browse folders by size, as a list or a treemap, and see where space outside your home folder goes. |
+| 1 | Disk | Browse folders by size. |
 | 2 | Quick Clean | Find build folders, installers, Trash, Docker, and simulator space. |
 | 3 | Deep Clean | Clear caches and logs, after you review every path. |
 | 4 | Remove App | Remove an app and its leftover files. |
