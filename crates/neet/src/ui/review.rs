@@ -17,7 +17,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Padding, Paragraph, Wrap};
 
 use super::app::{Action, Context, Screen};
-use super::clean::{Planned, count, display_path, items, skip_reason};
+use super::clean::{Planned, app_name, count, display_path, items, skip_reason, tier_span};
 use super::format;
 use super::loading::Loading;
 
@@ -48,31 +48,6 @@ impl Scroll {
     }
 }
 
-fn scrolling(
-    frame: &mut Frame,
-    area: Rect,
-    title: String,
-    lines: Vec<Line<'static>>,
-    scroll: &mut Scroll,
-) {
-    let offset = scroll.clamp(
-        usize::from(super::visual::wrapped_rows(
-            &lines,
-            area.width.saturating_sub(4),
-        )),
-        area,
-    );
-    let body = Paragraph::new(lines)
-        .wrap(Wrap { trim: false })
-        .scroll((offset, 0))
-        .block(
-            super::visual::block()
-                .title(title)
-                .padding(Padding::horizontal(1)),
-        );
-    frame.render_widget(body, area);
-}
-
 const SCROLL_HELP: [(&str, &str); 3] = [
     ("↑ ↓  j k", "Scroll"),
     ("PgUp PgDn", "Scroll a page"),
@@ -95,109 +70,278 @@ impl Review {
     }
 
     /// One group per name, so the files app removal finds in the same
-    /// folder are listed together.
-    fn groups(&self) -> Vec<(&str, Vec<&clean::PlanItem>)> {
-        let mut groups: Vec<(&str, Vec<&clean::PlanItem>)> = Vec::new();
+    /// folder are listed together. The largest group first, and in each
+    /// the largest item first.
+    fn groups(&self) -> Vec<Group<'_>> {
+        let mut groups: Vec<Group<'_>> = Vec::new();
         // A selected rule that found nothing has nothing to review.
         let rules = self.planned.plan.rules.iter();
         for rule in rules.filter(|rule| rule.selected && !rule.items.is_empty()) {
-            match groups.iter_mut().find(|(name, _)| *name == rule.rule.name) {
-                Some((_, found)) => found.extend(&rule.items),
-                None => groups.push((&rule.rule.name, rule.items.iter().collect())),
+            match groups.iter_mut().find(|group| group.name == rule.rule.name) {
+                Some(group) => group.items.extend(&rule.items),
+                None => groups.push(Group {
+                    name: &rule.rule.name,
+                    items: rule.items.iter().collect(),
+                }),
             }
         }
+        for group in &mut groups {
+            group.items.sort_by_key(|item| std::cmp::Reverse(item.size));
+        }
+        groups.sort_by_key(|group| std::cmp::Reverse(group.size()));
         groups
     }
 
-    fn lines(&self) -> Vec<Line<'static>> {
+    /// The header, then each group: its name and total, the folder its
+    /// items share, and a row an item with its size, bar, and age. Items
+    /// in one folder show by name, so long paths are not cut.
+    fn table(&self, width: u16) -> (Line<'static>, Vec<Line<'static>>) {
         let home = &self.planned.home;
-        let largest = self
-            .groups()
+        let groups = self.groups();
+        let largest = groups
             .iter()
-            .flat_map(|(_, found)| found.iter().map(|item| item.size))
+            .flat_map(|group| group.items.iter().map(|item| item.size))
             .max()
             .unwrap_or(0);
-        let mut lines = Vec::new();
-        for (name, found) in self.groups() {
-            let size = found.iter().map(|item| item.size).sum();
-            lines.push(Line::from(vec![
-                Span::raw(name.to_string()).bold().fg(super::visual::ACCENT),
-                Span::raw(format!("  {} · {}", items(found.len()), format::size(size))),
+        // The age goes first when room is short, then the bar.
+        let width = usize::from(width);
+        let age = if width >= 64 { AGE_WIDTH + 2 } else { 0 };
+        let bar = if width >= 52 { ITEM_BAR + 2 } else { 0 };
+        // Only as wide as the longest name, so sizes sit beside the names
+        let longest = groups
+            .iter()
+            .flat_map(|group| {
+                let shared = group.folder().is_some();
+                group.items.iter().map(move |item| {
+                    let path = item.path.path();
+                    match (shared, path.file_name()) {
+                        (true, Some(name)) => name.to_string_lossy().chars().count(),
+                        _ => display_path(home, path).chars().count(),
+                    }
+                })
+            })
+            .max()
+            .unwrap_or(0);
+        let name_width = longest
+            .max(24)
+            .min(width.saturating_sub(2 + 2 + 9 + bar + age))
+            .max(8);
+        let mut header = format!("  {:<name_width$}  {:>9}", "Name", "Size");
+        if bar > 0 {
+            header.push_str(&" ".repeat(bar));
+        }
+        if age > 0 {
+            header.push_str("  Changed");
+        }
+        let header = Line::from(header).style(super::visual::HEADING);
+        let now = SystemTime::now();
+        let mut rows = Vec::new();
+        for (number, group) in groups.iter().enumerate() {
+            if number > 0 {
+                rows.push(Line::default());
+            }
+            let size = group.size();
+            rows.push(Line::from(vec![
+                Span::raw(group.name.to_string())
+                    .bold()
+                    .fg(super::visual::ACCENT),
+                Span::raw(format!(" · {} · ", items(group.items.len()))),
+                format::size_span(size, format::size(size)).bold(),
             ]));
-            for item in found {
+            let folder = group.folder();
+            if let Some(folder) = folder {
+                rows.push(Line::from(format::shorten_path(
+                    &display_path(home, folder),
+                    width,
+                )));
+            }
+            for item in &group.items {
+                let path = item.path.path();
+                let name = match (folder, path.file_name()) {
+                    (Some(_), Some(name)) => name.to_string_lossy().into_owned(),
+                    _ => display_path(home, path),
+                };
+                let name = format::shorten_middle(&name, name_width);
+                let mut spans = vec![
+                    Span::raw(format!("  {name:<name_width$}  ")),
+                    format::size_span(item.size, format!("{:>9}", format::size(item.size))),
+                ];
+                if bar > 0 {
+                    spans.push(Span::raw("  "));
+                    spans.push(
+                        Span::raw(format::bar(item.size, largest, ITEM_BAR))
+                            .fg(super::visual::ACCENT),
+                    );
+                }
+                if age > 0 {
+                    let changed = now.duration_since(item.changed).unwrap_or_default();
+                    spans.push(Span::raw(format!("  {}", format::age_aligned(changed))));
+                }
+                rows.push(Line::from(spans));
+            }
+        }
+        (header, rows)
+    }
+
+    /// What each selected rule removes, its level, and the app to close
+    fn about(&self) -> Vec<Line<'static>> {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        let mut seen: Vec<(&str, &str)> = Vec::new();
+        let rules = self.planned.plan.rules.iter();
+        for rule in rules.filter(|rule| rule.selected && !rule.items.is_empty()) {
+            let rule = &rule.rule;
+            // Rules that share a name and say the same thing show once.
+            if seen.contains(&(rule.name.as_str(), rule.description.as_str())) {
+                continue;
+            }
+            seen.push((&rule.name, &rule.description));
+            if !lines.is_empty() {
+                lines.push(Line::default());
+            }
+            lines.push(Line::from(vec![
+                Span::raw(rule.name.clone()).bold(),
+                Span::raw("  "),
+                tier_span(rule.tier),
+            ]));
+            if !rule.description.is_empty() {
+                lines.push(Line::from(rule.description.clone()));
+            }
+            if !rule.requires_quit.is_empty() {
+                let apps: Vec<String> = rule
+                    .requires_quit
+                    .iter()
+                    .map(|bundle| app_name(bundle))
+                    .collect();
                 lines.push(Line::from(vec![
-                    format::size_span(item.size, format!("{:>10}", format::size(item.size))),
-                    Span::raw("  "),
-                    Span::raw(format::bar(item.size, largest, ITEM_BAR)).fg(super::visual::ACCENT),
-                    Span::raw("  "),
-                    Span::raw(display_path(home, item.path.path())),
+                    Span::raw("Close first  ").bold(),
+                    Span::raw(apps.join(", ")).yellow(),
                 ]));
             }
-            lines.push(Line::default());
         }
         lines
     }
 
-    /// The boxes beside the paths: the total, each group's share, the
-    /// steps, and the disk after
-    fn summary(&self, context: &Context, width: u16) -> Vec<Vec<Line<'static>>> {
+    /// What the selected rules found but will not move, and why
+    fn kept(&self) -> Vec<Line<'static>> {
+        let home = &self.planned.home;
+        self.planned
+            .plan
+            .rules
+            .iter()
+            .filter(|rule| rule.selected)
+            .flat_map(|rule| {
+                rule.skipped
+                    .iter()
+                    .map(move |skipped| (skipped, rule.rule.min_age_days))
+            })
+            .map(|(skipped, days)| {
+                Line::from(vec![
+                    Span::raw(display_path(home, &skipped.path)),
+                    Span::raw("  "),
+                    Span::raw(skip_reason(&skipped.reason, Some(days))).yellow(),
+                ])
+            })
+            .collect()
+    }
+
+    /// The total, with each group's share
+    fn totals(&self) -> Vec<Line<'static>> {
         let plan = &self.planned.plan;
         let total = plan.selected_size();
-        let mut groups: Vec<(&str, u64)> = self
+        let groups: Vec<(&str, u64)> = self
             .groups()
-            .into_iter()
-            .map(|(name, found)| (name, found.iter().map(|item| item.size).sum()))
+            .iter()
+            .map(|group| (group.name, group.size()))
             .collect();
-        groups.sort_by_key(|&(_, size)| std::cmp::Reverse(size));
         let field = |label: &str, value: Span<'static>| {
             Line::from(vec![Span::raw(format!("{label:<11}")).bold(), value])
         };
-        let totals = vec![
+        let mut lines = vec![
             field("Size", Span::raw(format::size(total)).green().bold()),
             field("Items", Span::raw(count(plan.selected_count()))),
-            field("Groups", Span::raw(count(groups.len()))),
-            field(
-                "Goes to",
-                Span::raw("the Trash, so you can put it back").green(),
-            ),
+            field("Goes to", Span::raw("Trash · Put Back undoes it").green()),
+            field("Next", Span::raw("Enter, then y to confirm")),
         ];
-        let mut overview = vec![Line::from("Overview").style(super::visual::HEADING)];
-        for (name, size) in groups {
-            overview.push(Line::from(vec![
+        // One group's share is the whole total, so its bar says nothing.
+        if groups.len() > 1 {
+            lines.push(Line::default());
+        }
+        let several = groups.len() > 1;
+        for (name, size) in groups.into_iter().filter(|_| several) {
+            lines.push(Line::from(vec![
                 format::size_span(size, format!("{:>9}  ", format::size(size))),
                 Span::raw(format::bar(size, total, SUMMARY_BAR)).fg(super::visual::ACCENT),
                 Span::raw(format!("  {name}")),
             ]));
         }
-        let mut steps = vec![Line::from("Steps").style(super::visual::HEADING)];
-        for (number, text) in [
-            "Press Enter to confirm.",
-            "neet checks each item again, then moves it to the Trash.",
-            "Changed your mind? Use Put Back in the Trash.",
-            "Empty the Trash to free the space.",
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            steps.extend(super::visual::hanging(
-                vec![
-                    Span::raw(format!("{}. ", number + 1))
-                        .fg(super::visual::ACCENT)
-                        .bold(),
-                ],
-                3,
-                text,
-                ratatui::style::Style::default(),
-                usize::from(width),
-            ));
-        }
-        let after = super::visual::after_cleanup(context.disk.as_ref(), total, "Cleanup", width);
-        vec![totals, overview, steps, after]
+        lines
+    }
+
+    /// The table in `area`: the header stays, the groups scroll under it
+    fn draw_table(&mut self, frame: &mut Frame, area: Rect) {
+        let plan = &self.planned.plan;
+        let block = super::visual::block()
+            .title(format!(
+                " Review · {} · {} ",
+                items(plan.selected_count()),
+                format::size(plan.selected_size())
+            ))
+            .title(Line::from(" Goes to the Trash ").green().right_aligned())
+            .padding(Padding::horizontal(1));
+        let inner = block.inner(area);
+        let (header, rows) = self.table(inner.width);
+        let [head, body] =
+            Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(inner);
+        let offset = self.scroll.clamp(
+            rows.len(),
+            Rect {
+                height: body.height + 2,
+                ..body
+            },
+        );
+        let total = rows.len();
+        let last = (usize::from(offset) + usize::from(body.height)).min(total);
+        // Where you are, only when the list is longer than the box
+        let block = if total > usize::from(body.height) {
+            block.title_bottom(
+                Line::from(format!(" {}–{last} of {total} · ↑↓ scroll ", offset + 1))
+                    .right_aligned(),
+            )
+        } else {
+            block
+        };
+        frame.render_widget(block, area);
+        frame.render_widget(Paragraph::new(header), head);
+        frame.render_widget(Paragraph::new(rows).scroll((offset, 0)), body);
     }
 }
 
+/// The items of the rules that share a name
+struct Group<'a> {
+    name: &'a str,
+    items: Vec<&'a clean::PlanItem>,
+}
+
+impl Group<'_> {
+    fn size(&self) -> u64 {
+        self.items.iter().map(|item| item.size).sum()
+    }
+
+    /// The folder every item is in, when they share one
+    fn folder(&self) -> Option<&Path> {
+        let folder = self.items.first()?.path.path().parent()?;
+        self.items
+            .iter()
+            .all(|item| item.path.path().parent() == Some(folder))
+            .then_some(folder)
+    }
+}
+
+/// How wide the age beside each item is, such as `11 months ago`
+const AGE_WIDTH: usize = 13;
+
 /// How wide the bar beside each path is
-const ITEM_BAR: usize = 8;
+const ITEM_BAR: usize = 10;
 
 /// How wide the bars in the review summary are.
 const SUMMARY_BAR: usize = 10;
@@ -205,24 +349,107 @@ const SUMMARY_BAR: usize = 10;
 /// Below this width the summary goes away and the paths take the screen.
 const MIN_SUMMARY_WIDTH: u16 = 100;
 
+/// From this width the summary sits beside the paths, not under them
+const MIN_SIDE_WIDTH: u16 = 140;
+
 impl Screen for Review {
     fn draw(&mut self, frame: &mut Frame, area: Rect, context: &Context) {
-        let plan = &self.planned.plan;
-        let title = format!(
-            " Review · {} · {} ",
-            items(plan.selected_count()),
-            format::size(plan.selected_size())
-        );
-        let lines = self.lines();
-        if area.width < MIN_SUMMARY_WIDTH {
-            scrolling(frame, area, title, lines, &mut self.scroll);
+        let titled = |title: String| {
+            super::visual::block()
+                .title(title)
+                .padding(Padding::horizontal(1))
+        };
+        let totals = self.totals();
+        let freed = self.planned.plan.selected_size();
+        if area.width < MIN_SIDE_WIDTH {
+            // The table on top, the total and the disk after side by side
+            // under it, when there is room
+            let half = area.width / 2;
+            let width = half.saturating_sub(4);
+            let mut after =
+                super::visual::after_cleanup(context.disk.as_ref(), freed, "Cleanup", width);
+            after.remove(0);
+            let height = |lines: &[Line<'_>]| super::visual::wrapped_rows(lines, width) + 2;
+            let bottom = height(&totals).max(height(&after));
+            if area.width < MIN_SUMMARY_WIDTH || area.height < bottom + 8 {
+                self.draw_table(frame, area);
+                return;
+            }
+            let [paths, under] =
+                Layout::vertical([Constraint::Fill(1), Constraint::Length(bottom)]).areas(area);
+            self.draw_table(frame, paths);
+            let [left, right] =
+                Layout::horizontal([Constraint::Fill(1), Constraint::Fill(1)]).areas(under);
+            frame.render_widget(
+                Paragraph::new(totals)
+                    .wrap(Wrap { trim: false })
+                    .block(titled(" Total ".to_string())),
+                left,
+            );
+            frame.render_widget(
+                Paragraph::new(after)
+                    .wrap(Wrap { trim: false })
+                    .block(titled(" After cleanup ".to_string())),
+                right,
+            );
             return;
         }
+        // The table on the left. On the right, the total and the disk after
+        // at their own heights, and what stays filling the rest.
         let [paths, side] =
             Layout::horizontal([Constraint::Percentage(62), Constraint::Fill(1)]).areas(area);
-        scrolling(frame, paths, title, lines, &mut self.scroll);
+        self.draw_table(frame, paths);
         let width = side.width.saturating_sub(4);
-        super::visual::sections(frame, side, "Total", self.summary(context, width));
+        let mut after =
+            super::visual::after_cleanup(context.disk.as_ref(), freed, "Cleanup", width);
+        after.remove(0);
+        let kept = self.kept();
+        let about = self.about();
+        let height = |lines: &[Line<'_>]| super::visual::wrapped_rows(lines, width) + 2;
+        // What is removed fills the rest. What stays shows only when
+        // something does, and then takes the rest.
+        let [total_area, after_area, about_area, kept_area] = Layout::vertical([
+            Constraint::Length(height(&totals)),
+            Constraint::Length(height(&after)),
+            if kept.is_empty() {
+                Constraint::Fill(1)
+            } else {
+                Constraint::Length(height(&about))
+            },
+            if kept.is_empty() {
+                Constraint::Length(0)
+            } else {
+                Constraint::Fill(1)
+            },
+        ])
+        .areas(side);
+        frame.render_widget(
+            Paragraph::new(totals)
+                .wrap(Wrap { trim: false })
+                .block(titled(" Total ".to_string())),
+            total_area,
+        );
+        frame.render_widget(
+            Paragraph::new(after)
+                .wrap(Wrap { trim: false })
+                .block(titled(" After cleanup ".to_string())),
+            after_area,
+        );
+        frame.render_widget(
+            Paragraph::new(about)
+                .wrap(Wrap { trim: false })
+                .block(titled(" What goes ".to_string())),
+            about_area,
+        );
+        if !kept.is_empty() {
+            let title = format!(" Kept · {} ", count(kept.len()));
+            frame.render_widget(
+                Paragraph::new(kept)
+                    .wrap(Wrap { trim: false })
+                    .block(titled(title)),
+                kept_area,
+            );
+        }
     }
 
     fn handle_key(&mut self, key: KeyEvent, _context: &Context) -> Action {
@@ -242,7 +469,7 @@ impl Screen for Review {
             SCROLL_HELP[0],
             SCROLL_HELP[1],
             SCROLL_HELP[2],
-            ("Enter", "Confirm & move the items to the Trash"),
+            ("Enter", "Move the items to the Trash"),
             ("Esc", "Back to Deep Clean"),
             ("q", "Quit"),
         ]
@@ -271,8 +498,8 @@ impl Screen for Confirm {
             ))
             .bold(),
             Line::default(),
-            Line::from("neet checks each item again before moving it."),
-            Line::from("Changed your mind? Use Put Back in the Trash."),
+            Line::from("Each item is checked again first."),
+            Line::from("Put Back in the Trash undoes it."),
             Line::default(),
             Line::from(vec![
                 Span::raw("y").bold().fg(super::visual::ACCENT),
@@ -441,7 +668,7 @@ impl Cleanup {
                 ]),
                 Line::from("Empty the Trash to free that space."),
                 Line::default(),
-                Line::from("To restore an item, select it in the Trash & choose Put Back."),
+                Line::from("Put Back in the Trash restores an item."),
             ]
         };
         if !outcome.skipped.is_empty() {
@@ -607,28 +834,6 @@ mod tests {
     use std::time::{Duration, Instant};
     use tempfile::{TempDir, tempdir};
 
-    #[test]
-    fn end_of_review_includes_wrapped_lines() {
-        let mut terminal = Terminal::new(TestBackend::new(40, 8)).unwrap();
-        let mut scroll = Scroll(u16::MAX);
-        let lines = vec![
-            Line::from("a-long-folder-name/".repeat(20)),
-            Line::from("Last path"),
-        ];
-        terminal
-            .draw(|frame| {
-                scrolling(
-                    frame,
-                    frame.area(),
-                    " Review ".into(),
-                    lines.clone(),
-                    &mut scroll,
-                );
-            })
-            .unwrap();
-        assert!(crate::ui::visual::tests::text(terminal.backend().buffer()).contains("Last path"));
-    }
-
     fn planned() -> (TempDir, Arc<Planned>) {
         let dir = tempdir().expect("temporary directory should be created");
         for file in [
@@ -700,8 +905,12 @@ mod tests {
         let screen = render(&mut Review::new(planned));
 
         assert!(screen.contains("Review · 1 item ·"));
-        assert!(screen.contains("Xcode DerivedData"));
-        assert!(screen.contains("~/Library/Developer/Xcode/DerivedData/App-abc"));
+        assert!(screen.contains("Xcode build files"));
+        assert!(screen.contains("App-abc"));
+        assert!(
+            screen.contains("~/Library/Developer/Xcode/DerivedData"),
+            "{screen}"
+        );
         assert!(!screen.contains("npm cache"));
     }
 
@@ -873,7 +1082,7 @@ mod tests {
         let (_dir, planned) = planned();
         let screen = render(&mut Review::new(planned));
 
-        for text in ["┌ Total", "┌ Overview", "┌ Steps", "Press Enter to confirm"] {
+        for text in ["┌ Total", "┌ After cleanup", "Enter, then y"] {
             assert!(screen.contains(text), "{text}");
         }
     }
@@ -891,10 +1100,54 @@ mod tests {
 
         let screen = render(&mut Review::new(planned));
 
-        // Once in the list, once in the summary
-        assert_eq!(screen.matches("HTTPStorages").count(), 2);
-        assert!(screen.contains("HTTPStorages  2 items"));
+        // Once, as the one group. A single group has no share to show.
+        assert_eq!(screen.matches("HTTPStorages").count(), 1, "{screen}");
+        assert!(screen.contains("HTTPStorages · 2 items"), "{screen}");
     }
+    #[test]
+    fn a_wide_review_lists_items_by_name_under_their_folder() {
+        use crate::ui::visual::tests as view;
+        let scan = ScanStatus::Failed(String::new());
+        let context = Context {
+            scan: &scan,
+            disk: None,
+            cleanable: None,
+            plan: None,
+        };
+        let (dir, _) = planned();
+        let more = dir
+            .path()
+            .join("Library/Developer/Xcode/DerivedData/ModuleCache.noindex/x");
+        fs::create_dir_all(more.parent().unwrap()).unwrap();
+        fs::write(more, vec![1; 90_000]).unwrap();
+        let roots = CleanupRoots::new(dir.path()).unwrap();
+        let set = rules::load(&roots, None);
+        let mut plan = plan(&set.rules, &roots, SystemTime::now());
+        for rule in &mut plan.rules {
+            rule.selected = !rule.items.is_empty();
+        }
+        let planned = Arc::new(Planned {
+            plan,
+            errors: Vec::new(),
+            home: roots.home().to_path_buf(),
+        });
+        let mut review = Review::new(planned);
+        let text = view::text(&view::render("review", &mut review, &context, 160, 40));
+        assert!(text.contains("Xcode build files · 2 items"), "{text}");
+        assert!(
+            text.contains("~/Library/Developer/Xcode/DerivedData"),
+            "{text}"
+        );
+        // The largest first, by name, with nothing cut out of the middle
+        let big = text.find("ModuleCache.noindex").expect("listed");
+        let small = text.find("App-abc").expect("listed");
+        assert!(big < small, "{text}");
+        assert!(text.contains("┌ What goes"), "{text}");
+        assert!(text.contains("Close first  Xcode"), "{text}");
+        assert!(!text.contains("Nothing kept"), "{text}");
+        assert!(!text.contains("┌ Kept"), "{text}");
+    }
+
     #[test]
     fn layout_stays_readable_across_terminal_sizes() {
         use crate::ui::visual::tests as view;
@@ -910,7 +1163,7 @@ mod tests {
         let mut confirm = Confirm::new(planned);
         for (width, height) in view::SIZES {
             let buffer = view::render("review", &mut review, &context, width, height);
-            assert!(view::text(&buffer).contains("DerivedData"));
+            assert!(view::text(&buffer).contains("App-abc"));
             let buffer = view::render("confirm", &mut confirm, &context, width, height);
             assert!(view::text(&buffer).contains("Put Back"));
             assert!(view::text(&buffer).contains("go back"));

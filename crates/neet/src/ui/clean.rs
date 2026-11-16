@@ -28,9 +28,7 @@ fn poll_plan(result: &Receiver<Outcome>) -> Option<Outcome> {
     match result.try_recv() {
         Ok(outcome) => Some(outcome),
         Err(TryRecvError::Empty) => None,
-        Err(TryRecvError::Disconnected) => Some(Err(
-            "The task ended without a result. Press r to try again.".to_string(),
-        )),
+        Err(TryRecvError::Disconnected) => Some(Err("No result. r tries again.".to_string())),
     }
 }
 
@@ -70,9 +68,7 @@ impl Estimate {
     /// Plans every rule for `home` on its own thread. Nothing on disk is
     /// changed. Without a home folder there is nothing to plan.
     pub fn start(home: Option<PathBuf>) -> Self {
-        let failed = home
-            .is_none()
-            .then(|| "HOME is not set, so there is no home folder to clean.".to_string());
+        let failed = home.is_none().then(|| "HOME is not set.".to_string());
         let result = home.map(|home| {
             let (sender, result) = mpsc::channel();
             thread::spawn(move || {
@@ -165,9 +161,7 @@ impl Clean {
                     *self = Self::start(move || make_plan(&home, Some(&user_rules)));
                 }
                 None => {
-                    self.state = State::Failed(
-                        "HOME is not set, so there is no home folder to clean.".to_string(),
-                    );
+                    self.state = State::Failed("HOME is not set.".to_string());
                 }
             },
         }
@@ -323,13 +317,13 @@ impl Clean {
             return;
         };
         let lines = vec![
-            Line::from(format!("{} is an expert rule.", rule.rule.name)).bold(),
-            Line::from("Its files may not exist anywhere else.").red(),
+            Line::from(format!("{} is risky.", rule.rule.name)).bold(),
+            Line::from("It may hold files you can't get back.").red(),
             Line::default(),
             Line::from(vec![
                 Span::raw("Type "),
                 Span::raw(rule.rule.id.clone()).bold(),
-                Span::raw(" and press Enter to select it."),
+                Span::raw(" then Enter to select it."),
             ]),
             Line::from(format!("> {typed}█")).fg(super::visual::ACCENT),
         ];
@@ -346,7 +340,7 @@ impl Clean {
         frame.render_widget(
             Paragraph::new(lines).wrap(Wrap { trim: false }).block(
                 super::visual::block()
-                    .title(" Select an expert rule ")
+                    .title(" Select a risky item ")
                     .padding(Padding::horizontal(1)),
             ),
             area,
@@ -365,11 +359,11 @@ fn tier_name(tier: Tier) -> &'static str {
     match tier {
         Tier::Safe => "safe",
         Tier::Caution => "caution",
-        Tier::Expert => "expert",
+        Tier::Expert => "risky",
     }
 }
 
-fn tier_span(tier: Tier) -> Span<'static> {
+pub(super) fn tier_span(tier: Tier) -> Span<'static> {
     let span = Span::raw(tier_name(tier));
     match tier {
         Tier::Safe => span.green(),
@@ -381,8 +375,8 @@ fn tier_span(tier: Tier) -> Span<'static> {
 fn tier_meaning(tier: Tier) -> &'static str {
     match tier {
         Tier::Safe => "Apps make these again. Selected for you.",
-        Tier::Caution => "May need a re-download or sign-in. You select these.",
-        Tier::Expert => "May hold files you can't get back. Type its ID to select it.",
+        Tier::Caution => "May need a download or sign-in. You select these.",
+        Tier::Expert => "May hold files you can't get back. Type its name to select it.",
     }
 }
 
@@ -396,18 +390,18 @@ pub(super) fn display_path(home: &Path, path: &Path) -> String {
 
 pub(super) fn skip_reason(reason: &SkipReason, min_age_days: Option<u32>) -> String {
     match reason {
-        SkipReason::Refused(error) => format!("kept for safety: {error}"),
+        SkipReason::Refused(error) => format!("protected: {error}"),
         SkipReason::TooNew => match min_age_days {
             // Newer than the moment the plan started: written while neet looked
-            Some(0) => "changed while neet was looking".to_string(),
+            Some(0) => "changed during the scan".to_string(),
             Some(days) => format!("changed in the last {days} days"),
             None => "changed too recently".to_string(),
         },
         SkipReason::Unreadable(error) => format!("could not be read: {error}"),
-        SkipReason::Overlaps => "found by another rule".to_string(),
-        SkipReason::Link => "a shortcut, kept".to_string(),
+        SkipReason::Overlaps => "listed twice".to_string(),
+        SkipReason::Link => "a link, kept".to_string(),
         SkipReason::AppOpen(app) => format!("{} is open", app_name(app)),
-        SkipReason::Replaced => "changed after you checked it".to_string(),
+        SkipReason::Replaced => "changed after review".to_string(),
         SkipReason::MoveFailed(error) => format!("could not be moved: {error}"),
     }
 }
@@ -459,8 +453,8 @@ fn rule_row(rule: &RulePlan, current: bool, columns: &super::visual::Columns<5>)
             Cell::from(checkbox(false, false)),
             Cell::from(name),
             Cell::from(tier_span(rule.rule.tier)),
-            Cell::from(Line::from("·").right_aligned()),
-            Cell::from(Line::from("none").right_aligned()),
+            Cell::from(Line::from("0").right_aligned()),
+            Cell::from(Line::from("0 B").right_aligned()),
         ]);
     }
     columns.row([
@@ -646,7 +640,7 @@ fn about(rule: &RulePlan, home: &Path, width: usize) -> Vec<Line<'static>> {
     );
     let folder = format::shorten_path(&folder, width.saturating_sub(LABEL));
     lines.extend(field_wrapped(
-        "Folder",
+        "Where",
         Vec::new(),
         &folder,
         Style::default().fg(super::visual::ACCENT),
@@ -859,7 +853,7 @@ fn draw_location(frame: &mut Frame, area: Rect, planned: &Planned, chart: Vec<Li
     let mut sections = vec![chart];
     sections.extend(by_risk(planned, usize::from(area.width.saturating_sub(4))));
     sections.extend(found_nothing(planned));
-    super::visual::sections(frame, area, " Location ", sections);
+    super::visual::sections(frame, area, " By size ", sections);
 }
 
 /// The details' boxes: about, found, skipped, and the chart. The found box
@@ -938,7 +932,7 @@ fn problems(errors: &[RuleError]) -> Vec<Line<'static>> {
             let rule = error
                 .rule
                 .as_ref()
-                .map_or_else(String::new, |id| format!(" rule `{id}`"));
+                .map_or_else(String::new, |id| format!(" `{id}`"));
             Line::from(format!(
                 "Could not load {}{rule}: {}",
                 error.file, error.message
@@ -960,9 +954,7 @@ fn totals(planned: &Planned) -> Line<'static> {
         .filter(|rule| rule.selected && !rule.items.is_empty())
         .count();
     let text = Span::raw(format!(
-        " Selected · {} {} · {} · {} ",
-        count(rules),
-        if rules == 1 { "rule" } else { "rules" },
+        " Selected · {} · {} ",
         items(plan.selected_count()),
         format::size(plan.selected_size())
     ));
@@ -974,7 +966,7 @@ fn totals(planned: &Planned) -> Line<'static> {
     if !planned.errors.is_empty() {
         spans.push(
             Span::raw(format!(
-                "· {} could not load, see the details ",
+                "· {} could not load ",
                 count_rules(planned.errors.len())
             ))
             .yellow(),
@@ -1016,8 +1008,8 @@ fn selection(planned: &Planned) -> Vec<Line<'static>> {
         .collect();
     if chosen.is_empty() {
         return vec![
-            Line::from("Nothing selected yet.").bold(),
-            Line::from("Press Space to select a rule."),
+            Line::from("Nothing selected.").bold(),
+            Line::from("Space selects a row."),
         ];
     }
     let mut lines: Vec<Line<'static>> = chosen
@@ -1075,9 +1067,9 @@ fn in_all(planned: &Planned) -> Vec<Line<'static>> {
     let selected = planned.plan.selected_size();
     let selected = Span::raw(format::size(selected));
     let (selected, next) = if planned.plan.selected_count() == 0 {
-        (selected, "Press Space to select rules, then Enter.")
+        (selected, "Space selects, Enter reviews.")
     } else {
-        (selected.green().bold(), "Press Enter to review the list.")
+        (selected.green().bold(), "Enter reviews the list.")
     };
     vec![
         Line::from("Total").style(super::visual::HEADING),
@@ -1093,10 +1085,7 @@ fn in_all(planned: &Planned) -> Vec<Line<'static>> {
         ),
         field("Selected", selected),
         field("Next", Span::raw(next)),
-        field(
-            "Goes to",
-            Span::raw("the Trash, so you can put it back").green(),
-        ),
+        field("Goes to", Span::raw("Trash · Put Back undoes it").green()),
     ]
 }
 
@@ -1124,7 +1113,7 @@ fn by_risk(planned: &Planned, width: usize) -> Option<Vec<Line<'static>>> {
         };
         let padding = " ".repeat(9 - tier_name(tier).len());
         let rules_text = if found == 0 {
-            format!("nothing found in {}", count_rules(of_tier.len()))
+            format!("nothing found in {}", count(of_tier.len()))
         } else {
             format!(
                 "found in {} of {}",
@@ -1150,7 +1139,7 @@ fn count_rules(rules: usize) -> String {
     format!(
         "{} {}",
         count(rules),
-        if rules == 1 { "rule" } else { "rules" }
+        if rules == 1 { "type" } else { "types" }
     )
 }
 
@@ -1167,8 +1156,7 @@ fn found_nothing(planned: &Planned) -> Option<Vec<Line<'static>>> {
         return None;
     }
     Some(vec![
-        Line::from(format!("Nothing found · {}", count_rules(names.len())))
-            .style(super::visual::HEADING),
+        Line::from(format!("Nothing found · {}", count(names.len()))).style(super::visual::HEADING),
         Line::from(names.join(", ")),
     ])
 }
@@ -1212,7 +1200,7 @@ fn rules_table(
     let header = columns
         .row([
             super::visual::check_header(),
-            Cell::from("Rule"),
+            Cell::from("Name"),
             Cell::from("Risk"),
             Cell::from(Line::from("Items").right_aligned()),
             Cell::from(Line::from("Size").right_aligned()),
@@ -1244,7 +1232,7 @@ impl Screen for Clean {
                     title: "Deep Clean",
                     doing: "Looking for files to clean",
                     progress: format!("{}s", started.elapsed().as_secs()),
-                    note: "Nothing is changed while neet looks. Press r later to look again.",
+                    note: "View only. r looks again.",
                 }
                 .draw(frame, area);
                 return;
@@ -1254,7 +1242,7 @@ impl Screen for Clean {
                     title: "Deep Clean",
                     doing: "Looking for files to clean",
                     progress: format!("{}s", started.elapsed().as_secs()),
-                    note: "Nothing is changed while neet looks.",
+                    note: "View only.",
                 }
                 .draw(frame, area);
                 return;
@@ -1370,21 +1358,21 @@ impl Screen for Clean {
 
     fn hints(&self) -> &'static str {
         if self.typing.is_some() {
-            return "type the ID · enter select · esc cancel";
+            return "type the name · enter select · esc cancel";
         }
         "↑↓ move · space select · enter review · r look again · esc home · ? help"
     }
 
     fn help(&self) -> &'static [(&'static str, &'static str)] {
         &[
-            ("↑ ↓  j k", "Move between rules"),
-            ("g  G", "Jump to the first or last rule"),
+            ("↑ ↓  j k", "Move"),
+            ("g  G", "Jump to the first or last row"),
             (
                 "Space",
-                "Select or clear a rule. An expert rule asks you to type its ID",
+                "Select or clear a row. A risky row asks you to type its name",
             ),
-            ("Enter", "Review every file the selected rules found"),
-            ("r", "Look again, such as after removing files yourself"),
+            ("Enter", "Review every selected file"),
+            ("r", "Look again"),
             ("Esc", "Back to Home"),
             ("q", "Quit"),
         ]
@@ -1483,7 +1471,7 @@ mod tests {
             plan: Some(&estimate),
         };
         clean.adopt(&context);
-        assert!(render(&mut clean).contains("ended without a result"));
+        assert!(render(&mut clean).contains("No result"));
         assert!(matches!(
             clean.handle_key(
                 KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE),
@@ -1501,7 +1489,7 @@ mod tests {
         assert!(matches!(clean.state, State::Planning { .. }));
         drop(sender);
         clean.poll();
-        assert!(render(&mut clean).contains("ended without a result"));
+        assert!(render(&mut clean).contains("No result"));
         assert!(matches!(clean.back(), Action::Back));
     }
 
@@ -1718,16 +1706,16 @@ mod tests {
 
         let screen = render(&mut clean);
 
-        assert!(screen.contains("[✓]  Xcode DerivedData"));
+        assert!(screen.contains("[✓]  Xcode build files"));
         assert!(screen.contains("[ ]  npm cache"));
         assert!(screen.contains("caution"));
-        assert!(screen.contains("none"));
+        assert!(screen.contains("0 B"));
         assert!(screen.contains("total · 1 item"));
-        assert!(screen.contains("Folder    ~/Library/"));
+        assert!(screen.contains("Where     ~/Library/"));
         assert!(screen.contains("Xcode/DerivedData"));
         assert!(screen.contains("App-abc"));
         assert!(screen.contains("Found · 1 item · 4.1 KB"));
-        assert!(screen.contains("Location"));
+        assert!(screen.contains("By size"));
         assert!(screen.contains("16.4 KB  total · 4.1 KB selected"));
     }
 
@@ -1870,7 +1858,7 @@ mod tests {
         let mut clean = Clean::ready_with(planned(&dir), |app| app == "com.apple.dt.Xcode");
 
         assert!(!is_selected(&clean, "xcode-derived-data"));
-        assert!(render(&mut clean).contains("Not selected: Xcode DerivedData"));
+        assert!(render(&mut clean).contains("Not selected: Xcode build files"));
 
         select_rule(&mut clean, "xcode-derived-data");
         press(&mut clean, KeyCode::Char(' '));
@@ -1958,7 +1946,7 @@ mod tests {
 
         let screen = render(&mut Clean::ready(planned));
 
-        assert!(screen.contains("1 rule could not load"));
+        assert!(screen.contains("1 type could not load"));
         assert!(screen.contains("Could not load"));
     }
     #[test]
@@ -1978,7 +1966,7 @@ mod tests {
             let text = view::text(&view::render("clean", screen, &context, 160, 46));
             let rows: Vec<&str> = text.lines().collect();
             let at = |needle: &str| rows.iter().position(|row| row.contains(needle));
-            (at("┌ Found"), at("┌ Location"))
+            (at("┌ Found"), at("┌ By size"))
         };
         let first = edges(&mut screen);
         assert!(first.0.is_some() && first.1.is_some(), "{first:?}");
